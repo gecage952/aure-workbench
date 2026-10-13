@@ -44,7 +44,38 @@ from typing import Any
 #: sentence and names the material. The substrate materials are enumerated
 #: rather than matched as any word, so "through the polymer film" stays a
 #: description of the sample and not a claim about geometry.
-_SUBSTRATE = r"(?:silicon|si|sapphire|al2o3|quartz|glass|germanium|ge|wafer)"
+#:
+#: Each alias is listed with the material it names. These patterns and
+#: :func:`named_substrates` are both built from this one table: two lists had
+#: drifted, so "through the fused silica" named a substrate to one and was no
+#: geometry at all to the other.
+SUBSTRATE_ALIASES: dict[str, str] = {
+    "silicon": "silicon",
+    "si": "silicon",
+    "sapphire": "sapphire",
+    "al2o3": "sapphire",
+    "alumina": "sapphire",
+    "quartz": "quartz",
+    "fused silica": "quartz",
+    "silica": "quartz",
+    "sio2": "quartz",
+    "glass": "glass",
+    "germanium": "germanium",
+    "ge": "germanium",
+}
+
+#: Any one alias, longest first, so "fused silica" is not read as "silica".
+_SUBSTRATE_MATERIAL = (
+    "(?:"
+    + "|".join(
+        r"\s+".join(map(re.escape, alias.split()))
+        for alias in sorted(SUBSTRATE_ALIASES, key=len, reverse=True)
+    )
+    + ")"
+)
+
+#: A substrate, or a wafer of any material: the geometry needs no more.
+_SUBSTRATE = rf"(?:{_SUBSTRATE_MATERIAL}|wafer)"
 
 BACK_REFLECTION_PATTERNS = (
     r"back[\s-]*reflection",
@@ -224,10 +255,21 @@ def back_reflection_stated(notes: str) -> bool | None:
     denied = False
     for pattern in BACK_REFLECTION_PATTERNS:
         for match in re.finditer(pattern, lowered):
-            if not _negated(lowered[: match.start()]):
+            if not _negated_at(lowered, match.start()):
                 return True
             denied = True
     return False if denied else None
+
+
+#: How far before a phrase a negation is looked for. Only the last few words
+#: of its clause count, so this changes no answer for prose; it keeps each
+#: match from rescanning a long note from its start.
+_NEGATION_WINDOW = 400
+
+
+def _negated_at(lowered: str, start: int) -> bool:
+    """Whether a negation stands just before the phrase at *start*."""
+    return _negated(lowered[max(0, start - _NEGATION_WINDOW) : start])
 
 
 def _negated(before: str) -> bool:
@@ -236,6 +278,81 @@ def _negated(before: str) -> bool:
     clause = before[ends[-1].end() :] if ends else before
     reach = " ".join(clause.split()[-(_NEGATION_REACH + 1) :])
     return _NEGATION_RE.search(reach) is not None
+
+
+#: The material the beam is said to pass through.
+_THROUGH = re.compile(rf"through\s+the\s+({_SUBSTRATE_MATERIAL})\b", re.IGNORECASE)
+
+#: A material called a substrate or a wafer. Of "Si/SiO2 wafer" the first, the
+#: bulk under its oxide.
+_CALLED = re.compile(
+    rf"\b({_SUBSTRATE_MATERIAL})(?:\s*/\s*{_SUBSTRATE_MATERIAL})*"
+    r"\s+(?:substrate|wafer|block|crystal)\b",
+    re.IGNORECASE,
+)
+
+#: Something a layer sits "on". A stack written top-down ends with its
+#: substrate, so of one clause's -- "Cu on Ti on SiO2 on Si" -- the last.
+_SITS_ON = re.compile(
+    rf"\bon\s+(?:an?\s+|the\s+)?({_SUBSTRATE_MATERIAL})\b", re.IGNORECASE
+)
+
+#: Where one clause of the notes ends: a sentence's end, a semicolon, or a
+#: blank line. Not a bare full stop, which is also a decimal point.
+_CLAUSE_SPLIT = re.compile(r"[.;!?](?=\s|$)|\n\s*\n")
+
+
+def named_substrates(notes: str) -> list[str]:
+    """Every substrate material the notes name, as the material each one is.
+
+    Correcting a critical edge for back reflection needs the substrate's SLD,
+    and before a model is written the notes are the only place that says what
+    the substrate is. A material the beam is said to pass through settles it.
+    Otherwise every clause's mention counts, so a second material elsewhere
+    -- "aligned on a Si wafer first" -- is not quietly preferred or dropped.
+    A negated mention ("not a glass substrate") names nothing.
+
+    Args:
+        notes: Any prose from the sample.
+
+    Returns:
+        The materials, as :data:`SUBSTRATE_ALIASES` names them, first named
+        first. One means the notes say what the substrate is. None, or more
+        than one, means they do not, and the caller must not choose: assuming
+        silicon is what corrected a sapphire sample as though it were silicon.
+    """
+    text = notes or ""
+    lowered = text.lower()
+
+    def material(match: re.Match[str]) -> str:
+        return SUBSTRATE_ALIASES[" ".join(match.group(1).lower().split())]
+
+    through = [
+        material(m)
+        for m in _THROUGH.finditer(text)
+        if not _negated_at(lowered, m.start())
+    ]
+    if through:
+        return list(dict.fromkeys(through))
+
+    named: list[str] = []
+    offset = 0
+    for clause in _CLAUSE_SPLIT.split(text):
+        # Where this clause sits in the whole text, for the negation check,
+        # searched for past the clause before it so a repeat is not mistaken.
+        start = lowered.find(clause.lower(), offset)
+        offset = start + len(clause)
+        for m in _CALLED.finditer(clause):
+            if not _negated_at(lowered, start + m.start()):
+                named.append(material(m))
+        under = [
+            m
+            for m in _SITS_ON.finditer(clause)
+            if not _negated_at(lowered, start + m.start())
+        ]
+        if under:
+            named.append(material(under[-1]))
+    return list(dict.fromkeys(named))
 
 
 def state_files(measurement: Any) -> tuple[list[str], str]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
 from typing import Any
@@ -1080,7 +1081,11 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
         "# SLD in 1e-6/A2. `nrw data features <file>` reports the\n"
         "# critical edge and the SLD it implies -- check the top layer.",
     ),
-    ("stack", "# ambient -> substrate"),
+    (
+        "stack",
+        "# The beam enters through the LAST entry: a cell measured through the\n"
+        "# wafer ends with the substrate, a film in air ends with the air.",
+    ),
     ("probe", ""),
     ("states", "# Each file's incident angle is read from its own header."),
     (
@@ -1390,22 +1395,17 @@ def _measured_facts(
                     f"  {state['name']}: critical edge Qc={edge.get('Qc', 0):.5f}, "
                     f"implying an SLD of {estimate:.2f} against vacuum "
                     f"(confidence {edge.get('confidence', '?')})"
-                    + (
-                        f" -- in back reflection the beam enters through the "
-                        f"substrate, so the medium above it is at "
-                        f"{estimate + substrate:.2f}"
-                        if substrate is not None
-                        else ""
-                    )
+                    + _substrate_correction(estimate, substrate)
                 )
 
-    if lines and substrate is not None:
+    # Only where a correction was made, and in general terms: this sample's
+    # numbers are on the lines above.
+    if lines and substrate is not None and substrate.sld is not None:
         lines.append(
-            "  The back-reflection correction above is worth trusting: on this "
-            "sample it turns 4.28 into 6.35, which is d8-THF to two decimal "
-            "places -- and the notes said only 'THF'. Where the corrected edge "
-            "and the notes disagree about deuteration, the edge is the "
-            "measurement."
+            "  In back reflection the corrected value, not the one against "
+            "vacuum, is the SLD of the medium above the substrate. Where it and "
+            "the notes disagree about that medium -- its deuteration, say -- "
+            "the edge is the measurement."
         )
 
     lines.extend(_assessment_facts(layout, document))
@@ -1460,35 +1460,77 @@ def _assessment_facts(layout: ProjectLayout, document: dict[str, Any]) -> list[s
     return lines
 
 
-def _back_reflection_substrate(document: dict[str, Any], notes: str) -> float | None:
-    """Return the substrate SLD when the geometry is back reflection.
+@dataclass(frozen=True)
+class Substrate:
+    """What the notes say the beam enters through, in back reflection.
+
+    Attributes:
+        named: Every substrate material the notes name, as
+            :data:`nr_workbench.aure_setup.SUBSTRATE_ALIASES` names it.
+        sld: Its SLD, when exactly one is named and this repository knows it.
+    """
+
+    named: tuple[str, ...]
+    sld: float | None
+
+
+def _back_reflection_substrate(
+    document: dict[str, Any], notes: str
+) -> Substrate | None:
+    """The substrate the beam enters through, as the notes name it.
 
     AuRE reports a critical edge as the SLD it would imply for a beam arriving
     from vacuum. In back reflection the beam arrives through the substrate
     instead, so the contrast is ``rho_medium - rho_substrate`` and the medium
-    above it sits at ``estimate + rho_substrate``.
+    above it sits at ``estimate + rho_substrate``. On the reference sample the
+    raw estimate is 4.28, which is not any solvent; corrected against silicon
+    it is 6.35, which is d8-THF exactly.
 
-    That is not a detail. On this sample the raw estimate is 4.28, which is not
-    any solvent; corrected against silicon it is 6.35, which is d8-THF exactly
-    -- and it caught a `sample.md` that said only "THF".
+    The substrate comes from the notes, because this runs while building the
+    prompt, before anything has proposed a stack: the document's stack is the
+    scaffold's placeholder, and its silicon says nothing about the sample.
 
-    The geometry is read from the notes rather than the spec because this runs
-    while building the prompt, before the model has proposed anything.
+    Args:
+        document: The scaffolded spec; only its probe's ``back_reflection`` is
+            read.
+        notes: The ``sample.md`` text.
+
+    Returns:
+        ``None`` unless the geometry is back reflection.
     """
-    from nr_workbench.aure_setup import reads_as_back_reflection
+    from nr_workbench.aure_adapter import substrate_sld
+    from nr_workbench.aure_setup import named_substrates, reads_as_back_reflection
 
     probe = document.get("probe") or {}
     if not (probe.get("back_reflection") or reads_as_back_reflection(notes)):
         return None
+    named = tuple(named_substrates(notes))
+    return Substrate(
+        named=named, sld=substrate_sld(named[0]) if len(named) == 1 else None
+    )
 
-    stack = document.get("stack") or []
-    if not stack:
-        return None
-    substrate = stack[-1]
-    material = (document.get("materials") or {}).get(substrate.get("material"))
-    if isinstance(material, dict) and material.get("rho") is not None:
-        return float(material["rho"])
 
-    from nr_workbench.aure_adapter import substrate_sld
-
-    return substrate_sld(str(substrate.get("material")))
+def _substrate_correction(estimate: float, substrate: Substrate | None) -> str:
+    """What back reflection does to one critical-edge estimate, in words."""
+    if substrate is None:
+        return ""
+    if substrate.sld is not None:
+        (name,) = substrate.named
+        return (
+            f" -- in back reflection the beam enters through the {name}, so the "
+            f"medium above it is at {estimate + substrate.sld:.2f} ({estimate:.2f} "
+            f"plus {substrate.sld:.2f} for the {name})"
+        )
+    if len(substrate.named) > 1:
+        why = (
+            f"the notes name {', '.join(substrate.named[:-1])} and "
+            f"{substrate.named[-1]}, so this does not choose"
+        )
+    elif substrate.named:
+        why = f"no SLD is known here for {substrate.named[0]}"
+    else:
+        why = "the notes do not say what the substrate is"
+    return (
+        " -- in back reflection the beam enters through the substrate, so the "
+        f"medium above it is at this plus the substrate's SLD, and {why}"
+    )

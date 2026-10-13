@@ -144,6 +144,13 @@ def test_it_carries_the_spec_hash_for_staleness_detection(project: Path) -> None
     assert "nrw:spec" in text
 
 
+def test_it_says_which_end_of_the_stack_the_beam_enters(document: str) -> None:
+    """It said "Ambient first, substrate last" for every model, which is back
+    reflection only. Now it reads the order: this stack ends in Si."""
+    assert "The beam enters through Si, the last entry" in document
+    assert "ambient first" not in document.lower()
+
+
 def test_it_says_not_to_edit_it(document: str) -> None:
     """It is derived. An edit would be silently overwritten."""
     assert "DO NOT EDIT" in document

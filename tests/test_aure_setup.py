@@ -172,7 +172,7 @@ def test_a_negated_phrase_rules_back_reflection_out(phrase: str) -> None:
 def test_the_critical_edge_is_corrected_only_in_back_reflection() -> None:
     """``nrw model new --from-notes`` reads the geometry the same way: a film
     in air whose notes rule the substrate side out is not corrected for it."""
-    from nr_workbench.commands.model import _back_reflection_substrate
+    from nr_workbench.commands.model import Substrate, _back_reflection_substrate
 
     document = {
         "stack": [{"name": "air", "material": "air"}, {"name": "Si", "material": "Si"}],
@@ -181,8 +181,102 @@ def test_the_critical_edge_is_corrected_only_in_back_reflection() -> None:
     }
     through = "Measured in D2O through the silicon substrate."
     air_side = "The beam enters from the air side, not through the substrate."
-    assert _back_reflection_substrate(document, through) == 2.07
+    assert _back_reflection_substrate(document, through) == Substrate(
+        ("silicon",), 2.07
+    )
     assert _back_reflection_substrate(document, air_side) is None
+
+
+@pytest.mark.parametrize(
+    ("notes", "named", "sld"),
+    [
+        # The stack below ends in Si, as the scaffold's always does: the
+        # substrate has to come from the notes, or every one is silicon.
+        ("Ni on sapphire, measured through the sapphire.", ("sapphire",), 5.67),
+        ("Cu on Ti on a quartz block, through the substrate.", ("quartz",), 3.47),
+        ("Polymer on glass, measured through the substrate.", ("glass",), None),
+        ("Measured through the substrate.", (), None),
+        # Two materials: the alignment wafer is not the sample's substrate,
+        # and this does not choose between them.
+        (
+            "Cu on Ti on sapphire, in d8-THF, measured through the substrate. "
+            "Alignment was done on a Si wafer first.",
+            ("sapphire", "silicon"),
+            None,
+        ),
+    ],
+)
+def test_the_edge_is_corrected_for_the_substrate_the_notes_name(
+    notes: str, named: tuple[str, ...], sld: float | None
+) -> None:
+    from nr_workbench.commands.model import Substrate, _back_reflection_substrate
+
+    document = {
+        "stack": [
+            {"name": "Film", "material": "Film"},
+            {"name": "Si", "material": "Si"},
+        ],
+        "materials": {"Film": {"rho": 4.0}, "Si": {"rho": 2.07}},
+        "probe": {},
+    }
+
+    assert _back_reflection_substrate(document, notes) == Substrate(named, sld)
+
+
+@pytest.mark.parametrize(
+    ("notes", "named"),
+    [
+        ("50 nm Cu on Ti on a Si wafer, through the silicon substrate.", ["silicon"]),
+        # A stack written top-down: the last thing it sits on is the substrate.
+        ("Cu on Ti on SiO2 on Si, in D2O, back reflection.", ["silicon"]),
+        ("Not through the glass: through the sapphire.", ["sapphire"]),
+        ("A sapphire substrate under 20 nm Ni.", ["sapphire"]),
+        ("Not a Si wafer: this is a sapphire substrate.", ["sapphire"]),
+        ("Not a glass substrate; Cu on sapphire.", ["sapphire"]),
+        # The bulk under its oxide, not the oxide.
+        ("Cu on a Si/SiO2 wafer, measured through the substrate.", ["silicon"]),
+        (
+            "Cu on sapphire. We measured the same film on Si before.",
+            ["sapphire", "silicon"],
+        ),
+        ("Cu on fused silica, measured through the fused silica.", ["quartz"]),
+        ("A copper film in air.", []),
+    ],
+)
+def test_the_substrate_is_read_where_the_notes_name_it(
+    notes: str, named: list[str]
+) -> None:
+    from nr_workbench.aure_setup import named_substrates
+
+    assert named_substrates(notes) == named
+
+
+def test_every_substrate_name_is_also_read_as_back_reflection() -> None:
+    """One table for both readers: two lists had drifted, so "through the fused
+    silica" named a substrate to one and no geometry at all to the other."""
+    from nr_workbench.aure_setup import SUBSTRATE_ALIASES, named_substrates
+
+    for alias, material in SUBSTRATE_ALIASES.items():
+        notes = f"Measured through the {alias}."
+        assert back_reflection_stated(notes) is True, alias
+        assert named_substrates(notes) == [material], alias
+
+
+def test_long_notes_are_read_in_linear_time() -> None:
+    """Each match rescanned the whole note before it for a negation: 21 s on a
+    160 KB note built for it. Both readers now look a bounded way back."""
+    import time
+
+    from nr_workbench.aure_setup import named_substrates
+    from nr_workbench.spec.authoring import extract_json
+
+    crafted = "not through the si " * 8400
+    started = time.monotonic()
+    named_substrates(crafted)
+    back_reflection_stated(crafted)
+    # And a reply of unclosed fences: 19.5 s through the lazy fence regex.
+    extract_json("```{" * 40000)
+    assert time.monotonic() - started < 5
 
 
 # --------------------------------------------------------------------------

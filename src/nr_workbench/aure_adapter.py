@@ -631,8 +631,8 @@ D2O_SLD = 6.37
 
 
 #: The substrates this repository actually measures through, and nothing else.
-#: Back-reflection prompts need the substrate SLD when a spec has not declared
-#: one, and that is the only surviving caller of a name-to-SLD lookup here.
+#: A back-reflection prompt needs the SLD of the substrate its notes name
+#: (`aure_setup.named_substrates`), the only caller of a name-to-SLD lookup here.
 #: Three constants of nature, deliberately not a materials table -- anything
 #: else states its `rho` in the spec, where a reader can see it.
 _SUBSTRATE_SLD: dict[str, float] = {
@@ -649,10 +649,11 @@ _SUBSTRATE_SLD: dict[str, float] = {
 
 
 def substrate_sld(name: str) -> float | None:
-    """SLD of a known substrate, or None if it is not one of the three.
+    """SLD of a known substrate, or None if it is not one this table holds.
 
     Args:
-        name: Substrate material name, as written in the spec.
+        name: A substrate material, as `aure_setup.SUBSTRATE_ALIASES` or a spec
+            names it.
 
     Returns:
         The SLD in 1e-6 per square angstrom, or None when the name is not a
