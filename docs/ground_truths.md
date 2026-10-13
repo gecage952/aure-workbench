@@ -4168,9 +4168,11 @@ the first fit.
 
 So `nrw aure run --budget quick`, which writes `max_refinements: 1`, never
 refines. `--help`, `docs/first-fit.md` and the README all say "one
-refinement". This is not fixed here: either the budget should write 2, or the
-words should say "one fit, no refinement". `standard` (AuRE's 5) allows up to
-four refinement rounds, and fewer when a round only widens a bound
+refinement". Fixed on 2026-10-13: quick now writes `max_refinements: 2`, the
+one refinement those words promise. `tests/test_aure_cmd.py` checks it against
+AuRE's own initial state and router; the one step between them it cannot run,
+`evaluation_node` adding one per evaluation, is read off the source above. `standard` (AuRE's 5)
+allows up to four refinement rounds, and fewer when a round only widens a bound
 (`bounds_only_refinement` re-fits without asking the model).
 
 ### 2026-10-09: the prompt diagrams, and three things drawing them showed
@@ -4185,15 +4187,92 @@ against the source. Three findings outlive the drawing:
   ignores `xml:space="preserve"` inherited from the root, so the diagrams also
   carry `<style>text { white-space: pre; }</style>`. Keep it when editing them
   by hand, or the alignment goes without any error.
-- **AuRE's evaluator writes a sentence for every slot nobody fills.**
-  `judge_fit` never passes `per_file_results`, `features`,
+- **AuRE's evaluator wrote a sentence for every slot nobody filled.**
+  `judge_fit` never passed `per_file_results`, `features`,
   `residual_analysis`, `fit_history` or `structural_hypotheses`, so every
-  `nrw assess` prompt says "(single-file fit — not applicable)", co-refinement
+  `nrw assess` prompt said "(single-file fit — not applicable)", co-refinement
   or not, and "(no structured residual oscillations detected)" when nothing
-  was analysed. AuRE's boundary-hit text also says "Range has been
+  was analysed. AuRE's boundary-hit text also said "Range has been
   auto-expanded for the next fit", which is true only inside AuRE's own loop.
+  This is why `nrw assess` has its own prompt now (2026-10-13).
 - **The `claude_code` provider's JSON retry reads only the user half.**
   `_wants_json` is `"json" in user_text.lower()`. `nrw isaac export` puts
   "Reply with JSON only" in the system half, so it never gets the retry.
-  `nrw model new --from-notes` gets it only when its skeleton happens to
-  contain `reduction_json`.
+  `nrw model new --from-notes` got it only when its skeleton happened to
+  contain `reduction_json`. Since 2026-10-13 its user half, and `nrw assess`'s,
+  end by asking for the JSON reply, so both get it; isaac export's still does
+  not.
+
+### 2026-10-13: what the prompt diagrams' findings changed
+
+Drawing each command's prompt (the 2026-10-09 entry above) turned up seven
+things the prompts said or did that were not so. All seven are fixed, each
+with a test that fails if it comes back.
+
+- **`nrw assess` writes its own prompt** (`fitting/judge.py`). AuRE's evaluator
+  is written for AuRE's loop, and nothing from this side could stop its
+  template telling the judge things that are untrue of a finished nrw fit.
+  Every section of the new prompt is what the fit's record holds or is left
+  out: the arithmetic findings themselves, chi-squared by model, ranges and 68%
+  intervals, and convergence in its three states. The verdict keeps the four
+  keys `as_markdown` writes. A reply with none of them is no verdict, never a
+  stand-in: AuRE's chi-squared heuristic had been written up under "What a
+  language model made of it". `aure.nodes.evaluation` has left the adapter's
+  contract.
+- **The judge gets the skills its notes call for**, chosen as `nrw model new`
+  chooses them, not every installed skill. On the reference sample the prompt
+  went from about 230 KB to about 94 KB.
+- **The stack-order rule is one text, `authoring.STACK_ORDER`, in both
+  requests.** The endpoint had been told "ordered AMBIENT FIRST, SUBSTRATE LAST"
+  for every sample, which `spec/geometry.py` reads as back reflection, while
+  `--print-prompt` said the last entry is the medium the beam enters through.
+  The `nrw-model-spec` skill, which goes into the same prompt, said "ambient
+  first" and now says what the order means. `--print-prompt` also let the
+  assistant edit only four keys while its step 5 asked for `constraints`.
+- **The back-reflection correction uses the substrate the notes name**
+  (`aure_setup.named_substrate`). It had read the scaffold's placeholder stack,
+  so every sample was corrected as if it sat on silicon. A substrate not named,
+  or with no SLD this repository knows, is said so rather than assumed. The
+  sentence that quoted one sample's numbers into every back-reflection prompt
+  ("on this sample it turns 4.28 into 6.35 ... the notes said only 'THF'") is
+  now general guidance.
+- **Skill triggers match words, not substrings.** "cu" had chosen copper physics
+  for "curve" and "thin" thin-layer degeneracy for "nothing". A trailing `*`
+  marks a stem (`deuterat*`). "film" is no longer a polymer trigger: every
+  sample is a film, and it chose polymer physics for a copper one.
+- **`--budget quick` refines once** (the entry above).
+- **Two smaller ones.** The agent prompt's no-skills fallback named
+  `nrw skills install`, which does not exist; it says `nrw skills sync`, and a
+  test now checks every command the prompt names against the CLI. And `nrw
+  isaac export`'s per-state "No condition found" sat inside the branch for a
+  state that had one, so it could never fire.
+
+The design, security and test reviews of those fixes then changed more. The
+three that matter most outside this list:
+
+- **A verdict is filed as one inert line** (`notes.inert`): no newline, no
+  control character, no comment marker. The generated fence in NOTES.md ends at
+  the first close marker, so a reply carrying one and a newline made what
+  followed count as the scientist's own note -- in `nrw ls`, on the fit page,
+  and in the ISAAC record's notes. Reproduced, then fixed in `read_verdict` and
+  again in `as_markdown`. AuRE's path had the same gap.
+- **The template's comments are not the scientist's words** (`notes.
+  strip_comments`). The scaffolded `sample.md` puts its guidance in comments,
+  with examples ("~30 nm ionomer ... on 20 nm copper ... in D2O"), and
+  matched as notes they chose all four contextual skills for every sample that
+  kept them -- the default. They no longer choose skills or reach a prompt.
+- **A substrate is named or not; never guessed.** `named_substrates` returns
+  every material the notes name, from one alias table it shares with the
+  back-reflection patterns (the two lists had drifted: "through the fused
+  silica" was a substrate to one and no geometry to the other). Two materials
+  -- a sapphire sample "aligned on a Si wafer first" -- get no correction and
+  a sentence saying why.
+
+Also from the reviews: element symbols trigger in their own case (`Cu` is in
+CuO and Cu2O, not in "cues"); an unreadable skill is skipped and named rather
+than aborting `nrw assess`; the negation look-back and `extract_json`'s fence
+search run in linear time (21 s and 19.5 s on crafted 160 KB inputs before);
+the generated model page (`spec/explain.py`) and the scaffold's stack comment
+no longer say "ambient first, substrate last"; and `aure.llm.config` and
+`aure.llm.providers` are in the adapter's contract, since every judge call now
+goes through them. Each of 44 reintroduced bugs fails a test.

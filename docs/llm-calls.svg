@@ -59,7 +59,7 @@
     <rect width="380" height="32" rx="10" fill="#7c3aed"/>
     <rect y="22" width="380" height="10" fill="#7c3aed"/>
     <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw assess &lt;fit&gt;</tspan></text>
-    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>1  ·  AuRE's evaluator</text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>1  ·  system + user</text>
     <text x="14" y="66" font-size="10" fill="#64748b">is the fit physically sensible? written into the</text>
     <text x="14" y="80" font-size="10" fill="#64748b">fit's NOTES.md beside the arithmetic checks</text>
     <text x="14" y="100" font-size="10.5" fill="#334155"><tspan fill="#64748b">how the prompt is built  →  </tspan><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">assess-llm.svg</tspan></text>

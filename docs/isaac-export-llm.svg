@@ -172,8 +172,8 @@
     <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857">final_state.json</text>
     <text x="24" y="98" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">state.states[]: {"name", "extra_description"}</text>
     <text x="14" y="116" font-size="10" fill="#64748b">a state with no condition gets no extra_description and "" in</text>
-    <text x="14" y="130" font-size="10" fill="#64748b">final_state.json; with none at all, the export prints "No</text>
-    <text x="14" y="144" font-size="10" fill="#64748b">experimental conditions found in sample.md or the spec …"</text>
+    <text x="14" y="130" font-size="10" fill="#64748b">final_state.json, and is named: "No condition found for &lt;state&gt; …";</text>
+    <text x="14" y="144" font-size="10" fill="#64748b">with none at all, once: "No experimental conditions found …"</text>
   </g>
   <g transform="translate(640, 774)">
     <rect width="560" height="156" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2" filter="url(#shadow)"/>

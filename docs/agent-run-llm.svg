@@ -133,7 +133,7 @@
     <rect width="400" height="32" rx="10" fill="#d97706"/>
     <rect y="22" width="400" height="10" fill="#d97706"/>
     <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">skills  ·  relevant_skills(notes)</text>
-    <text x="14" y="52" font-size="10" fill="#64748b">the same substring test as nrw model new; only the</text>
+    <text x="14" y="52" font-size="10" fill="#64748b">the same word match as nrw model new; only the</text>
     <text x="14" y="66" font-size="10" fill="#64748b">paths are listed, and the harness reads the files</text>
   </g>
   <g transform="translate(40, 738)">
