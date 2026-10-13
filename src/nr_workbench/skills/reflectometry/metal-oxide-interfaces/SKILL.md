@@ -214,15 +214,18 @@ adding parameters that trade off against each other.
 ## Verification
 
 ```bash
-nrw data features <file>    # critical edge -> topmost SLD; fringes -> thickness
+nrw data features <file>    # critical edge -> an SLD step; fringes -> thickness
 nrw model preview <spec>    # the free-parameter count and bounds
 ```
 
 Three checks:
 
-1. **The critical edge implies the topmost SLD.** For a metal in a solvent, that
-   is the ambient; for a film in air, the film. If it disagrees with the model,
-   the top of the stack is wrong.
+1. **The critical edge measures an SLD step**, from the medium the beam enters
+   through to the one that reflects it totally. For a metal in a solvent,
+   measured through the substrate, the solvent is the step plus the substrate's
+   SLD (2.07 for silicon); for a film in air, the step is the film's own SLD
+   when it is thick enough to reflect, else the substrate's. If it disagrees
+   with the model, the top of the stack is wrong.
 2. **Total thickness from fringe spacing** against the sum of your layers. The
    estimate is often loose (`nrw data features` says when the uncertainty
    exceeds the value), but an order-of-magnitude disagreement is real.

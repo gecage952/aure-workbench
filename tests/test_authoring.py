@@ -427,6 +427,41 @@ def test_the_scaffold_states_the_rule_where_it_writes_the_stack(
     assert "enters through the LAST entry" in text
 
 
+def test_the_assistant_reads_the_critical_edge_as_a_step() -> None:
+    """The endpoint is told what a step is beside the edges it is given. The
+    assistant runs `nrw data features` itself, and its line had said
+    "critical edge -> top-layer SLD": in back reflection, 4.28 for a d8-THF
+    cell at 6.35."""
+    flat = " ".join(
+        agent_instructions(
+            spec_path="m.yaml", notes_path="sample.md", skills=[], sample="S1"
+        ).split()
+    )
+
+    assert "top-layer SLD" not in flat
+    assert "through the substrate, add the substrate's SLD" in flat
+
+
+def test_the_scaffold_reads_the_critical_edge_as_a_step(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its materials comment said to check the edge's SLD against the top
+    layer, which in back reflection is off by the substrate's SLD."""
+    from click.testing import CliRunner
+
+    from nr_workbench.cli import main
+
+    root = sample_with_data(project)
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(main, ["model", "new", "Sample1", "--name", "m"])
+
+    assert result.exit_code == 0, result.output
+    text = (root / "samples" / "Sample1" / "models" / "m.yaml").read_text()
+    assert "check the top layer" not in text
+    assert "a step from the medium the beam enters through" in text
+
+
 def test_the_templates_own_examples_choose_no_skill() -> None:
     """The scaffolded sample.md's guidance holds examples of other samples --
     "~30 nm ionomer ... on 20 nm copper ... in D2O" -- and read as the

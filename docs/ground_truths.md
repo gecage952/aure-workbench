@@ -4284,4 +4284,16 @@ knows a substrate's SLD. So the prompt gives the step and how to read it, the
 patterns enumerate the words they always did, and `aure_adapter.substrate_sld`,
 which only the correction used, is gone.
 
-Each of 45 reintroduced bugs fails a test.
+**Nor does anything else read the edge as the top layer's SLD.** With the
+addition the model's to make, a skill that says otherwise sits in the same
+request. `refl-bl4b-instrument`, sent with every one, said a model at 6.2 is
+wrong against an edge of 4.3, which through silicon is backwards;
+`metal-oxide-interfaces` called the edge "the topmost SLD"; and
+`structural-hypothesis-ranking`, the `--print-prompt` instructions and the
+scaffold's materials comment compared it with the top layer as it stood. Each
+now says the edge measures a step. Claude Haiku, standing in for the endpoint
+on the captured prompt with the old skills still in it, added silicon's 2.07
+and proposed d8-THF at 6.35, so this removes a contradiction rather than a
+failure anyone saw.
+
+Each of 52 reintroduced bugs fails a test.

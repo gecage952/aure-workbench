@@ -981,9 +981,13 @@ Fill in the model spec at {spec_path} for sample {sample}.
    and `paths` should say which.
 
 6. Check your work:
-     nrw data features <one of the data files>   # critical edge -> top-layer SLD
+     nrw data features <one of the data files>   # critical edge -> an SLD step
      nrw model validate {spec_path}
      nrw model preview {spec_path} --build       # initial chi-squared
+
+   The step is the SLD of the medium that reflects the beam totally, less that
+   of the medium the beam enters through: through the substrate, add the
+   substrate's SLD before comparing it with the model.
 
 7. If the notes do not say what a layer is made of, leave a TODO comment rather
    than inventing a material.

@@ -37,7 +37,7 @@
     <rect width="630" height="340" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
     <rect width="630" height="32" rx="10" fill="#334155"/>
     <rect y="22" width="630" height="10" fill="#334155"/>
-    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">system  <tspan fill="#cbd5e1">≈90 KB here, 7 skills</tspan></text>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">system  <tspan fill="#cbd5e1">≈91 KB here, 7 skills</tspan></text>
     <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"You are reviewing a finished neutron reflectometry fit for a</text>
     <text x="14" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> scientist at SNS REF_L (BL-4B)."</text>
     <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"The arithmetic checks on this fit have already run, and what they</text>
@@ -62,7 +62,7 @@
     <rect width="630" height="360" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
     <rect width="630" height="32" rx="10" fill="#334155"/>
     <rect y="22" width="630" height="10" fill="#334155"/>
-    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">user  <tspan fill="#cbd5e1">≈3.8 KB here</tspan></text>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">user  <tspan fill="#cbd5e1">≈3.9 KB here</tspan></text>
     <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== THE SAMPLE: sample.md =====</text>
     <text x="26" y="66" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#db2777">{sample.md}</tspan><tspan fill="#64748b" font-style="italic">   comments stripped; a ===== line of its own is indented</tspan></text>
     <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== THE MODEL: the spec this fit froze =====</text>

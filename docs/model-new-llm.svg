@@ -37,7 +37,7 @@
     <rect width="640" height="618" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
     <rect width="640" height="32" rx="10" fill="#334155"/>
     <rect y="22" width="640" height="10" fill="#334155"/>
-    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">system  <tspan fill="#cbd5e1">≈97 KB here, 7 skills</tspan></text>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">system  <tspan fill="#cbd5e1">≈98 KB here, 7 skills</tspan></text>
     <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"You are helping a neutron reflectometry scientist at SNS REF_L</text>
     <text x="14" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> (BL-4B) turn their notes into an `nrw-model/1` model specification."</text>
     <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"The reference material below is the project's own skills.</text>

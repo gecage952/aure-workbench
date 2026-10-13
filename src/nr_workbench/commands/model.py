@@ -1077,8 +1077,9 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
     ("description", ""),
     (
         "materials",
-        "# SLD in 1e-6/A2. `nrw data features <file>` reports the\n"
-        "# critical edge and the SLD it implies -- check the top layer.",
+        "# SLD in 1e-6/A2. `nrw data features <file>` reports the critical\n"
+        "# edge's implied SLD, a step from the medium the beam enters through:\n"
+        "# through the substrate, add the substrate's SLD before comparing.",
     ),
     (
         "stack",
