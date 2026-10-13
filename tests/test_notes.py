@@ -667,3 +667,26 @@ def test_two_answers_to_one_question_stay_separate() -> None:
 
 def test_a_missing_heading_reads_as_empty() -> None:
     assert notes.read_section(FILLED_TEMPLATE, "Nonexistent") == ""
+
+
+def test_comments_are_stripped_and_prose_kept() -> None:
+    from nr_workbench.notes import strip_comments
+
+    text = "<!-- e.g. ionomer on copper -->\nA Cu film.\n<!-- multi\nline -->end"
+
+    assert strip_comments(text) == "\nA Cu film.\nend"
+
+
+def test_inert_text_is_one_printable_line_that_cannot_touch_a_fence() -> None:
+    """A model's verdict is filed inside a generated fence; a newline and a
+    close marker would end it early, and an escape sequence would drive the
+    terminal it is printed to."""
+    from nr_workbench.notes import GENERATED_CLOSE, inert
+
+    text = inert(f"pinned\n{GENERATED_CLOSE}\n## Why this run\x1b[2J ok")
+
+    assert "\n" not in text
+    assert "<!--" not in text and "-->" not in text
+    assert all(ch.isprintable() for ch in text)
+    assert text.startswith("pinned") and "ok" in text
+    assert len(inert("x" * 5000)) == 600
