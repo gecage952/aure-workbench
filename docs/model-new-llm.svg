@@ -81,7 +81,7 @@
     <rect width="640" height="384" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
     <rect width="640" height="32" rx="10" fill="#334155"/>
     <rect y="22" width="640" height="10" fill="#334155"/>
-    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">user  <tspan fill="#cbd5e1">≈3.8 KB here</tspan></text>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">user  <tspan fill="#cbd5e1">≈3.7 KB here</tspan></text>
     <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== THE SCIENTIST'S NOTES (sample.md) =====</text>
     <text x="26" y="66" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#db2777">{sample.md}</tspan><tspan fill="#64748b" font-style="italic">   without its &lt;!-- guidance --&gt;, whose examples are not this sample</tspan></text>
     <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== WHAT IS ON DISK =====</text>
@@ -93,13 +93,13 @@
     <text x="26" y="172" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#7c3aed">- state run218386 (run 218386): condition: OCV, before the EIS …</tspan></text>
     <text x="26" y="186" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#7c3aed">- every state: Mounted once and left in the cell …</tspan></text>
     <text x="14" y="204" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== MEASURED FROM THE DATA =====</text>
-    <text x="26" y="218" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">run218386: critical edge Qc=0.01467, implying an SLD of 4.28</tspan></text>
-    <text x="26" y="232" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">against vacuum … through the silicon, so the medium above it is</tspan></text>
-    <text x="26" y="246" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">at 6.35 (4.28 plus 2.07 for the silicon)</tspan><tspan fill="#64748b" font-style="italic">   the substrate the notes name</tspan></text>
-    <text x="26" y="260" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d">"In back reflection the corrected value … is the SLD of the medium</tspan></text>
-    <text x="26" y="274" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d"> above the substrate. Where it and the notes disagree … the edge is</tspan></text>
-    <text x="26" y="288" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d"> the measurement."</tspan></text>
-    <text x="26" y="302" font-size="10.5" fill="#334155"><tspan fill="#64748b" font-style="italic">only when a correction was made; no substrate, two, or one not known: said so</tspan></text>
+    <text x="26" y="218" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">run218386: critical edge Qc=0.01467, an SLD step of 4.28</tspan><tspan fill="#64748b" font-style="italic">   (confidence high)</tspan></text>
+    <text x="26" y="232" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d">"Each step is the SLD of the medium that reflects the beam totally,</tspan></text>
+    <text x="26" y="246" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d"> less that of the medium the beam enters through: from air, it is</tspan></text>
+    <text x="26" y="260" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d"> the reflecting medium's own SLD."</tspan></text>
+    <text x="26" y="274" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d">"These were measured through the substrate: add the SLD of the</tspan></text>
+    <text x="26" y="288" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d"> substrate the notes name to each step … the edge is the measurement."</tspan></text>
+    <text x="26" y="302" font-size="10.5" fill="#334155"><tspan fill="#64748b" font-style="italic">in back reflection only; the model adds it, here 4.28 + 2.07 = 6.35, d8-THF</tspan></text>
     <text x="26" y="316" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">tNR assessment [r218389]: changing; … free a thickness</tspan></text>
     <text x="26" y="330" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#94a3b8" font-style="italic">or: "No tNR assessment has been run. …"</tspan><tspan fill="#64748b" font-style="italic">   a series, and no assessments/ yet</tspan></text>
     <text x="14" y="350" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"Reply with the JSON object the instructions describe."</text>
@@ -166,10 +166,10 @@
     <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">measured  ·  _measured_facts()</text>
     <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">extract_features(Q, R, dR)</text>
     <text x="14" y="66" font-size="10" fill="#64748b">AuRE's feature tools, no model: each state's first</text>
-    <text x="14" y="80" font-size="10" fill="#64748b">segment → critical edge → SLD against vacuum,</text>
-    <text x="14" y="94" font-size="10" fill="#64748b">+ in back reflection, the SLD of the one substrate the notes</text>
-    <text x="14" y="108" font-size="10" fill="#64748b">name (named_substrates); none, two, or one with no known SLD:</text>
-    <text x="14" y="122" font-size="10" fill="#64748b">said so, and no correction</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">segment → critical edge → the SLD step it measures,</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">and how to read a step; in back reflection (the probe</text>
+    <text x="14" y="108" font-size="10" fill="#64748b">or the notes say so), to add the substrate's SLD. The</text>
+    <text x="14" y="122" font-size="10" fill="#64748b">model adds it, from the notes: no substrate table here</text>
     <text x="14" y="140" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">assessments/*/*assessment.json</text>
     <text x="14" y="154" font-size="10" fill="#64748b">the tNR verdict, a(t) trajectory, template</text>
   </g>

@@ -629,39 +629,6 @@ H2O_SLD = -0.56
 D2O_SLD = 6.37
 
 
-#: The substrates this repository actually measures through, and nothing else.
-#: A back-reflection prompt needs the SLD of the substrate its notes name
-#: (`aure_setup.named_substrates`), the only caller of a name-to-SLD lookup here.
-#: Three constants of nature, deliberately not a materials table -- anything
-#: else states its `rho` in the spec, where a reader can see it.
-_SUBSTRATE_SLD: dict[str, float] = {
-    "si": 2.07,
-    "silicon": 2.07,
-    "sio2": 3.47,
-    "quartz": 3.47,
-    "fused silica": 3.47,
-    "silica": 3.47,
-    "al2o3": 5.67,
-    "sapphire": 5.67,
-    "alumina": 5.67,
-}
-
-
-def substrate_sld(name: str) -> float | None:
-    """SLD of a known substrate, or None if it is not one this table holds.
-
-    Args:
-        name: A substrate material, as `aure_setup.SUBSTRATE_ALIASES` or a spec
-            names it.
-
-    Returns:
-        The SLD in 1e-6 per square angstrom, or None when the name is not a
-        substrate this repository knows. None is the signal to leave the
-        prompt without one rather than to guess.
-    """
-    return _SUBSTRATE_SLD.get(name.strip().lower())
-
-
 def contrast_match_ratio(
     target_sld: float, *, low: float = H2O_SLD, high: float = D2O_SLD
 ) -> float:

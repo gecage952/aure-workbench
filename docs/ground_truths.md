@@ -944,10 +944,12 @@ turned one edit into eight validate-fix cycles.
 
 ### 2026-08-06: the critical edge in back reflection needs the substrate added
 
-AuRE reports a critical edge as the SLD it would imply for a beam arriving from
-vacuum. In back reflection the beam arrives through the substrate, so the
-contrast is `rho_medium - rho_substrate` and the medium above it sits at
-`estimate + rho_substrate`.
+A critical edge measures a step in SLD: `Qc = 4 sqrt(pi * step)`, where the
+step is the SLD of the medium that reflects the beam totally less that of the
+medium the beam enters through. AuRE's `estimated_SLD` is that step. From air
+it is the reflecting medium's own SLD. In back reflection the beam enters
+through the substrate, so the medium on the far side of the film sits at
+`step + rho_substrate`.
 
 On expt11 that is the difference between a nonsense answer and the right one:
 
@@ -962,7 +964,9 @@ Uncorrected, this was actively harmful: the prompt reported "implies a topmost
 SLD near 4.28" and a proposal duly set the solvent range to [4.0, 4.7], which
 is neither isotope. `_back_reflection_substrate` reads the geometry from the
 notes -- it runs while building the prompt, before anything has been proposed
--- and reports both numbers.
+-- and reports both numbers. *(Since 2026-10-13 the prompt gives the step and
+how to read it, and the model, which reads the notes, adds the substrate's
+SLD: see that day's entry.)*
 
 ### 2026-08-06: repairs the model will not reliably do itself
 
@@ -4229,13 +4233,14 @@ with a test that fails if it comes back.
   The `nrw-model-spec` skill, which goes into the same prompt, said "ambient
   first" and now says what the order means. `--print-prompt` also let the
   assistant edit only four keys while its step 5 asked for `constraints`.
-- **The back-reflection correction uses the substrate the notes name**
-  (`aure_setup.named_substrate`). It had read the scaffold's placeholder stack,
-  so every sample was corrected as if it sat on silicon. A substrate not named,
-  or with no SLD this repository knows, is said so rather than assumed. The
-  sentence that quoted one sample's numbers into every back-reflection prompt
-  ("on this sample it turns 4.28 into 6.35 ... the notes said only 'THF'") is
-  now general guidance.
+- **The critical edge is given as the step it measures, and the substrate is
+  the model's to add.** The back-reflection correction had read the scaffold's
+  placeholder stack, so every sample was corrected as if it sat on silicon.
+  The prompt now gives each edge as an SLD step, says what a step is, and in
+  back reflection asks the model to add the SLD of the substrate the notes
+  name. The sentence that quoted one sample's numbers into every
+  back-reflection prompt ("on this sample it turns 4.28 into 6.35 ... the
+  notes said only 'THF'") is gone.
 - **Skill triggers match words, not substrings.** "cu" had chosen copper physics
   for "curve" and "thin" thin-layer degeneracy for "nothing". A trailing `*`
   marks a stem (`deuterat*`). "film" is no longer a polymer trigger: every
@@ -4248,7 +4253,7 @@ with a test that fails if it comes back.
   state that had one, so it could never fire.
 
 The design, security and test reviews of those fixes then changed more. The
-three that matter most outside this list:
+two that matter most outside this list:
 
 - **A verdict is filed as one inert line** (`notes.inert`): no newline, no
   control character, no comment marker. The generated fence in NOTES.md ends at
@@ -4261,12 +4266,6 @@ three that matter most outside this list:
   with examples ("~30 nm ionomer ... on 20 nm copper ... in D2O"), and
   matched as notes they chose all four contextual skills for every sample that
   kept them -- the default. They no longer choose skills or reach a prompt.
-- **A substrate is named or not; never guessed.** `named_substrates` returns
-  every material the notes name, from one alias table it shares with the
-  back-reflection patterns (the two lists had drifted: "through the fused
-  silica" was a substrate to one and no geometry to the other). Two materials
-  -- a sapphire sample "aligned on a Si wafer first" -- get no correction and
-  a sentence saying why.
 
 Also from the reviews: element symbols trigger in their own case (`Cu` is in
 CuO and Cu2O, not in "cues"); an unreadable skill is skipped and named rather
@@ -4275,4 +4274,14 @@ search run in linear time (21 s and 19.5 s on crafted 160 KB inputs before);
 the generated model page (`spec/explain.py`) and the scaffold's stack comment
 no longer say "ambient first, substrate last"; and `aure.llm.config` and
 `aure.llm.providers` are in the adapter's contract, since every judge call now
-goes through them. Each of 44 reintroduced bugs fails a test.
+goes through them.
+
+**The substrate is not named in code.** The first fix had `named_substrates`
+read it from the notes, through a table of substrate names shared with the
+back-reflection patterns, and corrected the edge itself. That was withdrawn on
+review: a table of names is never complete, and the model reads the notes and
+knows a substrate's SLD. So the prompt gives the step and how to read it, the
+patterns enumerate the words they always did, and `aure_adapter.substrate_sld`,
+which only the correction used, is gone.
+
+Each of 45 reintroduced bugs fails a test.

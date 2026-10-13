@@ -363,7 +363,7 @@ def test_the_prompt_includes_measured_facts_when_given(project: Path) -> None:
         skeleton=SKELETON,
         notes="",
         skills=find_skills(project),
-        facts="ocv1: critical edge Qc=0.0147 implies a topmost SLD near 4.28",
+        facts="ocv1: critical edge Qc=0.01467, an SLD step of 4.28",
     )
 
     assert "critical edge" in user
@@ -908,7 +908,7 @@ def test_the_prompt_lists_the_constraint_forms_and_how_to_choose(
 
 
 # --------------------------------------------------------------------------
-# What the data says, corrected for the geometry
+# What the data says, and how the geometry reads it
 # --------------------------------------------------------------------------
 
 REFERENCE = Path(__file__).parent / "data" / "reference" / "steady"
@@ -930,58 +930,72 @@ def _facts(tmp_path: Path, notes: str) -> str:
     return _measured_facts(ProjectLayout(tmp_path), document, notes)
 
 
-def _against_vacuum(facts: str) -> float:
-    found = re.search(r"implying an SLD of (-?[\d.]+) against vacuum", facts)
+def _step(facts: str) -> float:
+    found = re.search(r"an SLD step of (-?[\d.]+)", facts)
     assert found, facts
     return float(found.group(1))
 
 
-def test_the_reference_edge_is_corrected_to_d8_thf(tmp_path: Path) -> None:
-    """The number the correction exists for: 4.28 against vacuum is no solvent;
-    plus silicon's 2.07 it is 6.35, d8-THF exactly. Once this was quoted, with
-    "the notes said only 'THF'", into every back-reflection prompt."""
+ADD_THE_SUBSTRATE = "add the SLD of the substrate the notes name"
+
+
+def test_the_reference_edge_is_a_step_the_substrate_is_added_to(
+    tmp_path: Path,
+) -> None:
+    """The number the reading exists for: a step of 4.28 is no solvent; plus
+    silicon's 2.07 it is 6.35, d8-THF exactly. Offered as "a topmost SLD near
+    4.28", it had a proposal set the solvent's range to [4.0, 4.7]."""
     facts = _facts(tmp_path, "Cu on Ti on Si, in d8-THF, measured through the silicon.")
 
-    assert _against_vacuum(facts) == pytest.approx(4.28, abs=0.005)
-    assert "the medium above it is at 6.35" in facts
+    assert _step(facts) == pytest.approx(4.28, abs=0.005)
+    assert ADD_THE_SUBSTRATE in facts
     assert "the edge is the measurement" in facts
-    assert "the notes said only" not in facts
 
 
-def test_the_edge_is_corrected_by_the_substrate_the_notes_name(tmp_path: Path) -> None:
-    facts = _facts(tmp_path, "Cu on Ti on sapphire, measured through the sapphire.")
-
-    assert f"the medium above it is at {_against_vacuum(facts) + 5.67:.2f}" in facts
-
-
-@pytest.mark.parametrize(
-    ("notes", "said"),
-    [
-        (
+def test_the_facts_are_the_same_whatever_the_substrate(tmp_path: Path) -> None:
+    """The substrate is the model's to name, from the notes: nothing here adds
+    one. Reading the scaffold's placeholder silicon corrected every sample as
+    silicon, and a table of substrate names, tried next, is never complete."""
+    facts = {
+        _facts(tmp_path, notes)
+        for notes in (
+            "Cu on Ti on Si, measured through the silicon.",
+            "Cu on Ti on sapphire, measured through the sapphire.",
             "Cu on Ti, measured through the substrate.",
-            "the notes do not say what the substrate is",
-        ),
-        (
             "Cu on sapphire, measured through the substrate. "
             "Aligned on a Si wafer first.",
-            "the notes name sapphire and silicon, so this does not choose",
-        ),
-    ],
-)
-def test_no_substrate_to_correct_by_is_said_and_given_no_guidance(
-    tmp_path: Path, notes: str, said: str
-) -> None:
-    facts = _facts(tmp_path, notes)
+        )
+    }
 
-    assert said in facts
-    assert "the corrected value" not in facts
+    assert len(facts) == 1, facts
+    assert ADD_THE_SUBSTRATE in facts.pop()
 
 
-def test_from_notes_sends_the_corrected_edge(
+def test_a_film_in_air_is_told_only_what_a_step_is(tmp_path: Path) -> None:
+    facts = _facts(tmp_path, "30 nm polystyrene on silicon, in air.")
+
+    assert "from air, it is the reflecting medium's own SLD" in facts
+    assert ADD_THE_SUBSTRATE not in facts
+
+
+def test_no_edge_is_given_no_reading(tmp_path: Path) -> None:
+    """How to read a step is said only where there is a step to read."""
+    from nr_workbench.commands.model import _measured_facts
+    from nr_workbench.project.layout import ProjectLayout
+
+    document = {
+        "states": [{"name": "ocv1", "run": 218386, "data_dir": "data"}],
+        "probe": {"back_reflection": True},
+    }
+
+    assert _measured_facts(ProjectLayout(tmp_path), document, "") == ""
+
+
+def test_from_notes_sends_the_edge_and_how_to_read_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Through the command, on the reference data: the correction reaches the
-    prompt only if the notes reach the facts."""
+    """Through the command, on the reference data: the reading for back
+    reflection reaches the prompt only if the notes reach the facts."""
     pytest.importorskip("aure")
     from click.testing import CliRunner
 
@@ -1021,4 +1035,5 @@ def test_from_notes_sends_the_corrected_edge(
 
     assert result.exit_code == 0, result.output
     (user,) = asked
-    assert "the medium above it is at 6.35" in user
+    assert "an SLD step of 4.28" in user
+    assert ADD_THE_SUBSTRATE in user
