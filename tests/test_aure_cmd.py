@@ -625,7 +625,39 @@ def test_run_writes_the_budget_into_the_setup(sample: Path, fake_aure) -> None:
         (sample / "samples/Sample1/aure/Sample1-218386/setup.yaml").read_text()
     )
     assert document["fit_method"] == "de"
-    assert document["max_refinements"] == 1
+    assert document["max_refinements"] == 2
+
+
+def test_the_quick_budget_is_one_refinement_as_aure_counts_them() -> None:
+    """`quick` promises one refinement, and AuRE counts `max_refinements` in
+    evaluations, the first fit's included. Writing 1 ended every quick run at
+    its first evaluation, so nothing was ever refined.
+
+    Asked of AuRE's own initial state and router. What this cannot see is the
+    step between them, `evaluation_node` adding one per evaluation, and the CLI
+    handing the setup's key over as `max_iterations`; both are read off AuRE's
+    source in docs/ground_truths.md, 2026-10-09.
+    """
+    pytest.importorskip("aure")
+    from aure.nodes.routing import route_after_evaluation
+    from aure.state import create_initial_state
+
+    from nr_workbench.commands.aure_cmd import BUDGETS, QUICK_REFINEMENTS
+
+    state = dict(
+        create_initial_state(
+            "r.txt", "", max_iterations=BUDGETS["quick"]["max_refinements"]
+        )
+    )
+    state["fit_results"] = [{"issues": ["the fit is poor"]}]
+
+    refinements = 0
+    for _evaluation in range(10):
+        state["iteration"] = state.get("iteration", 0) + 1  # as evaluation_node does
+        if route_after_evaluation(state) == "complete":
+            break
+        refinements += 1
+    assert refinements == QUICK_REFINEMENTS == 1
 
 
 def test_applying_the_budget_keeps_the_setup_loadable(sample: Path, fake_aure) -> None:

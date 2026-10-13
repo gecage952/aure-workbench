@@ -41,9 +41,18 @@ MODE_ENUMERATION_ON = "1"
 #: report a confident, wrong answer; differential evolution at least looks
 #: around. One refinement, because the point of a first fit is to find out
 #: whether the description was right, not to polish it.
+QUICK_REFINEMENTS = 1
+
+#: The run controls each budget writes into the setup. AuRE counts
+#: `max_refinements` in evaluations, the first fit's included, so it is one
+#: more than the refinements wanted (docs/ground_truths.md, 2026-10-09).
 BUDGETS: dict[str, dict[str, Any]] = {
-    "quick": {"fit_method": "de", "fit_steps": 300, "max_refinements": 1},
-    "standard": {},  # AuRE's own defaults: dream, 1000/1000, 5 refinements
+    "quick": {
+        "fit_method": "de",
+        "fit_steps": 300,
+        "max_refinements": QUICK_REFINEMENTS + 1,
+    },
+    "standard": {},  # AuRE's own defaults
 }
 
 #: Written beside the setup, naming the environment-only knobs a run used.
