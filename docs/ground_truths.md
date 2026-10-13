@@ -4154,3 +4154,46 @@ AuRE had pinned SiO2's SLD with equal bounds (`sld_min` = `sld_max` = 3.47),
 and the import declared it free in that empty range, which the spec refuses.
 A declared pair is now read as AuRE's builder reads it: an inverted one is
 swapped, and an equal one holds the value the stack has, with no parameter.
+
+### 2026-10-09: AuRE's `max_refinements` counts evaluations, so `--budget quick` refines nothing
+
+AuRE passes a setup's `max_refinements` to its runner as `max_iterations`
+(`aure/cli.py`, `run_analysis(max_iterations=max_refinements)`). The iteration
+counter advances only in `evaluation_node`, and `route_after_evaluation` ends
+the run once `iteration >= max_iterations` (`aure/nodes/routing.py`). The
+first evaluation makes the counter 1, so `max_refinements: 1` means one fit,
+one evaluation and no `_refine_model` call at all. AuRE's own flag help calls
+it "Maximum number of refinement iterations"; the iterations it counts include
+the first fit.
+
+So `nrw aure run --budget quick`, which writes `max_refinements: 1`, never
+refines. `--help`, `docs/first-fit.md` and the README all say "one
+refinement". This is not fixed here: either the budget should write 2, or the
+words should say "one fit, no refinement". `standard` (AuRE's 5) allows up to
+four refinement rounds, and fewer when a round only widens a bound
+(`bounds_only_refinement` re-fits without asking the model).
+
+### 2026-10-09: the prompt diagrams, and three things drawing them showed
+
+`docs/llm-calls.svg` and the five `docs/*-llm.svg` show how each command's
+prompt is put together. They were drawn from prompts captured on the real
+code paths with only the network call stubbed, then checked line by line
+against the source. Three findings outlive the drawing:
+
+- **SVG collapses runs of spaces.** Every aligned column in a prompt box
+  (`"description"   one or two sentences`) rendered as one space. Chrome
+  ignores `xml:space="preserve"` inherited from the root, so the diagrams also
+  carry `<style>text { white-space: pre; }</style>`. Keep it when editing them
+  by hand, or the alignment goes without any error.
+- **AuRE's evaluator writes a sentence for every slot nobody fills.**
+  `judge_fit` never passes `per_file_results`, `features`,
+  `residual_analysis`, `fit_history` or `structural_hypotheses`, so every
+  `nrw assess` prompt says "(single-file fit — not applicable)", co-refinement
+  or not, and "(no structured residual oscillations detected)" when nothing
+  was analysed. AuRE's boundary-hit text also says "Range has been
+  auto-expanded for the next fit", which is true only inside AuRE's own loop.
+- **The `claude_code` provider's JSON retry reads only the user half.**
+  `_wants_json` is `"json" in user_text.lower()`. `nrw isaac export` puts
+  "Reply with JSON only" in the system half, so it never gets the retry.
+  `nrw model new --from-notes` gets it only when its skeleton happens to
+  contain `reduction_json`.

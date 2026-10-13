@@ -257,6 +257,15 @@ To use Claude through the Claude Code CLI, which needs no key, choose it under
 `~/.aure`, and **Check** makes one call to prove it answers. See
 [docs/experiment.md](docs/experiment.md#language-model).
 
+**What is sent, and to which model.** Four commands ask the endpoint for an
+answer — `nrw model new --from-notes`, `nrw assess`, `nrw isaac export` and
+`nrw aure run` — and `nrw agent run` drives a harness instead; while a harness
+is driving, those four stand down. [docs/llm-calls.svg](docs/llm-calls.svg)
+maps them, and one diagram per command shows how its prompt is assembled:
+[model new](docs/model-new-llm.svg), [assess](docs/assess-llm.svg),
+[isaac export](docs/isaac-export-llm.svg), [aure run](docs/aure-run-llm.svg)
+and [agent run](docs/agent-run-llm.svg).
+
 ## Provenance
 
 Run any refl1d script -- including one you wrote by hand years ago -- and it

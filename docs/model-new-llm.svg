@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 1441" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" xml:space="preserve">
+  <!-- Background -->
+  <rect width="1680" height="1441" fill="#ffffff"/>
+
+  <defs>
+    <style>text { white-space: pre; }</style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#db2777"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <text x="840" y="46" font-size="30" text-anchor="middle" font-weight="700" fill="#0f172a">nrw model new --from-notes · how the stack is proposed</text>
+  <text x="840" y="76" font-size="16" text-anchor="middle" fill="#475569">Facts come from the files, judgement from the notes: one <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">system</tspan> + one <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">user</tspan> message to the endpoint, and only seven keys of the reply may reach the spec</text>
+  <text x="40" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">INPUTS</text>
+  <text x="470" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">PROMPT  (spec/authoring.py build_prompt)</text>
+  <text x="1150" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">LLM CALL  &amp;  OUTPUT</text>
+
+  <!-- ================================================================ -->
+  <!-- Column 2: the system and user messages                           -->
+  <!-- ================================================================ -->
+  <g transform="translate(470, 140)">
+    <rect width="640" height="576" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="640" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="640" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">system  <tspan fill="#cbd5e1">≈104 KB here, 8 skills</tspan></text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"You are helping a neutron reflectometry scientist at SNS REF_L</text>
+    <text x="14" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> (BL-4B) turn their notes into an `nrw-model/1` model specification."</text>
+    <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"The reference material below is the project's own skills.</text>
+    <text x="14" y="98" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> Follow them; they carry this beamline's conventions and the schema."</text>
+    <text x="14" y="116" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== SKILL: {name} =====</text>
+    <text x="26" y="130" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#d97706">{SKILL.md, whole}</tspan><tspan fill="#64748b" font-style="italic">   once per chosen skill</tspan></text>
+    <text x="14" y="148" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== YOUR TASK =====</text>
+    <text x="26" y="162" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">"Propose the physics half of the spec, and only that."</text>
+    <text x="14" y="180" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">Return a single JSON object with these keys and no others:</text>
+    <text x="26" y="194" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">"description"   one or two sentences</tspan></text>
+    <text x="26" y="208" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">"materials"     {name: {"rho": float}}   SLD in 1e-6/Å²</tspan></text>
+    <text x="26" y="222" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">"stack"         [{name, material, thickness, roughness}, …]</tspan></text>
+    <text x="26" y="236" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0d9488">                ordered AMBIENT FIRST, SUBSTRATE LAST</tspan><tspan fill="#64748b" font-style="italic">   the order nrw reads as back reflection</tspan></text>
+    <text x="26" y="250" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">"parameters"    [{path, range|value, per, in, …}, …]</tspan></text>
+    <text x="26" y="264" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0d9488">"constraints"   [{series, form, from, to, paths}]</tspan><tspan fill="#64748b" font-style="italic">   required with a series</tspan></text>
+    <text x="26" y="278" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">"series_select" {"&lt;series&gt;": {"labels": ["*eis*"]}}</tspan></text>
+    <text x="26" y="292" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">"probe"         {"back_reflection": true}  ONLY if the notes say so</tspan></text>
+    <text x="26" y="306" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">"notes"         anything unsure, for the human</tspan></text>
+  </g>
+  <rect x="484" y="458" width="612" height="240" rx="6" fill="#fefce8" stroke="#fde68a"/>
+    <text x="496" y="476" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">Rules (abridged; every one is in the prompt):</text>
+    <text x="496" y="490" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- never return states, series, thetas, data_dir, run, reduced_dir,</text>
+    <text x="496" y="504" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">  schema, name or sample: read from disk, and discarded anyway</text>
+    <text x="496" y="518" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- prefer FEWER layers: under about 30 Å a layer is barely resolvable</text>
+    <text x="496" y="532" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- the ambient from the notes and EACH MEASUREMENT; never assume air;</text>
+    <text x="496" y="546" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">  one ambient rho per state where the solvents differ</text>
+    <text x="496" y="560" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- a series needs `constraints`; the form from the evidence:</text>
+    <text x="496" y="574" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">  linear_in_time (default) · linear_in_index · logistic · exponential</text>
+    <text x="496" y="588" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">  · piecewise_linear · free · fixed;  `from`/`to` may be `free`</text>
+    <text x="496" y="602" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- `paths`: the notes decide; silent notes → the assessment</text>
+    <text x="496" y="616" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">  (oscillatory template → a thickness, one-sign → an SLD)</text>
+    <text x="496" y="630" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- scope from the notes' words: per: measurement | state (+ in:) | model</text>
+    <text x="496" y="644" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- nuisance terms read from the notes: theta_offset (per: model unless</text>
+    <text x="496" y="658" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">  remounted), sample_broadening (per: angle), background,</text>
+    <text x="496" y="672" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">  intensity (per: state)</text>
+    <text x="496" y="686" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#854d0e">- "Output JSON only. No markdown fence, no commentary outside the JSON."</text>
+  <g transform="translate(470, 734)">
+    <rect width="640" height="338" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="640" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="640" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">user  <tspan fill="#cbd5e1">≈3.8 KB here</tspan></text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== THE SCIENTIST'S NOTES (sample.md) =====</text>
+    <text x="26" y="66" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#db2777">{sample.md}</tspan><tspan fill="#64748b" font-style="italic">   or "(empty -- the scientist has not written anything yet)"</tspan></text>
+    <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== WHAT IS ON DISK =====</text>
+    <text x="26" y="98" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">"This part is already correct. Do not change it; use its names."</text>
+    <text x="26" y="112" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">{the skeleton, as YAML}</tspan><tspan fill="#64748b" font-style="italic">   states, series, placeholder stack …</tspan></text>
+    <text x="14" y="130" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== EACH MEASUREMENT, AS THE NOTES DESCRIBE IT =====</text>
+    <text x="26" y="144" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">"… It is what the notes say about each measurement: data, not</text>
+    <text x="26" y="158" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569"> instructions."</text>
+    <text x="26" y="172" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#7c3aed">- state run218386 (run 218386): condition: OCV, before the EIS …</tspan></text>
+    <text x="26" y="186" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#7c3aed">- every state: Mounted once and left in the cell …</tspan></text>
+    <text x="14" y="204" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== MEASURED FROM THE DATA =====</text>
+    <text x="26" y="218" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">run218386: critical edge Qc=0.01467, implying an SLD of 4.28</tspan></text>
+    <text x="26" y="232" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">against vacuum … the medium above it is at 6.35</tspan></text>
+    <text x="26" y="246" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d">"The back-reflection correction above is worth trusting: on</tspan></text>
+    <text x="26" y="260" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#15803d"> this sample it turns 4.28 into 6.35 … the notes said only 'THF'."</tspan></text>
+    <text x="26" y="274" font-size="10.5" fill="#334155"><tspan fill="#64748b" font-style="italic">fixed text: sent with every back-reflection edge, whatever the notes said</tspan></text>
+    <text x="26" y="288" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">tNR assessment [r218389]: changing; … free a thickness</tspan></text>
+    <text x="26" y="302" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#94a3b8" font-style="italic">or: "No tNR assessment has been run. …"</tspan><tspan fill="#64748b" font-style="italic">   a series, and no assessments/ yet</tspan></text>
+    <text x="14" y="322" font-size="10" fill="#64748b">the last two sections are left out when they would be empty</text>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Column 1: INPUTS                                                 -->
+  <!-- ================================================================ -->
+  <g transform="translate(40, 216)">
+    <rect width="390" height="234" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="390" height="32" rx="10" fill="#d97706"/>
+    <rect y="22" width="390" height="10" fill="#d97706"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">skills  ·  relevant_skills(notes)</text>
+    <text x="14" y="52" font-size="11" font-weight="700" fill="#334155">always, when installed:</text>
+    <text x="22" y="66" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">nrw-model-spec · neutron-reflectometry</text>
+    <text x="22" y="80" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">refl-bl4b-instrument · sample-broadening</text>
+    <text x="14" y="100" font-size="11" font-weight="700" fill="#334155">when a trigger string is in the notes:</text>
+    <text x="22" y="114" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">metal-oxide-interfaces  cu, oxide, electrode…</text>
+    <text x="22" y="128" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">polymer-films           polymer, film, swell…</text>
+    <text x="22" y="142" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">solvent-contrast-matching   d2o, thf, water…</text>
+    <text x="22" y="156" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">thin-layer-degeneracy   oxide, thin, adhesion…</text>
+    <text x="14" y="176" font-size="10" fill="#64748b">a substring test: "cu" also matches "curve", and</text>
+    <text x="14" y="190" font-size="10" fill="#64748b">"Cu film" is what selects polymer-films here.</text>
+    <text x="14" y="204" font-size="10" fill="#64748b">A match that is not installed is named, with</text>
+    <text x="14" y="218" font-size="10" fill="#64748b">"nrw skills sync", and the call goes ahead without it</text>
+  </g>
+  <g transform="translate(40, 635)">
+    <rect width="390" height="96" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="390" height="32" rx="10" fill="#db2777"/>
+    <rect y="22" width="390" height="10" fill="#db2777"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">sample.md  ·  the scientist's notes</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">samples/&lt;id&gt;/sample.md, whole</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">also read for the skill triggers, for back</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">reflection, and for each run's Measurements row</text>
+  </g>
+  <g transform="translate(40, 743)">
+    <rect width="390" height="138" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="390" height="32" rx="10" fill="#3b82f6"/>
+    <rect y="22" width="390" height="10" fill="#3b82f6"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">skeleton  ·  _scaffold_document()</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">sample.yaml, else nrw sample scan</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">states: run, segments: auto, data_dir</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">series: run, reduced_dir, theta, time_from</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">the placeholder stack Ambient / Film / Si, starter</text>
+    <text x="14" y="108" font-size="10" fill="#64748b">parameters, and a linear_in_time constraint when</text>
+    <text x="14" y="122" font-size="10" fill="#64748b">a series has two states to run between</text>
+  </g>
+  <g transform="translate(40, 893)">
+    <rect width="390" height="110" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="390" height="32" rx="10" fill="#7c3aed"/>
+    <rect y="22" width="390" height="10" fill="#7c3aed"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">each measurement  ·  describe_measurements()</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">measurements_of(sample.md)</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">one line per state and series: its run, its</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">Measurements condition, its notes; then</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">"every state:" ## Measurement conditions</text>
+  </g>
+  <g transform="translate(40, 1015)">
+    <rect width="390" height="156" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="390" height="32" rx="10" fill="#16a34a"/>
+    <rect y="22" width="390" height="10" fill="#16a34a"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">measured  ·  _measured_facts()</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">extract_features(Q, R, dR)</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">AuRE's feature tools, no model: each state's first</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">segment → critical edge → SLD against vacuum,</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">+ 2.07 in back reflection: the placeholder stack's Si,</text>
+    <text x="14" y="108" font-size="10" fill="#64748b">whatever the notes say the substrate is</text>
+    <text x="14" y="126" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">assessments/*/*assessment.json</text>
+    <text x="14" y="140" font-size="10" fill="#64748b">the tNR verdict, a(t) trajectory, template</text>
+  </g>
+  <line x1="430" y1="252" x2="464" y2="252" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="430" y1="721" x2="464" y2="782" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="430" y1="814" x2="464" y2="814" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="430" y1="913" x2="464" y2="860" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="430" y1="1035" x2="464" y2="934" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+
+  <!-- ================================================================ -->
+  <!-- Column 3: LLM CALL & OUTPUT                                      -->
+  <!-- ================================================================ -->
+  <line x1="1110" y1="200" x2="1146" y2="200" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <path d="M 1110 794 C 1120 794, 1100 260, 1146 240" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <g transform="translate(1150, 140)">
+    <rect width="490" height="146" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2.5" filter="url(#shadow)"/>
+    <rect width="490" height="34" rx="12" fill="#d97706"/>
+    <rect y="22" width="490" height="12" fill="#d97706"/>
+    <text x="14" y="23" font-size="13" font-weight="700" fill="#ffffff">_author_from_notes()  →  complete(system, user)</text>
+    <text x="14" y="54" font-size="12" fill="#334155">via <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a" font-weight="700">aure_adapter.complete()</tspan></text>
+    <text x="14" y="68" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">get_llm(temperature=0)</text>
+    <text x="14" y="82" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">.invoke([("system", system), ("human", user)])</text>
+    <text x="14" y="102" font-size="10" fill="#78716c">prints "asking &lt;provider&gt;/&lt;model&gt; (N skill(s))..."</text>
+    <text x="14" y="116" font-size="10" fill="#78716c">a failed call, or no JSON in the reply → "Keeping the</text>
+    <text x="14" y="130" font-size="10" fill="#78716c">placeholder stack." The scaffold is still written.</text>
+  </g>
+  <line x1="1395" y1="286" x2="1395" y2="310" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <g transform="translate(1150, 310)">
+    <rect width="490" height="228" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="490" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="490" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">JSON reply  →  parse_proposal()</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">{</text>
+    <text x="24" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"description": "Cu on Ti on Si, in d8-THF …",</text>
+    <text x="24" y="80" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"materials": {"THF": {"rho": 6.35}, "CuOx": …},</text>
+    <text x="24" y="94" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">"stack": [THF, CuOx, Cu, Ti, Si],</text>
+    <text x="24" y="108" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"parameters": [{path, range, per, in}, …],</text>
+    <text x="24" y="122" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"constraints": [{"series": "tnr218389",</text>
+    <text x="24" y="136" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">   "form": "linear_in_time", "paths": [ … ]}],</text>
+    <text x="24" y="150" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"probe": {"back_reflection": true},</text>
+    <text x="24" y="164" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#64748b">"notes": "Oxide thickness is a guess."</text>
+    <text x="14" y="178" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">}</text>
+    <text x="14" y="198" font-size="10" fill="#64748b">_extract_json(): a ```json fence, the bare reply, or the</text>
+    <text x="14" y="212" font-size="10" fill="#64748b">outermost {…}; none of those → AuthoringError</text>
+  </g>
+  <line x1="1395" y1="538" x2="1395" y2="562" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <g transform="translate(1150, 562)">
+    <rect width="490" height="214" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="490" height="32" rx="10" fill="#059669"/>
+    <rect y="22" width="490" height="10" fill="#059669"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">merge_proposal()  ·  the filter is code, not a request</text>
+    <text x="14" y="52" font-size="11" font-weight="700" fill="#334155">kept: the PROPOSABLE keys only</text>
+    <text x="24" y="66" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">description · materials · stack · parameters</text>
+    <text x="24" y="80" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">constraints · series_select · probe.back_reflection</text>
+    <text x="24" y="94" font-size="10" fill="#64748b">anything else is dropped and named: "discarded N key(s)</text>
+    <text x="24" y="108" font-size="10" fill="#64748b">the model is not allowed to set"; the skeleton wins on facts</text>
+    <text x="14" y="128" font-size="11" font-weight="700" fill="#334155">then repaired, deterministically:</text>
+    <text x="24" y="142" font-size="10" fill="#64748b">· per: model paths taken out of constraints</text>
+    <text x="24" y="156" font-size="10" fill="#64748b">· constrained per: state parameters given in: [states]</text>
+    <text x="24" y="170" font-size="10" fill="#64748b">· constraint paths on a layer the stack lost are dropped;</text>
+    <text x="24" y="184" font-size="10" fill="#64748b">   none left → rebuilt as linear_in_time over per: state paths</text>
+    <text x="24" y="198" font-size="10" fill="#64748b">· free-endpoint paths with no declared range dropped, named</text>
+  </g>
+  <line x1="1395" y1="776" x2="1395" y2="800" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <g transform="translate(1150, 800)">
+    <rect width="490" height="158" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="490" height="32" rx="10" fill="#059669"/>
+    <rect y="22" width="490" height="10" fill="#059669"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">samples/&lt;id&gt;/models/&lt;name&gt;.yaml</text>
+    <text x="14" y="52" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857"># The stack below was PROPOSED by &lt;provider&gt;/&lt;model&gt;</text>
+    <text x="14" y="66" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857"># from sample.md and the project's skills. It is a starting</text>
+    <text x="14" y="80" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857"># point, not a measurement -- check every layer and range</text>
+    <text x="14" y="94" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857"># before fitting. States, series and angles were read from</text>
+    <text x="14" y="108" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857"># the data files and were not proposed.</text>
+    <text x="14" y="128" font-size="10" fill="#64748b">the model's "notes" are printed: "model notes: …"</text>
+    <text x="14" y="142" font-size="10" fill="#64748b">next: nrw model validate · preview · generate</text>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Band: no call                                                    -->
+  <!-- ================================================================ -->
+  <rect x="40" y="1205.0" width="1600" height="166" rx="12" fill="#faf5ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+  <text x="60" y="1233" font-size="14" font-weight="700" letter-spacing="1" fill="#6d28d9">NO CALL  ·  the scaffold is written either way, with the stack left as a placeholder</text>
+  <rect x="60" y="1249" width="405.7" height="108" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="72" y="1267" font-size="11" font-weight="700" fill="#6d28d9">--print-prompt alone</text>
+    <text x="72" y="1281" font-size="10" fill="#64748b">Prints agent_instructions(): seven steps that name the</text>
+    <text x="72" y="1295" font-size="10" fill="#64748b">files instead of inlining them, and a different request:</text>
+    <text x="72" y="1309" font-size="10" fill="#64748b">four editable keys, no measured facts, the stack's LAST</text>
+    <text x="72" y="1323" font-size="10" fill="#64748b">entry as the incident medium. With --from-notes as well,</text>
+    <text x="72" y="1337" font-size="10" fill="#64748b">the call is made and this is printed after it.</text>
+  <rect x="481.7" y="1249" width="405.7" height="108" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="493.7" y="1267" font-size="11" font-weight="700" fill="#6d28d9">NRW_AGENT=1  ·  a harness is driving</text>
+    <text x="493.7" y="1281" font-size="10" fill="#64748b">--from-notes becomes --print-prompt. A harness asking</text>
+    <text x="493.7" y="1295" font-size="10" fill="#64748b">a weaker model to do the part it is best at is the</text>
+    <text x="493.7" y="1309" font-size="10" fill="#64748b">wrong way round, so the harness gets the instruction.</text>
+  <rect x="903.3" y="1249" width="368.8" height="108" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="915.3" y="1267" font-size="11" font-weight="700" fill="#6d28d9">no endpoint configured</text>
+    <text x="915.3" y="1281" font-size="10" fill="#64748b">Says how to get one: LLM_PROVIDER=claude_code (the</text>
+    <text x="915.3" y="1295" font-size="10" fill="#64748b">Claude Code CLI, no key), or LLM_PROVIDER and</text>
+    <text x="915.3" y="1309" font-size="10" fill="#64748b">LLM_API_KEY, or --print-prompt.</text>
+  <rect x="1288.1" y="1249" width="331.9" height="108" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="1300.1" y="1267" font-size="11" font-weight="700" fill="#6d28d9">no flag</text>
+    <text x="1300.1" y="1281" font-size="10" fill="#64748b">Plain nrw model new never calls a model: the</text>
+    <text x="1300.1" y="1295" font-size="10" fill="#64748b">placeholder, headed "The stack below is a</text>
+    <text x="1300.1" y="1309" font-size="10" fill="#64748b">PLACEHOLDER -- replace it …"</text>
+  <text x="840" y="1395" font-size="12" text-anchor="middle" fill="#94a3b8">source: nr_workbench/commands/model.py (run_new · _author_from_notes · _measured_facts) · spec/authoring.py (relevant_skills · build_prompt · describe_measurements · parse_proposal · merge_proposal · agent_instructions)</text>
+  <text x="840" y="1419" font-size="11" text-anchor="middle" fill="#cbd5e1">sizes measured on the Cu/THF reference sample (two OCV states, one 15-slice tNR series) with the bundled skills synced</text>
+</svg>

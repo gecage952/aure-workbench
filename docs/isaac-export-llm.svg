@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 1190" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" xml:space="preserve">
+  <!-- Background -->
+  <rect width="1680" height="1190" fill="#ffffff"/>
+
+  <defs>
+    <style>text { white-space: pre; }</style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#db2777"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <text x="840" y="46" font-size="30" text-anchor="middle" font-weight="700" fill="#0f172a">nrw isaac export · how each state's experimental condition is written</text>
+  <text x="840" y="76" font-size="16" text-anchor="middle" fill="#475569">Exact sources first; then, when an endpoint is configured, one call writes a sentence per state — and where it answers, <tspan fill="#0f172a" font-weight="700">its sentence replaces the table's</tspan></text>
+  <text x="40" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">INPUT</text>
+  <text x="400" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">PROMPT  /  RULE</text>
+  <text x="990" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">LLM CALL</text>
+  <text x="1300" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">OUTPUT → the record</text>
+
+  <!-- ================================================================ -->
+  <!-- LANE 1: describe() reads the table and the spec                  -->
+  <!-- ================================================================ -->
+  <text x="40" y="152" font-size="14" font-weight="700" fill="#16a34a">①  describe()  —  per state, from the Measurements table and the spec: exact, no model</text>
+  <g transform="translate(40, 164)">
+    <rect width="330" height="130" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="330" height="32" rx="10" fill="#16a34a"/>
+    <rect y="22" width="330" height="10" fill="#16a34a"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">states  ·  isaac._states()</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">results/&lt;fit&gt;/spec.yaml</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">each state: (name, run, condition)</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">no frozen spec → grouped from the fit's inputs</text>
+    <text x="14" y="100" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">samples/&lt;id&gt;/sample.md</text>
+    <text x="14" y="114" font-size="10" fill="#64748b">| Run | Type | Condition | …</text>
+  </g>
+  <g transform="translate(400, 164)">
+    <rect width="560" height="158" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="560" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="560" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">from_table(markdown, run)  ·  conditions.py</text>
+    <text x="14" y="52" font-size="11" fill="#334155">the row whose Run cell is this run:</text>
+    <text x="24" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">a Condition column is authoritative, even when empty</text>
+    <text x="24" y="80" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">no such column → the notes column, else the last cell</text>
+    <text x="14" y="100" font-size="11" fill="#334155">then, per state:</text>
+    <text x="24" y="114" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">cell found   → "&lt;cell&gt;; &lt;spec condition&gt;"   source=table</text>
+    <text x="24" y="128" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">no cell      → the spec's condition          source=spec</text>
+    <text x="24" y="142" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">neither      → ""                            source=none</text>
+  </g>
+  <g transform="translate(1300, 164)">
+    <rect width="340" height="124" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="340" height="32" rx="10" fill="#16a34a"/>
+    <rect y="22" width="340" height="10" fill="#16a34a"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">Conditions, per state</text>
+    <text x="14" y="52" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">ocv1  OCV, before the EIS sequence</text>
+    <text x="24" y="66" font-size="10" fill="#64748b">source: table</text>
+    <text x="14" y="80" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">ocv2  OCV, after the EIS sequence;</text>
+    <text x="14" y="94" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">      after EIS</text>
+    <text x="24" y="108" font-size="10" fill="#64748b">source: table  (the cell, then the spec's text)</text>
+  </g>
+  <g transform="translate(990, 196)">
+    <rect width="280" height="110" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4" filter="url(#shadow)"/>
+    <rect width="280" height="32" rx="10" fill="#94a3b8"/>
+    <rect y="22" width="280" height="10" fill="#94a3b8"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">no model</text>
+    <text x="14" y="52" font-size="10" fill="#64748b">every answer here is a string lookup;</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">it is what a record says when no endpoint</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">is configured, and it is kept when a call</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">fails or returns nothing usable</text>
+  </g>
+  <line x1="370" y1="224" x2="396" y2="224" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="960" y1="224" x2="986" y2="224" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="1270" y1="224" x2="1296" y2="224" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+
+  <!-- ================================================================ -->
+  <!-- LANE 2: _from_llm()                                              -->
+  <!-- ================================================================ -->
+  <text x="40" y="360" font-size="14" font-weight="700" fill="#2563eb">②  _from_llm()  —  one call for all the states, when an endpoint is configured</text>
+  <g transform="translate(40, 372)">
+    <rect width="330" height="130" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="330" height="32" rx="10" fill="#3b82f6"/>
+    <rect y="22" width="330" height="10" fill="#3b82f6"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">the notes  +  lane ①'s answers</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">sample.md, whole</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">skipped when it is empty</text>
+    <text x="14" y="86" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">for each state:</text>
+    <text x="14" y="100" font-size="10" fill="#64748b">its name and run, what the spec says, and</text>
+    <text x="14" y="114" font-size="10" fill="#64748b">what the table gave (lane ①)</text>
+  </g>
+  <g transform="translate(400, 372)">
+    <rect width="560" height="352" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="560" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="560" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">system  +  user   (conditions.py, verbatim)</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-weight="700" fill="#334155">system</text>
+    <text x="22" y="66" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"You extract experimental conditions for a neutron reflectometry metadata</text>
+    <text x="22" y="80" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">record. Reply with JSON only: an object mapping each state name to one</text>
+    <text x="22" y="94" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">sentence. Use ONLY facts present in the notes. State the electrochemical</text>
+    <text x="22" y="108" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">control explicitly -- open circuit as 'OCV', an applied potential as a</text>
+    <text x="22" y="122" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">number followed by V and its reference electrode, a galvanostatic hold as</text>
+    <text x="22" y="136" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">its current density. Name the electrolyte and its concentration when</text>
+    <text x="22" y="150" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">given. Do not convert a current density into a potential. Do not guess. If</text>
+    <text x="22" y="164" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">the notes say nothing about a state, give it an empty string."</text>
+    <text x="14" y="186" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-weight="700" fill="#334155">user</text>
+    <text x="22" y="200" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">## Sample notes</text>
+    <text x="22" y="214" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#db2777">{sample.md}</tspan></text>
+    <text x="22" y="232" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">## States</text>
+    <text x="22" y="246" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#2563eb">- {name} (run {run}): spec says {condition or '(nothing)'};</tspan></text>
+    <text x="22" y="260" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#2563eb">  table says {lane ① text or '(nothing)'}</tspan></text>
+    <text x="14" y="280" font-size="10" fill="#64748b">as sent for the Cu/THF example:</text>
+    <text x="14" y="294" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#64748b">- ocv1 (run 218386): spec says (nothing); table says OCV, before</text>
+    <text x="14" y="308" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#64748b">  the EIS sequence</text>
+    <text x="14" y="322" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#64748b">- ocv2 (run 218393): spec says after EIS; table says OCV, after</text>
+    <text x="14" y="336" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#64748b">  the EIS sequence; after EIS</text>
+  </g>
+  <g transform="translate(990, 412)">
+    <rect width="280" height="146" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2.5" filter="url(#shadow)"/>
+    <rect width="280" height="34" rx="12" fill="#d97706"/>
+    <rect y="22" width="280" height="12" fill="#d97706"/>
+    <text x="14" y="23" font-size="13" font-weight="700" fill="#ffffff">complete(system, user)</text>
+    <text x="14" y="54" font-size="11" fill="#334155">via <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a" font-weight="700">aure_adapter.complete()</tspan></text>
+    <text x="14" y="68" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">get_llm(temperature=0)</text>
+    <text x="14" y="82" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">.invoke([system, human])</text>
+    <text x="14" y="102" font-size="10" fill="#78716c">AureUnavailableError → {}</text>
+    <text x="14" y="116" font-size="10" fill="#78716c">first { to last } in the reply → json.loads;</text>
+    <text x="14" y="130" font-size="10" fill="#78716c">no match, bad JSON, or not an object → {}</text>
+  </g>
+  <g transform="translate(1300, 372)">
+    <rect width="340" height="220" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="340" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="340" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">JSON → Conditions(source="llm")</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">{</text>
+    <text x="22" y="66" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"ocv1": "Open circuit (OCV) in 1 M</text>
+    <text x="22" y="80" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">   LiBF4 in d8-THF, before EIS.",</text>
+    <text x="22" y="94" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"ocv2": "Open circuit (OCV) in 1 M</text>
+    <text x="22" y="108" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">   LiBF4 in d8-THF, after EIS."</text>
+    <text x="14" y="122" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">}</text>
+    <text x="14" y="142" font-size="10" fill="#64748b">kept: a key that names a state, with a</text>
+    <text x="14" y="156" font-size="10" fill="#64748b">non-empty string; everything else ignored</text>
+    <text x="14" y="176" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#9d174d" font-weight="700">found.update(enriched)</tspan></text>
+    <text x="14" y="190" font-size="10" fill="#64748b">the model's sentence replaces lane ①'s text for</text>
+    <text x="14" y="204" font-size="10" fill="#64748b">that state, the spec's half included</text>
+  </g>
+  <line x1="370" y1="432" x2="396" y2="432" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="960" y1="472" x2="986" y2="472" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <line x1="1270" y1="472" x2="1296" y2="472" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+
+  <!-- ================================================================ -->
+  <!-- LANE 3: what the record carries                                  -->
+  <!-- ================================================================ -->
+  <text x="40" y="762" font-size="14" font-weight="700" fill="#059669">③  where the sentence goes</text>
+  <g transform="translate(40, 774)">
+    <rect width="560" height="160" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="560" height="32" rx="10" fill="#059669"/>
+    <rect y="22" width="560" height="10" fill="#059669"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">results/&lt;fit&gt;/isaac/ingest/   (stage)</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857">run_info.json</text>
+    <text x="24" y="66" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">states[]: {"name", "data_files", "extra_description": &lt;condition&gt;}</text>
+    <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857">final_state.json</text>
+    <text x="24" y="98" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">state.states[]: {"name", "extra_description"}</text>
+    <text x="14" y="116" font-size="10" fill="#64748b">a state with no condition gets no extra_description and "" in</text>
+    <text x="14" y="130" font-size="10" fill="#64748b">final_state.json; with none at all, the export prints "No</text>
+    <text x="14" y="144" font-size="10" fill="#64748b">experimental conditions found in sample.md or the spec …"</text>
+  </g>
+  <g transform="translate(640, 774)">
+    <rect width="560" height="156" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="560" height="32" rx="10" fill="#0d9488"/>
+    <rect y="22" width="560" height="10" fill="#0d9488"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">data-assembler  →  nr-isaac-format  →  isaac/records/*.json</text>
+    <text x="14" y="52" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f766e">data-assembler ingest-workflow</text>
+    <text x="24" y="66" font-size="10" fill="#64748b">parses each condition with a regex that knows open circuit, a potential</text>
+    <text x="24" y="80" font-size="10" fill="#64748b">in volts, pH and molar electrolytes, and not a current density: hence</text>
+    <text x="24" y="94" font-size="10" fill="#64748b">'OCV' and 'a number followed by V' in the prompt, and a galvanostatic</text>
+    <text x="24" y="108" font-size="10" fill="#64748b">hold stated as its current density, for a person to read</text>
+    <text x="14" y="126" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f766e">nr-isaac-format convert-ingest</text>
+    <text x="24" y="140" font-size="10" fill="#64748b">one validated record per state, all sharing one sample id</text>
+  </g>
+  <g transform="translate(1240, 774)">
+    <rect width="400" height="124" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4" filter="url(#shadow)"/>
+    <rect width="400" height="32" rx="10" fill="#94a3b8"/>
+    <rect y="22" width="400" height="10" fill="#94a3b8"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">then a person decides</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">nrw isaac push &lt;fit&gt;</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">sends the records this export wrote, so what was</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">validated is what is published: no second call.</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">The final fit only. Refused under NRW_AGENT,</text>
+    <text x="14" y="108" font-size="10" fill="#64748b">as --upload is.</text>
+  </g>
+  <line x1="600" y1="824" x2="636" y2="824" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <line x1="1200" y1="824" x2="1236" y2="824" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <path d="M 1470.0 592 V 742 H 560 V 770" stroke="#059669" stroke-width="1.6" marker-end="url(#arrow-green)" fill="none"/>
+  <rect x="40" y="968" width="1600" height="152" rx="12" fill="#faf5ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+  <text x="60" y="996" font-size="14" font-weight="700" letter-spacing="1" fill="#6d28d9">NO CALL  ·  lane ① alone decides</text>
+  <rect x="60" y="1012" width="504" height="94" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="72" y="1030" font-size="11" font-weight="700" fill="#6d28d9">NRW_AGENT=1  ·  a harness is driving</text>
+    <text x="72" y="1044" font-size="10" fill="#64748b">An agent exporting records should write the</text>
+    <text x="72" y="1058" font-size="10" fill="#64748b">conditions into sample.md's table, where a person</text>
+    <text x="72" y="1072" font-size="10" fill="#64748b">can check them, not have a second model invent</text>
+    <text x="72" y="1086" font-size="10" fill="#64748b">them into a record that leaves the project.</text>
+  <rect x="580" y="1012" width="271.4" height="94" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="592" y="1030" font-size="11" font-weight="700" fill="#6d28d9">--no-llm</text>
+    <text x="592" y="1044" font-size="10" fill="#64748b">Lane ① only, by request.</text>
+  <rect x="867.4" y="1012" width="348.9" height="94" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="879.4" y="1030" font-size="11" font-weight="700" fill="#6d28d9">no endpoint · empty sample.md</text>
+    <text x="879.4" y="1044" font-size="10" fill="#64748b">Nothing to ask, or nothing to read.</text>
+  <rect x="1232.3" y="1012" width="387.7" height="94" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="1244.3" y="1030" font-size="11" font-weight="700" fill="#6d28d9">the reply is unusable</text>
+    <text x="1244.3" y="1044" font-size="10" fill="#64748b">A failed call, no JSON, or not an object: {}</text>
+    <text x="1244.3" y="1058" font-size="10" fill="#64748b">comes back and lane ①'s answers stand.</text>
+  <text x="840" y="1144" font-size="12" text-anchor="middle" fill="#94a3b8">source: nr_workbench/conditions.py (describe · from_table · _from_llm) · isaac.py (stage · StagedState.as_dict) · commands/isaac_cmd.py (run_export)</text>
+  <text x="840" y="1168" font-size="11" text-anchor="middle" fill="#cbd5e1">the web UI's ISAAC export runs the same command, so it makes the same call</text>
+</svg>
