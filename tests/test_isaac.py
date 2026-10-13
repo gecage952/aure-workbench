@@ -709,3 +709,36 @@ def test_analysis_prose_never_reaches_the_condition_field(
     ingest = json.loads((tmp_path / "o" / "ingest" / "run_info.json").read_text())
     for state in ingest["states"]:
         assert "OCV/potential/OCV" not in (state.get("extra_description") or "")
+
+
+def test_a_state_with_no_condition_is_named(
+    corefined: tuple[Path, str], tmp_path: Path
+) -> None:
+    """The per-state warning sat inside the branch for a state that HAD a
+    condition, so it could never fire, and one silent state among described
+    ones went unreported."""
+    import yaml
+
+    root, fit_id = corefined
+    spec_path = fit_dir(root, fit_id) / "spec.yaml"
+    spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    spec["states"][0]["condition"] = "OCV before the potential step"
+    spec_path.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
+    silent = spec["states"][1]["name"]
+
+    staged = stage(fit_dir(root, fit_id), root, tmp_path / "ingest", use_llm=False)
+
+    named = [p for p in staged.problems if "No condition found for" in p]
+    assert len(named) == 1 and silent in named[0]
+    assert not any("No experimental conditions" in p for p in staged.problems)
+
+
+def test_no_conditions_at_all_is_said_once(
+    corefined: tuple[Path, str], tmp_path: Path
+) -> None:
+    root, fit_id = corefined
+
+    staged = stage(fit_dir(root, fit_id), root, tmp_path / "ingest", use_llm=False)
+
+    assert any("No experimental conditions" in p for p in staged.problems)
+    assert not any("No condition found for" in p for p in staged.problems)
