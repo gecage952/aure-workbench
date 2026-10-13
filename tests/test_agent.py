@@ -439,6 +439,32 @@ def test_the_prompt_carries_the_task_and_the_limits(tmp_path: Path) -> None:
     assert session.ESCALATIONS in composed.prompt
 
 
+def test_every_command_the_prompt_names_exists(tmp_path: Path) -> None:
+    """The prompt is how a session learns the tool surface. Its fallback for a
+    project with no skills told it to run `nrw skills install`, which does not
+    exist: a turn spent on a command that could only fail."""
+    import re
+
+    import click
+
+    from nr_workbench.cli import main
+
+    sample = tmp_path / "samples" / "S1"
+    sample.mkdir(parents=True)
+    (sample / "sample.md").write_text(NOTES_WITH_TASK, encoding="utf-8")
+
+    prompt = session.compose(tmp_path, "S1").prompt
+
+    assert "no skills installed" in prompt, "the fallback is the case at issue"
+    named = re.findall(r"\bnrw\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?", prompt)
+    assert named
+    for first, second in named:
+        command = main.commands.get(first)
+        assert command is not None, f"nrw {first}"
+        if isinstance(command, click.Group):
+            assert second in command.commands, f"nrw {first} {second}"
+
+
 def test_a_one_shot_session_is_warned_about_data_still_arriving(
     tmp_path: Path,
 ) -> None:

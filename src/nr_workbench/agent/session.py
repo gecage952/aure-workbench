@@ -751,7 +751,7 @@ thing that is cheap to see now and expensive to discover after five fits.
 
 ## Read these first
 
-{skill_lines or "  (no skills installed; run `nrw skills install`)"}
+{skill_lines or "  (no skills installed; run `nrw skills sync`)"}
 
 Also `samples/{sample}/sample.md` in full, for what the sample is and what was \
 done to it.
