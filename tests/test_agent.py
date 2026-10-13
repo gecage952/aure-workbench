@@ -673,7 +673,7 @@ def test_assess_asks_the_agent_rather_than_an_endpoint(
         raise AssertionError("consulted an endpoint while an agent was driving")
 
     monkeypatch.setattr("nr_workbench.aure_adapter.llm_available", explode)
-    monkeypatch.setattr("nr_workbench.aure_adapter.judge_fit", explode)
+    monkeypatch.setattr("nr_workbench.aure_adapter.complete", explode)
 
     assessment = Assessment(fit_id="x", chisq=1.2)
     _add_judgement(assessment, None, {}, Path("."), {})

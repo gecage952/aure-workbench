@@ -806,8 +806,8 @@ parameter's range, the `.par` file for where it landed, and the DREAM
 `-err.json` for the posterior. A parameter on its bound is the bound you chose,
 not a measurement. A 95% interval spanning most of its prior means the fit
 handed your range back. With an LLM endpoint configured (`.env`), it also asks
-whether the values are physically sensible given `sample.md` and the installed
-skills — labelled as a model's opinion, because it has not seen the data.
+whether the values are physically sensible given `sample.md` and the skills its
+notes call for — labelled as a model's opinion, because it has not seen the data.
 
 Then add the sentence no check can write:
 

@@ -1276,7 +1276,7 @@ def assess_command(fit_id: str, write: bool, use_llm: bool, as_json: bool) -> No
     Always runs the arithmetic: parameters on their bounds, posteriors that
     span most of their prior, a best fit outside its own credible interval,
     BIC. With an LLM endpoint configured it also asks whether the values are
-    physically sensible, given sample.md and the installed skills.
+    physically sensible, given sample.md and the skills its notes call for.
 
     The result is appended to the fit's NOTES.md, so it travels in a bundle
     and shows on the fit page.

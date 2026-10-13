@@ -377,6 +377,163 @@ def test_assess_without_an_endpoint_says_what_was_not_checked(
     assert any("No language-model endpoint" in p for p in payload["problems"])
 
 
+def _stub_model(monkeypatch, reply: str | Exception) -> list[tuple[str, str]]:
+    """Answer every language-model call with *reply*, recording the request.
+
+    The stub has `complete`'s own signature, so a call the real function would
+    refuse is refused here too.
+    """
+    from nr_workbench import aure_adapter
+
+    sent: list[tuple[str, str]] = []
+
+    def complete(system: str, user: str, *, temperature: float = 0.0) -> str:
+        sent.append((system, user))
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(aure_adapter, "llm_available", lambda: True)
+    monkeypatch.setattr(aure_adapter, "complete", complete)
+    return sent
+
+
+def _record(root: Path, fit_id: str) -> tuple[str, dict]:
+    """The fit's NOTES.md and assessment.json, as `nrw assess` left them."""
+    fit = root / "samples" / "S1" / "results" / fit_id
+    notes = (fit / "NOTES.md").read_text(encoding="utf-8")
+    return notes, json.loads((fit / "assessment.json").read_text(encoding="utf-8"))
+
+
+def test_assess_asks_from_the_fits_own_record_and_notes_the_verdict(
+    fitted: tuple[Path, str], monkeypatch
+) -> None:
+    """The judge is told what this fit's record holds -- its notes, its frozen
+    spec, each value's range, the skills, and the convergence flag as the
+    manifest records it -- and its verdict goes into the note under a heading
+    that says whose it is."""
+    from nr_workbench.fitting.assess import read_bounds
+    from nr_workbench.fitting.judge import CONVERGENCE
+    from nr_workbench.spec.authoring import find_skills
+
+    root, fit_id = fitted
+    fit = root / "samples" / "S1" / "results" / fit_id
+    # As if DREAM had warned. amoeba records None, which would hide a judge
+    # that never read the flag at all.
+    manifest = json.loads((fit / "manifest.json").read_text(encoding="utf-8"))
+    manifest["info"]["converged"] = False
+    (fit / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    notes_path = root / "samples" / "S1" / "sample.md"
+    notes_path.write_text(
+        notes_path.read_text(encoding="utf-8")
+        + "\nA 100 A film on Si, measured in air from the film side.\n",
+        encoding="utf-8",
+    )
+    sent = _stub_model(
+        monkeypatch,
+        '{"quality_assessment": "marginal", "issues": ["Film is a placeholder"]}',
+    )
+
+    result = CliRunner().invoke(main, ["assess", fit_id])
+
+    assert result.exit_code == 0, result.output
+    ((system, user),) = sent
+    assert "A 100 A film on Si, measured in air" in user
+    assert "ionomer" not in user, "the template's example is not this sample"
+    assert (fit / "spec.yaml").read_text(encoding="utf-8").strip() in user
+    assert CONVERGENCE[False] in user
+    name, (low, high) = next(iter(read_bounds(fit).items()))
+    line = next(row for row in user.splitlines() if row.startswith(f"- {name} = "))
+    assert f"{low:.6g}" in line and f"{high:.6g}" in line
+    assert "chi-squared by model" in user, "three segments are three models"
+    skill = find_skills(root)["nrw-model-spec"].read_text(encoding="utf-8")
+    assert skill.strip()[:300] in system
+
+    notes, record = _record(root, fit_id)
+    assert "What a language model made of it" in notes
+    assert "Film is a placeholder" in notes
+    assert record["judgement"]["quality_assessment"] == "marginal"
+
+
+@pytest.mark.parametrize("reply", ["Looks fine.", '{"issues": []}'])
+def test_a_reply_without_a_verdict_is_recorded_as_none(
+    fitted: tuple[Path, str], monkeypatch, reply: str
+) -> None:
+    """No stand-in, and no empty section: either under the model's heading
+    would read as the model's opinion."""
+    root, fit_id = fitted
+    _stub_model(monkeypatch, reply)
+
+    result = CliRunner().invoke(main, ["assess", fit_id])
+
+    assert result.exit_code == 0, result.output
+    notes, record = _record(root, fit_id)
+    assert "What a language model made of it" not in notes
+    assert record["judgement"] is None
+    assert any("not with a verdict that could be read" in p for p in record["problems"])
+
+
+def test_a_failed_call_is_recorded_not_raised(
+    fitted: tuple[Path, str], monkeypatch
+) -> None:
+    from nr_workbench.aure_adapter import AureUnavailableError
+
+    root, fit_id = fitted
+    _stub_model(monkeypatch, AureUnavailableError("The call failed: quota\nexceeded"))
+
+    result = CliRunner().invoke(main, ["assess", fit_id])
+
+    assert result.exit_code == 0, result.output
+    notes, record = _record(root, fit_id)
+    assert "What a language model made of it" not in notes
+    assert record["judgement"] is None
+    assert any("quota exceeded" in p for p in record["problems"])
+
+
+def test_a_skill_it_cannot_read_is_named_and_the_rest_is_still_judged(
+    fitted: tuple[Path, str], monkeypatch
+) -> None:
+    """A broken SKILL.md once raised before anything was written, losing the
+    arithmetic the command had already run."""
+    root, fit_id = fitted
+    skill = root / "skills" / "reflectometry" / "nrw-model-spec" / "SKILL.md"
+    skill.unlink()
+    skill.symlink_to(root / "nowhere.md")
+    _stub_model(monkeypatch, '{"quality_assessment": "good"}')
+
+    result = CliRunner().invoke(main, ["assess", fit_id])
+
+    assert result.exit_code == 0, result.output
+    _, record = _record(root, fit_id)
+    assert record["judgement"] == {"quality_assessment": "good"}
+    assert any("nrw-model-spec" in p for p in record["problems"])
+
+
+def test_assess_under_an_agent_asks_no_model(
+    fitted: tuple[Path, str], monkeypatch
+) -> None:
+    """Through the command, with the record checked: under a harness the
+    harness judges, and no second model's verdict is filed."""
+    from nr_workbench import aure_adapter
+
+    root, fit_id = fitted
+    monkeypatch.setenv("NRW_AGENT", "1")
+
+    def explode(*args: object, **kwargs: object) -> bool:
+        raise AssertionError("consulted an endpoint while an agent was driving")
+
+    monkeypatch.setattr(aure_adapter, "llm_available", explode)
+    monkeypatch.setattr(aure_adapter, "complete", explode)
+
+    result = CliRunner().invoke(main, ["assess", fit_id])
+
+    assert result.exit_code == 0, result.output
+    notes, record = _record(root, fit_id)
+    assert "What a language model made of it" not in notes
+    assert record["judgement"] is None
+    assert any("yourself" in p for p in record["problems"])
+
+
 def test_assess_json_carries_every_finding(
     fitted: tuple[Path, str], monkeypatch
 ) -> None:

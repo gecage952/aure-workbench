@@ -38,6 +38,9 @@ def isolate_user_env(tmp_path_factory, monkeypatch) -> None:
     monkeypatch.setattr(env_module, "_set_by_files", set())
     for name in _USER_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+    # Set by `nrw agent run` for its session. A suite run inside one would
+    # otherwise see every model call stand down.
+    monkeypatch.delenv("NRW_AGENT", raising=False)
 
 
 #: A fixed timestamp, so rendered templates are byte-stable across test runs.

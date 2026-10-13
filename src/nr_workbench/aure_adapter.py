@@ -53,13 +53,12 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     # CI rather than when a scientist is waiting on a first fit.
     "aure.setup": ("load_setup", "dump_setup"),
     "aure.workflow.runner": ("run_analysis",),
-    # The only `aure.nodes` entry. That module's header pulls langchain, the
-    # AuRE skill registry and the whole node graph, so it is imported inside
-    # `judge_fit` alone and never for the arithmetic next to it -- AuRE's
-    # boundary-hit and BIC helpers live in the same file and are five and
-    # twenty lines of pure maths, reimplemented in `fitting/assess.py` rather
-    # than paid for with that import.
-    "aure.nodes.evaluation": ("analyze_fit_quality_with_llm",),
+    # The language-model client. `nrw assess`, `nrw model new --from-notes` and
+    # `nrw isaac export` reach a model through `complete` and `llm_available`
+    # and nothing else, and `llm_available` reports a renamed function as no
+    # endpoint at all -- so a rename has to fail here, not there.
+    "aure.llm.config": ("llm_available", "get_llm_config", "get_llm_info"),
+    "aure.llm.providers": ("get_llm",),
 }
 
 
@@ -841,92 +840,3 @@ def complete(system: str, user: str, *, temperature: float = 0.0) -> str:
         ]
         return "".join(parts)
     return str(content)
-
-
-def judge_fit(
-    *,
-    chisq: float,
-    method: str,
-    parameters: dict[str, float],
-    sample_description: str,
-    converged: bool | None = None,
-    skill_context: str = "",
-    hypothesis: str | None = None,
-    boundary_hits: list[dict[str, Any]] | None = None,
-    per_file_results: list[dict[str, Any]] | None = None,
-    bic: float | None = None,
-    n_params: int = 0,
-    n_layers: int = 0,
-    chi2_max: float = 5.0,
-) -> dict[str, Any]:
-    """Ask a language model whether a fit is physically sensible.
-
-    Wraps AuRE's fit evaluator. What it adds over the numbers is the only
-    thing arithmetic cannot supply: a reading of the parameter values against
-    the sample's own description and the installed domain skills.
-
-    Args:
-        chisq: Reduced chi-squared. Must be a real number -- AuRE formats it
-            with ``:.3f`` and raises on ``None``.
-        method: The fitter used.
-        parameters: Best-fit values by name.
-        converged: Whether the sampler reported convergence. ``None`` means the
-            fitter does not test it, which is reported as not converged.
-        sample_description: The prose from ``sample.md``.
-        skill_context: Concatenated SKILL.md bodies, the physics grounding.
-        hypothesis: What the fit was testing, if recorded.
-        boundary_hits: Parameters on their bounds, in AuRE's shape.
-        per_file_results: ``[{"label": str, "chi_squared": float}, ...]``.
-        bic: Bayesian information criterion.
-        n_params: Free parameter count.
-        n_layers: Layers in the stack.
-        chi2_max: The acceptance threshold shown to the model.
-
-    Returns:
-        AuRE's verdict: ``acceptable``, ``quality_assessment``, ``issues``,
-        ``suggestions``, ``physical_concerns`` and more. ``next_action`` and
-        ``proposed_hypothesis_id`` are absent when AuRE fell back, so read
-        every key with ``.get``.
-
-    Raises:
-        AureUnavailableError: If no endpoint is configured, or the call fails.
-    """
-    if not llm_available():
-        raise AureUnavailableError(
-            "No language-model endpoint is configured. "
-            f"{endpoint_hint()} `nrw doctor` reports what it sees."
-        )
-
-    try:
-        from aure.nodes.evaluation import analyze_fit_quality_with_llm
-
-        verdict = analyze_fit_quality_with_llm(
-            {
-                "chi_squared": float(chisq),
-                "method": method,
-                # Never hard-code this. A DREAM run that did not converge can
-                # have the best chi-squared of a set -- on the real Cu/THF
-                # corpus it did -- and telling the judge it converged hides
-                # the one fact that disqualifies the fit. Unknown reads as
-                # not-converged here because AuRE's prompt has no third state,
-                # and "not checked" must not read as "clean".
-                "converged": bool(converged),
-                "parameters": {k: float(v) for k, v in parameters.items()},
-            },
-            sample_description,
-            hypothesis,
-            None,
-            chi2_max=chi2_max,
-            boundary_hits=boundary_hits,
-            bic=bic,
-            n_params=n_params,
-            n_layers=n_layers,
-            skill_context=skill_context,
-            per_file_results=per_file_results,
-        )
-    except Exception as exc:
-        raise AureUnavailableError(
-            f"The fit evaluation failed: {type(exc).__name__}: {exc}"
-        ) from exc
-
-    return dict(verdict) if isinstance(verdict, dict) else {}

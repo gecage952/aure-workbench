@@ -369,19 +369,6 @@ def test_an_optimiser_has_no_opinion_about_convergence() -> None:
     assert _read_convergence([], "amoeba") is None
 
 
-def test_the_judge_is_not_told_a_fit_converged_when_it_did_not() -> None:
-    """`judge_fit` hard-coded `converged: True`, so the LLM was told the one
-    non-converged fit in the corpus had converged -- at a chi-squared better
-    than the answer's."""
-    import inspect
-
-    from nr_workbench import aure_adapter
-
-    source = inspect.getsource(aure_adapter.judge_fit)
-    assert '"converged": True' not in source
-    assert "converged" in inspect.signature(aure_adapter.judge_fit).parameters
-
-
 # --------------------------------------------------------------------------
 # Quiet by default
 #
