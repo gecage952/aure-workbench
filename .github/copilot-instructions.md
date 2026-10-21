@@ -80,9 +80,10 @@ idempotent) were both invisible in normal use.
 ## 🔍 Review
 
 Trigger a review after a new feature (~3+ functions), a significant refactor,
-or before marking major work complete. Invoke the `design-reviewer`,
-`security-reviewer` and `test-reviewer` subagents — each loads its standard from
-`skills/review-*/SKILL.md`.
+or before marking major work complete. Invoke the `design-reviewer` and
+`security-reviewer` subagents — each loads its standard from
+`skills/review-*/SKILL.md`. Review the tests yourself, against
+`skills/review-test/SKILL.md`.
 
 ## 📚 Reference standards (read on demand)
 

@@ -38,8 +38,9 @@ records of later work.
 
 Shared standards live once in [`skills/`](skills/) at the repo root — the
 review standards (`review-*`) and authoring references (`python-*`) from
-`ai-project-template`. The reviewer subagents in [`.claude/agents/`](.claude/agents/)
-are thin dispatchers that load them.
+`ai-project-template`. The design and security reviewer subagents in
+[`.claude/agents/`](.claude/agents/) are thin dispatchers that load them; review
+tests yourself, against `skills/review-test`.
 
 `src/nr_workbench/skills/` is different: those are the **reflectometry domain
 skills we ship to users**, not standards for this repo. They follow the
