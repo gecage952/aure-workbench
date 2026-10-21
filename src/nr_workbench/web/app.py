@@ -456,5 +456,25 @@ def serve(
     Raises:
         FileNotFoundError: If ``root`` is not a workbench project.
     """
-    app = create_app(root, bound_host=host)
-    app.run(host=host, port=port, debug=debug)
+    run_app(create_app(root, bound_host=host), host=host, port=port, debug=debug)
+
+
+def run_app(app: Flask, *, host: str, port: int, debug: bool) -> None:
+    """Serve *app* -- without Flask's own loading of ``.env`` files.
+
+    ``Flask.run`` loads the nearest ``.env`` and ``.flaskenv``, walking up from
+    the working directory, into this process's environment. The project's
+    ``.env``, which anyone who can commit to it can write, would then read as
+    the person's own shell: it would choose where ``ISAAC_KEY`` and a Tiled
+    login are sent, which nrw takes from the person's own settings only, and
+    it would pass to every job the server starts. ``FLASK_SKIP_DOTENV`` is set
+    as well, because Flask lets it say "load" over ``load_dotenv=False``.
+
+    Args:
+        app: The application.
+        host: Interface to bind.
+        port: Port to listen on.
+        debug: Enable Flask's reloader and debugger.
+    """
+    os.environ["FLASK_SKIP_DOTENV"] = "1"
+    app.run(host=host, port=port, debug=debug, load_dotenv=False)

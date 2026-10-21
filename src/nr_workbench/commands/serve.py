@@ -69,7 +69,7 @@ def run_serve(
 
     # Imported here rather than at module scope so that `nrw --help` does not
     # pay for Flask, matching how every other command treats its heavy deps.
-    from nr_workbench.web.app import create_app
+    from nr_workbench.web.app import create_app, run_app
 
     try:
         app = create_app(
@@ -123,7 +123,7 @@ def run_serve(
         )
 
     try:
-        app.run(host=host, port=port, debug=debug)
+        run_app(app, host=host, port=port, debug=debug)
     except OSError as exc:
         raise click.ClickException(
             f"Cannot bind {host}:{port} -- {exc}. "
