@@ -186,6 +186,7 @@ def test_nrw_fit_run_says_it_fits_with_dream_when_nothing_says_otherwise(
     assert "  method    dream" in result.output
 
 
+@pytest.mark.fit
 def test_nrw_fit_run_takes_what_nrw_toml_says_and_records_it(
     fitted_project: Path, monkeypatch
 ) -> None:

@@ -65,7 +65,9 @@ carrying several findings that cost real debugging time.
 ### Verification
 
 ```bash
-pytest                        # ~2,500 tests, about two minutes
+pytest                        # ~2,900 tests, under two minutes; fits nothing
+pytest -m fit                 # the 33 that run real fits, for fitting code
+pytest --record-fits TESTS    # re-record fits the default run replays
 ruff check src tests          # lint
 ruff format --check src tests # format
 pre-commit run --all-files    # exactly what CI runs

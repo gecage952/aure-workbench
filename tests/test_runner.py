@@ -138,6 +138,7 @@ def test_load_problem_reports_a_missing_script(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.fit
 def test_our_export_path_writes_the_uncertainty_block(
     script_project: Path, tmp_path: Path
 ) -> None:
@@ -164,6 +165,7 @@ def test_our_export_path_writes_the_uncertainty_block(
     assert "chain" in outcome.artifacts
 
 
+@pytest.mark.fit
 @pytest.mark.slow
 def test_bumps_export_kwarg_still_drops_the_uncertainty_block(
     script_project: Path, tmp_path: Path

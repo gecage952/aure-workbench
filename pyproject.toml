@@ -193,12 +193,17 @@ addopts = [
   "auto",
   "--dist",
   "loadscope",
+  # Real fits only when asked: `pytest -m fit`. Every other test's fit is
+  # replayed from a recording; see tests/fit_replay.py.
+  "-m",
+  "not fit",
   "--cov=src/nr_workbench",
   "--cov-report=term-missing",
 ]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "integration: marks tests as integration tests",
+  "fit: runs a real refl1d/bumps fit; left out by default, run with `pytest -m fit`",
   "unit: marks tests as unit tests",
   "needs_aure: requires the optional aure extra to be installed",
 ]

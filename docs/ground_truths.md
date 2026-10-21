@@ -4324,3 +4324,32 @@ Each of 52 reintroduced bugs fails a test.
   `Flask.run` whole, which is why none of them caught this.
 - Found by the security review of the Tiled attempt withdrawn on 2026-10-27,
   whose `TILED_URL` rested on the same rule as `ISAAC_URL`.
+
+### 2026-10-21: the suite ran 121 real fits, and now runs none by default
+
+- **Found by refusing every fit, not by reading.** A scan put a hook on
+  `bumps.fitters`, in the test process and in every subprocess, through
+  `PYTHONPATH`: nrw starts its own with `-P`, not `-I`. The hook raised on
+  `fit` and `FitDriver.fit` and logged `PYTEST_CURRENT_TEST`. 121 tests in 11
+  files asked for a fit. Most did so through per-test `fitted` fixtures that
+  need a fit's record (pack, ISAAC export, notes, assess, lifecycle, the fit
+  pages), not the fit.
+- **What is recorded is the optimizer's answer, not the record.** A copied
+  record would go stale without a word once nrw changes what it records, and
+  the tests downstream would go on checking the old format. So bumps' `fit` is
+  replayed instead (`tests/fit_replay.py`): the problem is set to the recorded
+  answer, and nrw's runner writes every file of the record from there. About
+  88 tests make 10 distinct fits, in `tests/data/fits/`, 40 kB.
+- **A fit is identified by** its parameters, their starting values and bounds,
+  the misfit at the start (to 9 significant digits, above platform noise), the
+  fitter, and its settings other than `parallel` and `verbose`.
+- **DREAM is not replayed.** Its uncertainty block comes from the sampler's
+  state, which a recording does not keep. The one test of a DREAM band is
+  among the 33 marked `fit`, which run for real with `pytest -m fit`.
+- **It is also the guard.** Outside a `fit` test, a fit that no recording
+  answers fails and names the command that records it (`pytest --record-fits
+  <test>`), so a real fit cannot slip into the default run in-process. A fit
+  started in a subprocess by an unmarked test would not be stopped; there is
+  none today, and the two that start one from the page are marked.
+- **Effect:** the default run, 2,864 tests, passes in about 82 s with no fit,
+  against about 110 s before. Under the scan hook it logged none.
