@@ -4515,3 +4515,15 @@ exactly, file for file, looks safer, and loses data once an older nrw has
 saved. The one cost: a save that writes the experiment for the first time
 together with runs or samples, cut short, is recovered with the experiment
 as it was being saved, so an experiment edit is sent alone.
+
+**No file is written from it.** The plan had an `experiment.md` at the
+project root, written by apply under `sample.md`'s rules. It was dropped
+before it was built: a file people can open, they edit, and an edited copy
+drifts from the record. Carrying hand edits back is what adopt does for
+`sample.md`, in some 750 lines, and `experiment.md` would have needed its
+own. The context is for what runs on its own (the agent, model authoring,
+the push to Tiled), which reads the catalog, while a person already gives a
+sample its wider context in `sample.md`. So the record is changed on the
+Experiment page alone, and read on the page and through
+`nrw experiment status`. Its refusals name no file either: "in
+experiment.md" would send the person looking for one.

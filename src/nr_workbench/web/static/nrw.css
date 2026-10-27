@@ -88,6 +88,37 @@ body {
   font-size: 0.8125rem;
 }
 
+/* A panel that folds away: its head is the summary, and its hint says what is
+   inside while it is closed. */
+summary.panel-head {
+  cursor: pointer;
+  list-style: none;
+}
+
+summary.panel-head::-webkit-details-marker {
+  display: none;
+}
+
+summary.panel-head::before {
+  content: "\25B8";
+  font-weight: 400;
+}
+
+details[open] > summary.panel-head::before {
+  content: "\25BE";
+}
+
+details:not([open]) > summary.panel-head {
+  border-bottom: 0;
+}
+
+.panel-head .fold {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .plot {
   width: 100%;
 }

@@ -191,6 +191,30 @@
   </div>
 
   <aside class="rail">
+    <details class="panel" id="expt-context">
+      <summary class="panel-head">
+        <span class="text-nowrap">The experiment</span>
+        <span id="expt-context-state" class="hint fold"></span>
+      </summary>
+      <form id="expt-context-form" class="p-3 small" novalidate>
+        <p class="form-text mt-0 mb-2">
+          What every sample here is part of. It is kept in the catalog, and
+          edited only here.
+        </p>
+        <label class="form-label mb-1" for="c-summary">Summary</label>
+        <textarea class="form-control form-control-sm mb-2" id="c-summary" name="summary" rows="3"
+                  placeholder="What the proposal sets out to learn."></textarea>
+        <label class="form-label mb-1" for="c-hypotheses">Hypotheses</label>
+        <textarea class="form-control form-control-sm mb-2" id="c-hypotheses" name="hypotheses" rows="2"
+                  placeholder="What the measurements should confirm or rule out."></textarea>
+        <label class="form-label mb-1" for="c-notes">Notes</label>
+        <textarea class="form-control form-control-sm mb-2" id="c-notes" name="notes" rows="2"
+                  placeholder="Anything every measurement needs: the cell, the electrolyte, the plan."></textarea>
+        <button type="submit" class="btn btn-sm btn-primary" id="expt-context-save">Save</button>
+        <p id="expt-context-status" class="small text-secondary mt-2 mb-0" aria-live="polite"></p>
+      </form>
+    </details>
+
     <div class="panel">
       <div class="panel-head">
         <span>Samples</span>

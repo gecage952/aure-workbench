@@ -392,13 +392,15 @@ def test_apply_changes_the_experiment_survives_edits_to_runs_and_samples() -> No
     )
 
 
-def test_a_heading_is_refused_naming_the_file_it_would_split() -> None:
+def test_a_heading_is_refused_naming_where_it_would_split_the_text() -> None:
     with pytest.raises(CatalogValidationError) as in_experiment:
         describe(Catalog(), notes="## Plan\nrun it")
     with pytest.raises(CatalogValidationError) as in_sample:
         clean_prose("description", "## Fits to perform\nall")
 
-    assert "In experiment.md a heading starts a new section" in str(in_experiment.value)
+    assert "quoted into the instructions a language model is given" in str(
+        in_experiment.value
+    )
     assert "agent's task" not in str(in_experiment.value)
     assert "In sample.md a heading" in str(in_sample.value)
     assert "would become the agent's task" in str(in_sample.value)
@@ -407,26 +409,26 @@ def test_a_heading_is_refused_naming_the_file_it_would_split() -> None:
 @pytest.mark.parametrize(
     ("text", "says"),
     [
-        ("## Plan\nrun it", "In experiment.md a heading starts a new section"),
-        ("```python\nx = 1", "Everything after it in experiment.md would render"),
-        ("hidden <!-- here", "experiment.md keeps its guidance in HTML comments"),
+        ("## Plan\nrun it", "where a heading starts a new section"),
+        ("```python\nx = 1", "everything after it would read as code"),
+        ("hidden <!-- here", "yet a language model still reads it"),
     ],
     ids=["heading", "fence", "comment"],
 )
-def test_a_refusal_of_the_experiments_text_names_experiment_md(
-    text: str, says: str
-) -> None:
+def test_a_refusal_of_the_experiments_text_names_no_file(text: str, says: str) -> None:
+    """No file is written from the experiment's context: a refusal naming
+    one would send the person looking for it."""
     with pytest.raises(CatalogValidationError) as refused:
         describe(Catalog(), notes=text)
 
     assert says in str(refused.value)
-    assert "sample.md" not in str(refused.value)
+    assert ".md" not in str(refused.value)
     assert "fits to perform" not in str(refused.value).lower()
 
 
 def test_a_table_of_runs_may_be_in_the_experiments_notes() -> None:
-    """experiment.md has no measurement table for one to disagree with; a
-    sample's prose may not hold one."""
+    """The experiment's context has no measurement table for one to disagree
+    with; a sample's prose may not hold one."""
     notes = "| Run | Plan |\n|---|---|\n| 218386 | OCV first |"
 
     assert describe(Catalog(), notes=notes).experiment.notes == notes
@@ -442,6 +444,14 @@ def test_an_invisible_tag_character_is_refused(check) -> None:
 
     with pytest.raises(CatalogValidationError, match="invisible tag character"):
         check("summary", "A plain summary." + hidden)
+
+
+@pytest.mark.parametrize("check", [clean_line, clean_prose])
+def test_a_lone_surrogate_is_refused_before_the_parquet_would(check) -> None:
+    """JSON carries half a surrogate pair; no encoding stores it. Refused
+    here, naming the field, rather than failing the whole save at the parquet."""
+    with pytest.raises(CatalogValidationError, match="a lone surrogate"):
+        check("summary", "fine " + chr(0xD800))
 
 
 def test_the_experiment_has_no_other_fields() -> None:

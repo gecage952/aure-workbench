@@ -204,8 +204,13 @@ def _invisible_trouble(value: str, *, allow: str) -> str | None:
             return f"a line break ({unicodedata.name(char, repr(char))})"
         if char in _BIDI_CONTROLS:
             return f"a text-direction control ({unicodedata.name(char)})"
-        if unicodedata.category(char) == "Cc":
+        category = unicodedata.category(char)
+        if category == "Cc":
             return f"a control character ({char!r})"
+        if category == "Cs":
+            # Half of a surrogate pair: JSON carries it, no encoding stores
+            # it, and left in it would fail the whole save at the parquet.
+            return f"a lone surrogate ({char!r}), which no encoding can store"
         if 0xE0000 <= ord(char) <= 0xE007F:
             # Shown by no one, read by a language model: a sentence spelled in
             # them is an instruction no reviewer of the text could see.
@@ -213,21 +218,26 @@ def _invisible_trouble(value: str, *, allow: str) -> str | None:
     return None
 
 
-#: The files a person's prose becomes a section of.
-Document = Literal["sample.md", "experiment.md"]
+#: Where a person's prose is read, which decides how each refusal explains
+#: itself: a section of ``sample.md``, or the experiment's context. No file is
+#: written from that; it is quoted into the instructions a language model is
+#: given.
+Where = Literal["sample.md", "experiment"]
 
 
-def _check_comment_markers(
-    label: str, value: str, document: Document = "sample.md"
-) -> None:
+def _check_comment_markers(label: str, value: str, where: Where = "sample.md") -> None:
     for marker in ("<!--", "-->"):
         if marker in value:
-            raise CatalogValidationError(
-                f"{label} contains {marker!r}. {document} keeps its guidance in "
-                "HTML comments, and every reader that strips them would take "
-                "this as the start or end of one -- hiding the text between "
-                "here and the next comment."
+            reason = (
+                "sample.md keeps its guidance in HTML comments, and every "
+                "reader that strips them would take this as the start or end "
+                "of one -- hiding the text between here and the next comment."
+                if where == "sample.md"
+                else "That starts or ends an HTML comment: wherever this text is "
+                "shown as Markdown, what is inside one is hidden, yet a language "
+                "model still reads it."
             )
+            raise CatalogValidationError(f"{label} contains {marker!r}. {reason}")
 
 
 def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
@@ -265,16 +275,16 @@ def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
     return text
 
 
-def clean_prose(label: str, value: Any, *, document: Document = "sample.md") -> str:
+def clean_prose(label: str, value: Any, *, where: Where = "sample.md") -> str:
     """Validate a multi-line value: a description, the fits to perform, a
     section of the experiment's context.
 
     Args:
         label: The field's name, for the message.
         value: The proposed value.
-        document: The file it becomes a section of: ``sample.md``, or
-            ``experiment.md``, which has no measurement table for a table of
-            runs to disagree with.
+        where: Where it is read: in ``sample.md``, or as the experiment's
+            context, which is quoted into a language model's instructions and
+            has no measurement table for a table of runs to disagree with.
 
     Returns:
         The text with Windows line endings normalized and the ends trimmed.
@@ -294,27 +304,30 @@ def clean_prose(label: str, value: Any, *, document: Document = "sample.md") -> 
     trouble = _invisible_trouble(text, allow="\n\t")
     if trouble:
         raise CatalogValidationError(f"{label} contains {trouble}")
-    _check_comment_markers(label, text, document)
+    _check_comment_markers(label, text, where)
     heading = _HEADING_RE.search(text)
     if heading:
         line = text[heading.start() :].split("\n", 1)[0]
-        task = (
-            " -- a '## Fits to perform' here would become the agent's task"
-            if document == "sample.md"
-            else ""
+        effect = (
+            "In sample.md a heading starts a new section, so this would read as "
+            "a section of its own -- a '## Fits to perform' here would become "
+            "the agent's task."
+            if where == "sample.md"
+            else "The experiment's context is quoted into the instructions a "
+            "language model is given, where a heading starts a new section, so "
+            "this would read as a section of its own."
         )
         raise CatalogValidationError(
-            f"{label} contains a heading line ({line.strip()!r}). In {document} a "
-            "heading starts a new section, so this would read as a section of "
-            f"its own{task}. Use **bold** for emphasis instead."
+            f"{label} contains a heading line ({line.strip()!r}). {effect} "
+            "Use **bold** for emphasis instead."
         )
-    _check_fences(label, text, document)
-    if document == "sample.md":
+    _check_fences(label, text, where)
+    if where == "sample.md":
         _check_tables(label, text)
     return text
 
 
-def _check_fences(label: str, text: str, document: Document) -> None:
+def _check_fences(label: str, text: str, where: Where) -> None:
     open_fence: str | None = None
     for line in text.split("\n"):
         match = _FENCE_RE.match(line)
@@ -326,14 +339,15 @@ def _check_fences(label: str, text: str, document: Document) -> None:
         elif fence[0] == open_fence[0] and len(fence) >= len(open_fence):
             open_fence = None
     if open_fence is not None:
-        after = (
-            " -- the measurement table and the fits to perform --"
-            if document == "sample.md"
-            else ""
+        effect = (
+            "Everything after it in sample.md -- the measurement table and the "
+            "fits to perform -- would render as code."
+            if where == "sample.md"
+            else "Quoted into a language model's instructions, everything after "
+            "it would read as code."
         )
         raise CatalogValidationError(
-            f"{label} opens a code block ({open_fence}) and never closes it. "
-            f"Everything after it in {document}{after} would render as code."
+            f"{label} opens a code block ({open_fence}) and never closes it. {effect}"
         )
 
 
@@ -490,7 +504,8 @@ class ExperimentContext:
     """What the experimenter said about the whole experiment: the context of
     every measurement in it, as a sample's context is of its own.
 
-    Each field becomes the section of ``experiment.md`` it is named after.
+    No file is written from it, so there is none to edit by hand and drift
+    from it: it is changed on the Experiment page, and read from the catalog.
 
     Attributes:
         summary: What the proposal sets out to learn.
@@ -513,13 +528,13 @@ class ExperimentContext:
         return (self.summary, self.hypotheses, self.notes)
 
 
-#: The experiment's fields a person may change: each a section of experiment.md.
+#: The experiment's fields a person may change.
 EXPERIMENT_FIELDS = ("summary", "hypotheses", "notes")
 
 
 def _clean_experiment_field(name: str, value: Any) -> str:
     if name in EXPERIMENT_FIELDS:
-        return clean_prose(name, value, document="experiment.md")
+        return clean_prose(name, value, where="experiment")
     raise CatalogValidationError(f"the experiment has no field {name!r}")
 
 

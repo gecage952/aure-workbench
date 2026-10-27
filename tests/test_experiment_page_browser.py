@@ -26,7 +26,12 @@ import pytest
 from click.testing import CliRunner
 
 from nr_workbench.cli import main
-from nr_workbench.experiment.model import RunChange, RunKey, SampleChange
+from nr_workbench.experiment.model import (
+    ExperimentChange,
+    RunChange,
+    RunKey,
+    SampleChange,
+)
 from nr_workbench.experiment.store import ParquetCatalogStore
 
 from .experiment_fixtures import write_autoreduced
@@ -138,6 +143,93 @@ def test_what_you_typed_survives_a_save_of_the_same_sample_made_elsewhere(
     )
     saved = ParquetCatalogStore.for_project(project).load().samples["S1"]
     assert (saved.title, saved.description) == ("Their title", "typed by me")
+
+
+def test_what_you_typed_about_the_experiment_survives_a_save_made_elsewhere(
+    page: Page, site: Site, project: Path
+) -> None:
+    page.goto(site.link)
+    page.goto(f"{site.url}/experiment")
+    # Nothing is written yet, so the panel is open, to be filled in.
+    page.wait_for(
+        "document.getElementById('expt-context').open"
+        " && !document.getElementById('c-summary').disabled",
+        what="the experiment's panel, open",
+    )
+    assert page.text("expt-context-state") == "not written yet"
+    page.type("c-summary", "typed by me")
+
+    # The experiment is saved elsewhere -- another field -- in the meantime.
+    ParquetCatalogStore.for_project(project).update(
+        experiment=ExperimentChange(0, {"notes": "Their notes"})
+    )
+
+    page.click("expt-context-save")  # meets the conflict, and the page reloads
+
+    page.wait_for(
+        "document.getElementById('c-notes').value === 'Their notes'",
+        what="the reload with their notes",
+    )
+    assert field(page, "c-summary") == "typed by me"
+    assert "saved somewhere else" in page.text("expt-context-status")
+
+    page.click("expt-context-save")
+
+    page.wait_for(
+        "document.getElementById('expt-context-status').textContent === 'Saved.'",
+        what="the save",
+    )
+    saved = ParquetCatalogStore.for_project(project).load().experiment
+    assert (saved.summary, saved.notes, saved.rev) == ("typed by me", "Their notes", 2)
+    assert page.text("expt-context-state") == "typed by me"
+
+
+def test_an_experiment_saved_empty_reads_as_not_written(
+    page: Page, site: Site, project: Path
+) -> None:
+    """Written means something is in it, as the command line and the docs say,
+    not that it was ever saved."""
+    store = ParquetCatalogStore.for_project(project)
+    store.update(experiment=ExperimentChange(0, {"summary": "A first try."}))
+    store.update(experiment=ExperimentChange(1, {"summary": ""}))
+
+    page.goto(site.link)
+    page.goto(f"{site.url}/experiment")
+
+    page.wait_for(
+        "document.getElementById('expt-context').open", what="the panel, open"
+    )
+    assert page.text("expt-context-state") == "not written yet"
+
+
+def test_a_save_here_does_not_hide_what_was_saved_elsewhere(
+    page: Page, site: Site, project: Path
+) -> None:
+    """A save's answer covers everything saved before it, from anywhere: were
+    the page to take its version from that answer, the poll would see nothing
+    new, and a sample saved in another tab would never show."""
+    page.goto(site.link)
+    page.goto(f"{site.url}/experiment")
+    page.wait_for(
+        "!document.getElementById('c-summary').disabled", what="the experiment's panel"
+    )
+    store = ParquetCatalogStore.for_project(project)
+    rev = store.load().samples["S1"].rev
+    store.update(samples=[SampleChange("S1", rev, {"title": "Their title"})])
+
+    page.type("c-summary", "typed by me")
+    page.click("expt-context-save")
+    page.wait_for(
+        "document.getElementById('expt-context-status').textContent === 'Saved.'",
+        what="the save",
+    )
+
+    # The next poll, at most ten seconds on, brings it in.
+    page.wait_for(
+        "document.getElementById('expt-samples').textContent.includes('Their title')",
+        what="the sample saved elsewhere, shown",
+        timeout=20,
+    )
 
 
 def open_s1(page: Page, site: Site) -> None:
@@ -542,6 +634,10 @@ def test_a_view_only_page_offers_no_writes_and_no_cancel(
     assert "view-only" in page.text("expt-models-list")
     for button in ("expt-model-create", "expt-model-quick"):
         assert page.js(f"document.getElementById('{button}').disabled") is True
+    # Nothing written, but nothing to write it with: left folded away.
+    assert page.js("document.getElementById('expt-context').open") is False
+    for box in ("c-summary", "c-hypotheses", "c-notes", "expt-context-save"):
+        assert page.js(f"document.getElementById('{box}').disabled") is True
     assert page.js(
         "document.querySelector('#expt-models-list .expt-model-fit').disabled"
     )

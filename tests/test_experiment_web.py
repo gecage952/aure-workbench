@@ -872,6 +872,75 @@ def test_adopt_refuses_a_rewrite_that_would_lose_text(app, writer, expt: Path) -
 
 
 # --------------------------------------------------------------------------
+# The experiment's own context
+# --------------------------------------------------------------------------
+
+
+def put_context(client, app, **body):
+    return client.put("/api/experiment/context", json=body, headers=write_headers(app))
+
+
+def test_the_experiments_context_is_saved_and_on_the_page_once_loaded(
+    app, writer
+) -> None:
+    assert writer.get("/api/experiment").get_json()["experiment"] == {
+        "summary": "",
+        "hypotheses": "",
+        "notes": "",
+        "rev": 0,
+    }
+
+    response = put_context(
+        writer, app, base_rev=0, fields={"summary": "Li plating at a low rate."}
+    )
+
+    assert response.status_code == 200, response.get_json()
+    loaded = writer.get("/api/experiment").get_json()["experiment"]
+    assert (loaded["summary"], loaded["rev"]) == ("Li plating at a low rate.", 1)
+    assert response.get_json()["experiment"] == loaded
+
+
+def test_a_stale_experiment_edit_is_a_409_and_changes_nothing(app, writer) -> None:
+    first = put_context(writer, app, base_rev=0, fields={"summary": "A"})
+    assert first.status_code == 200
+
+    response = put_context(writer, app, base_rev=0, fields={"summary": "B"})
+
+    assert response.status_code == 409
+    assert "the experiment" in response.get_json()["error"]
+    assert writer.get("/api/experiment").get_json()["experiment"]["summary"] == "A"
+
+
+def test_a_heading_in_the_experiments_summary_is_a_400_with_the_reason(
+    app, writer
+) -> None:
+    response = put_context(writer, app, base_rev=0, fields={"summary": "x\n## Aims\ny"})
+
+    assert response.status_code == 400
+    assert "heading" in response.get_json()["error"]
+    assert writer.get("/api/experiment").get_json()["experiment"]["rev"] == 0
+
+
+@pytest.mark.parametrize(
+    ("body", "says"),
+    [
+        ({"base_rev": 0}, "'fields' must be a non-empty object"),
+        ({"base_rev": 0, "fields": {}}, "'fields' must be a non-empty object"),
+        ({"base_rev": 0, "fields": {"title": "x"}}, "the experiment has no field"),
+        ({"base_rev": "0", "fields": {"summary": "x"}}, "a base revision must be"),
+        # JSON can carry half a surrogate pair, which no encoding stores.
+        ({"base_rev": 0, "fields": {"summary": chr(0xD800)}}, "a lone surrogate"),
+    ],
+    ids=["no-fields", "empty-fields", "unknown-field", "text-rev", "surrogate"],
+)
+def test_a_malformed_experiment_edit_is_a_400(app, writer, body, says) -> None:
+    response = put_context(writer, app, **body)
+
+    assert response.status_code == 400
+    assert says in response.get_json()["error"]
+
+
+# --------------------------------------------------------------------------
 # A dead data mount costs a request a timeout, never a thread
 # --------------------------------------------------------------------------
 
@@ -1058,14 +1127,24 @@ def test_quick_looks_cannot_use_up_the_reads_an_apply_needs(
 # --------------------------------------------------------------------------
 
 
-def test_experiment_data_refuses_writes_on_its_own(expt: Path) -> None:
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda data: data.update_runs(
+            [{"run": 234277, "base_rev": 0, "fields": {"sample_id": "S"}}]
+        ),
+        lambda data: data.update_experiment({"base_rev": 0, "fields": {"notes": "x"}}),
+    ],
+    ids=["runs", "experiment"],
+)
+def test_experiment_data_refuses_writes_on_its_own(expt: Path, write) -> None:
     """Second to the request gate; must hold even if the gate were bypassed."""
     from nr_workbench.web.experiment import ExperimentData, WritesDisabledError
 
     data = ExperimentData(expt, writable=False, autostart=False)
 
     with pytest.raises(WritesDisabledError):
-        data.update_runs([{"run": 234277, "base_rev": 0, "fields": {"sample_id": "S"}}])
+        write(data)
 
 
 def test_an_unsafe_method_outside_the_experiment_api_is_refused(expt: Path) -> None:

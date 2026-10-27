@@ -36,6 +36,7 @@ from nr_workbench.bounded import Bounded, Busy, TimedOut
 from nr_workbench.experiment.model import (
     MEASUREMENT_TYPES,
     Catalog,
+    ExperimentChange,
     RunChange,
     RunKey,
     SampleChange,
@@ -44,6 +45,7 @@ from nr_workbench.experiment.model import (
 from nr_workbench.experiment.sources import SOURCE_TIMEOUT
 from nr_workbench.experiment.status import STATES
 from nr_workbench.experiment.views import (
+    experiment_card,
     run_row,
     sample_card,
     unmanaged_card,
@@ -327,7 +329,8 @@ class ExperimentData:
 
         Returns:
             The source, feed and catalog, every run (from the source, the feed
-            or the catalog), every sample, and the cursor for :meth:`changes`.
+            or the catalog), every sample, the experiment's own context, and
+            the cursor for :meth:`changes`.
         """
         w = self._wired()
         workspace = w.workspace
@@ -358,6 +361,7 @@ class ExperimentData:
             "scan": _scan(changes),
             "runs": [rows[k] for k in sorted(rows)],
             "samples": self._samples(catalog),
+            "experiment": experiment_card(catalog.experiment),
             "problems": [
                 p.as_dict()
                 for p in (
@@ -628,6 +632,32 @@ class ExperimentData:
         )
         return {
             "samples": self._samples(catalog),
+            "catalog_version": self._catalog_version(w),
+        }
+
+    def update_experiment(self, payload: Any) -> dict[str, Any]:
+        """Record edits to the experiment's own context.
+
+        Saved in an update of its own, never with run or sample edits: see
+        :meth:`~nr_workbench.experiment.store.ParquetCatalogStore.update`.
+
+        Raises:
+            RequestError: A malformed request (400).
+            CatalogValidationError: A rule broken (400).
+            RecordConflict: The record changed since the page loaded it (409).
+        """
+        w = self._wired()
+        self._require_writable()
+        if not isinstance(payload, dict):
+            raise RequestError("expected an object")
+        fields = payload.get("fields")
+        if not isinstance(fields, dict) or not fields:
+            raise RequestError("'fields' must be a non-empty object")
+        catalog = w.workspace.store.update(
+            experiment=ExperimentChange(payload.get("base_rev", 0), fields)
+        )
+        return {
+            "experiment": experiment_card(catalog.experiment),
             "catalog_version": self._catalog_version(w),
         }
 
