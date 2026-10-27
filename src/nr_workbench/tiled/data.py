@@ -51,14 +51,24 @@ def run_of(name: str) -> int | None:
     return parsed
 
 
+def autoreduction_of(experiment: Any) -> Any | None:
+    """The experiment node's ``autoreduction/``; ``None`` when it has none, or
+    none shared with this login: the server says the same for both."""
+    try:
+        return experiment[AUTOREDUCTION]
+    except KeyError:
+        return None
+
+
 def plan_pull(
-    autoreduction: Any, folder: Path, *, runs: Iterable[int] = ()
+    autoreduction: Any, folder: Path | None, *, runs: Iterable[int] = ()
 ) -> tuple[list[Missing], int]:
     """What a pull would copy from *autoreduction* into *folder*.
 
     Args:
         autoreduction: The experiment's ``autoreduction/`` node.
-        folder: The data folder.
+        folder: The data folder; ``None`` when it cannot be worked out, and
+            so holds nothing.
         runs: Only these runs; all of them when empty.
 
     Returns:
@@ -70,7 +80,7 @@ def plan_pull(
         run = run_of(name)
         if run is None or (wanted and run not in wanted):
             continue
-        if (folder / name).exists():
+        if folder is not None and (folder / name).exists():
             held += 1
         else:
             missing.append(Missing(name, node))

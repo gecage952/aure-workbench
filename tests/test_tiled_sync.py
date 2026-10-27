@@ -1153,6 +1153,104 @@ def test_an_experiment_with_no_reduced_data_on_tiled_says_so(
     assert shown.exit_code == 1 and "autoreduction is not on Tiled" in shown.output
 
 
+def test_status_says_which_reduced_files_on_tiled_the_data_folder_lacks(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    """What a pull would copy, before it is run."""
+    from nr_workbench.project.settings import save
+
+    save(project, {"source.location": str(away)})
+    reduced(tiled, {SEGMENT: b"q", COMBINED: b"c", OTHER_RUN: b"x"})
+    (away / OTHER_RUN).write_bytes(b"x")
+
+    shown = nrw("status", "--root", str(project))
+    data = json.loads(nrw("status", "--root", str(project), "--json").output)["data"]
+
+    assert shown.exit_code == 0, shown.output
+    assert f"2 of the 3 reduced file(s) on Tiled are not in {away}" in shown.output
+    assert "`nrw tiled pull --data` copies them" in shown.output
+    assert "from run 234277" in shown.output
+    assert (data["files"], data["held"]) == (3, 1)
+    assert data["missing"] == [SEGMENT, COMBINED]
+    assert data["missing_runs"] == [234277]
+
+
+def test_status_with_every_reduced_file_here_says_so(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    from nr_workbench.project.settings import save
+
+    save(project, {"source.location": str(away)})
+    reduced(tiled, {SEGMENT: b"q"})
+    (away / SEGMENT).write_bytes(b"q")
+
+    shown = nrw("status", "--root", str(project))
+
+    assert f"all 1 reduced file(s) on Tiled are in {away}" in shown.output
+    assert "nrw tiled pull" not in shown.output
+
+
+def test_status_away_from_the_mount_says_to_pull_into_a_folder_of_yours(
+    project: Path, tiled: FakeTiled
+) -> None:
+    """nrw's default is the facility's own folder, which a pull refuses."""
+    tiled.context.kept = True
+    reduced(tiled, {SEGMENT: b"q", OTHER_RUN: b"x"})
+    default = "/SNS/REF_L/IPTS-00001/shared/autoreduce/new_reduction"
+
+    shown = nrw("status", "--root", str(project))
+
+    assert (
+        f"2 of the 2 reduced file(s) on Tiled are not in {default}, nrw's default"
+        in shown.output
+    )
+    assert "`nrw tiled pull --data --into DIR` copies them into a folder of yours" in (
+        shown.output
+    )
+    assert "from runs 234277, 234280" in shown.output
+
+
+def test_status_where_the_data_folder_cannot_be_worked_out_says_so(
+    project: Path, tiled: FakeTiled, monkeypatch
+) -> None:
+    from nr_workbench.commands import tiled_cmd
+
+    tiled.context.kept = True
+    reduced(tiled, {SEGMENT: b"q"})
+    monkeypatch.setattr(tiled_cmd, "_folder_of", lambda project, ipts: (None, False))
+
+    shown = nrw("status", "--root", str(project))
+
+    assert "the data folder cannot be worked out from nrw.toml" in shown.output
+    assert "`nrw tiled pull --data --into DIR`" in shown.output
+
+
+def test_status_of_an_experiment_with_no_reduced_files_on_tiled_says_so(
+    project: Path, tiled: FakeTiled
+) -> None:
+    tiled.context.kept = True
+    on_tiled(tiled)
+
+    shown = nrw("status", "--root", str(project))
+    data = json.loads(nrw("status", "--root", str(project), "--json").output)["data"]
+
+    assert "no reduced files on Tiled for this experiment yet" in shown.output
+    assert (data["on_tiled"], data["files"], data["missing"]) == (False, 0, [])
+
+
+@pytest.mark.parametrize(
+    ("runs", "said"),
+    [
+        ([1, 2, 3], "runs 1, 2, 3"),
+        (list(range(1, 8)), "7 runs, 1 to 7 (`--json` lists each file)"),
+    ],
+)
+def test_many_runs_are_said_by_their_first_and_last(runs: list[int], said: str) -> None:
+    from nr_workbench.commands.tiled_cmd import _runs
+
+    assert _runs(runs) == said
+
+
 def test_a_pull_says_what_to_pull(project: Path, tiled: FakeTiled) -> None:
     shown = nrw("pull", "--root", str(project))
 

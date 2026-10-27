@@ -202,7 +202,7 @@ own command line, to an agent.
 | Command | What it does |
 |---|---|
 | `nrw tiled login`, `logout` | Tiled's device-code login through Globus (tiled.ornl.gov first asks which login: choose `globus`); the client keeps the login, and renews it, in its own token cache |
-| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, and each record there against this project's |
+| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, each record there against this project's, and which reduced files there the data folder lacks |
 | `nrw tiled push` | writes the project's catalog to the experiment's `context/` |
 | `nrw tiled pull --data` | copies the experiment's reduced files into the data folder |
 
@@ -236,8 +236,9 @@ again. Each lands under a hidden name of its own first and is renamed whole;
 the folder watcher does the rest. Only names the reduction writes are copied.
 It copies into the data folder `nrw.toml` names, or `--into DIR`, and never
 into nrw's default, the facility's own reduction folder, which the reduction
-writes for the whole experiment. `--run` narrows it to some runs. A pulled
-run counts as complete once its files have settled, as any new file does
+writes for the whole experiment. `--run` narrows it to some runs, and
+`nrw tiled status` says which files a pull would copy, before it is run. A
+pulled run counts as complete once its files have settled, as any new file does
 (five minutes by default).
 
 A push and a status run against a real Tiled 0.2.18, started with uvx apart

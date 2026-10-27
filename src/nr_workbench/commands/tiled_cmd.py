@@ -157,6 +157,29 @@ def status(project: Path) -> dict[str, Any]:
             if (container, key) not in ours
         ),
         "others": [said(key) for key in remote.others] if remote is not None else [],
+        # The reduced files there against the data folder: what a pull copies.
+        "data": _data_status(node, project, ipts) if node is not None else None,
+    }
+
+
+def _data_status(experiment: Any, project: Path, ipts: str) -> dict[str, Any]:
+    """The reduced files in *experiment* on Tiled against the data folder
+    nrw.toml names: what `nrw tiled pull --data` would copy into it."""
+    from nr_workbench.tiled.data import autoreduction_of, plan_pull, run_of
+
+    folder, facility = _folder_of(project, ipts)
+    autoreduction = autoreduction_of(experiment)
+    missing, held = (
+        plan_pull(autoreduction, folder) if autoreduction is not None else ([], 0)
+    )
+    return {
+        "on_tiled": autoreduction is not None,
+        "folder": str(folder) if folder is not None else None,
+        "facility_folder": facility,
+        "files": len(missing) + held,
+        "held": held,
+        "missing": [item.name for item in missing],
+        "missing_runs": sorted({run_of(item.name) for item in missing}),
     }
 
 
@@ -179,6 +202,12 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
         return
     tags = ", ".join(found["tags"]) or "none"
     click.echo(f"{found['ipts']:<11} {found['experiment']}, tagged {tags}")
+    _echo_context(found)
+    _echo_data(found["data"])
+
+
+def _echo_context(found: dict[str, Any]) -> None:
+    """``context/`` on Tiled against this project's catalog, for a person."""
     if not found["context_found"]:
         click.echo("context/    not made yet: `nrw tiled push` makes it")
         return
@@ -196,6 +225,44 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
         click.echo(f"  = {path}  (Tiled's alone: a push leaves it)")
     if found["others"]:
         click.echo(f"  others: {', '.join(found['others'])}  (not nrw's)")
+
+
+def _echo_data(data: dict[str, Any]) -> None:
+    """The reduced files on Tiled against the data folder, for a person."""
+    if not data["on_tiled"]:
+        click.echo("data        no reduced files on Tiled for this experiment yet")
+        return
+    files, missing, folder = data["files"], data["missing"], data["folder"]
+    if folder is None:
+        click.echo(
+            f"data        {files} reduced file(s) on Tiled, and the data folder "
+            "cannot be worked out from nrw.toml: `nrw tiled pull --data --into "
+            "DIR` copies them"
+        )
+        return
+    if not missing:
+        click.echo(f"data        all {files} reduced file(s) on Tiled are in {folder}")
+        return
+    if data["facility_folder"]:
+        # A pull refuses the facility's own folder: it says where else to go.
+        where = f"{folder}, nrw's default"
+        pull = "`nrw tiled pull --data --into DIR` copies them into a folder of yours"
+    else:
+        where, pull = folder, "`nrw tiled pull --data` copies them"
+    click.echo(
+        f"data        {len(missing)} of the {files} reduced file(s) on Tiled are "
+        f"not in {where}: {pull}"
+    )
+    click.echo(f"            from {_runs(data['missing_runs'])}")
+
+
+def _runs(runs: list[int]) -> str:
+    """Runs as a person reads them: each of a few, or the first and the last."""
+    if len(runs) == 1:
+        return f"run {runs[0]}"
+    if len(runs) <= 6:
+        return "runs " + ", ".join(str(run) for run in runs)
+    return f"{len(runs)} runs, {runs[0]} to {runs[-1]} (`--json` lists each file)"
 
 
 def run_push(
@@ -256,18 +323,25 @@ def run_push(
     click.echo(f"Pushed {len(written)} record(s).")
 
 
-def _data_folder(project: Path, ipts: str) -> Path:
-    """The configured data folder; refused when it is the facility's own."""
+def _folder_of(project: Path, ipts: str) -> tuple[Path | None, bool]:
+    """The data folder nrw.toml names, ``None`` when it cannot be worked out;
+    and whether it is nrw's default, the facility's own reduction folder."""
     from nr_workbench.experiment.config import experiment_config_for
     from nr_workbench.project.config import DEFAULT_EXPERIMENT_LOCATION
 
     folder = experiment_config_for(project).source.path
+    return folder, folder == Path(DEFAULT_EXPERIMENT_LOCATION.replace("{ipts}", ipts))
+
+
+def _data_folder(project: Path, ipts: str) -> Path:
+    """The configured data folder; refused when it is the facility's own."""
+    folder, facility = _folder_of(project, ipts)
     if folder is None:
         raise click.ClickException(
             "The data folder cannot be worked out from nrw.toml: give --into DIR, "
             "or set [experiment.source] location."
         )
-    if folder == Path(DEFAULT_EXPERIMENT_LOCATION.replace("{ipts}", ipts)):
+    if facility:
         # The reduction writes there, for the whole experiment: a copy from
         # Tiled could stand in for a file reduced again since.
         raise click.ClickException(
@@ -291,7 +365,7 @@ def run_pull(
     Each one the folder lacks is copied whole; one it holds already is left
     as it is. The folder watcher does the rest. Nothing is written on Tiled.
     """
-    from nr_workbench.tiled.data import AUTOREDUCTION, plan_pull, pull
+    from nr_workbench.tiled.data import AUTOREDUCTION, autoreduction_of, plan_pull, pull
     from nr_workbench.tiled.server import (
         EXPERIMENT_PATH,
         TiledSyncError,
@@ -309,12 +383,7 @@ def run_pull(
     with _asking(project):
         experiment = experiment_node(connect(project, data_sources=True), ipts)
         where = f"{EXPERIMENT_PATH.format(ipts=ipts)}/{AUTOREDUCTION}"
-        try:
-            autoreduction = (
-                experiment[AUTOREDUCTION] if experiment is not None else None
-            )
-        except KeyError:
-            autoreduction = None
+        autoreduction = autoreduction_of(experiment) if experiment is not None else None
         if autoreduction is None:
             raise TiledSyncError(
                 f"{where} is not on Tiled, or not shared with this login: "
