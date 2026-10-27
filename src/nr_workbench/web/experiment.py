@@ -728,10 +728,10 @@ class ExperimentData:
         return w.workspace.store.load()
 
     def _catalog_version(self, w: _Wiring) -> str:
-        from nr_workbench.experiment.store import MANIFEST_FILE, RUNS_FILE, SAMPLES_FILE
+        from nr_workbench.experiment.store import CATALOG_FILES
 
         digest = hashlib.sha256()
-        for name in (MANIFEST_FILE, RUNS_FILE, SAMPLES_FILE):
+        for name in CATALOG_FILES:
             path = w.workspace.store.directory / name
             try:
                 stat = path.stat()

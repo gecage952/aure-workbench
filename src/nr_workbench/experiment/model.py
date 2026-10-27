@@ -25,7 +25,7 @@ import re
 import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, Literal
 
 #: A steady-state measurement: a set of angle segments reduced from one run.
 STEADY = "steady"
@@ -206,14 +206,24 @@ def _invisible_trouble(value: str, *, allow: str) -> str | None:
             return f"a text-direction control ({unicodedata.name(char)})"
         if unicodedata.category(char) == "Cc":
             return f"a control character ({char!r})"
+        if 0xE0000 <= ord(char) <= 0xE007F:
+            # Shown by no one, read by a language model: a sentence spelled in
+            # them is an instruction no reviewer of the text could see.
+            return f"an invisible tag character ({unicodedata.name(char, 'unnamed')})"
     return None
 
 
-def _check_comment_markers(label: str, value: str) -> None:
+#: The files a person's prose becomes a section of.
+Document = Literal["sample.md", "experiment.md"]
+
+
+def _check_comment_markers(
+    label: str, value: str, document: Document = "sample.md"
+) -> None:
     for marker in ("<!--", "-->"):
         if marker in value:
             raise CatalogValidationError(
-                f"{label} contains {marker!r}. sample.md keeps its guidance in "
+                f"{label} contains {marker!r}. {document} keeps its guidance in "
                 "HTML comments, and every reader that strips them would take "
                 "this as the start or end of one -- hiding the text between "
                 "here and the next comment."
@@ -255,12 +265,16 @@ def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
     return text
 
 
-def clean_prose(label: str, value: Any) -> str:
-    """Validate a multi-line value: a description, the fits to perform.
+def clean_prose(label: str, value: Any, *, document: Document = "sample.md") -> str:
+    """Validate a multi-line value: a description, the fits to perform, a
+    section of the experiment's context.
 
     Args:
         label: The field's name, for the message.
         value: The proposed value.
+        document: The file it becomes a section of: ``sample.md``, or
+            ``experiment.md``, which has no measurement table for a table of
+            runs to disagree with.
 
     Returns:
         The text with Windows line endings normalized and the ends trimmed.
@@ -280,22 +294,27 @@ def clean_prose(label: str, value: Any) -> str:
     trouble = _invisible_trouble(text, allow="\n\t")
     if trouble:
         raise CatalogValidationError(f"{label} contains {trouble}")
-    _check_comment_markers(label, text)
+    _check_comment_markers(label, text, document)
     heading = _HEADING_RE.search(text)
     if heading:
         line = text[heading.start() :].split("\n", 1)[0]
-        raise CatalogValidationError(
-            f"{label} contains a heading line ({line.strip()!r}). In sample.md a "
-            "heading starts a new section, so this would read as a section of "
-            "its own -- a '## Fits to perform' here would become the agent's "
-            "task. Use **bold** for emphasis instead."
+        task = (
+            " -- a '## Fits to perform' here would become the agent's task"
+            if document == "sample.md"
+            else ""
         )
-    _check_fences(label, text)
-    _check_tables(label, text)
+        raise CatalogValidationError(
+            f"{label} contains a heading line ({line.strip()!r}). In {document} a "
+            "heading starts a new section, so this would read as a section of "
+            f"its own{task}. Use **bold** for emphasis instead."
+        )
+    _check_fences(label, text, document)
+    if document == "sample.md":
+        _check_tables(label, text)
     return text
 
 
-def _check_fences(label: str, text: str) -> None:
+def _check_fences(label: str, text: str, document: Document) -> None:
     open_fence: str | None = None
     for line in text.split("\n"):
         match = _FENCE_RE.match(line)
@@ -307,10 +326,14 @@ def _check_fences(label: str, text: str) -> None:
         elif fence[0] == open_fence[0] and len(fence) >= len(open_fence):
             open_fence = None
     if open_fence is not None:
+        after = (
+            " -- the measurement table and the fits to perform --"
+            if document == "sample.md"
+            else ""
+        )
         raise CatalogValidationError(
             f"{label} opens a code block ({open_fence}) and never closes it. "
-            "Everything after it in sample.md -- the measurement table and the "
-            "fits to perform -- would render as code."
+            f"Everything after it in {document}{after} would render as code."
         )
 
 
@@ -462,6 +485,44 @@ class SampleContext:
         )
 
 
+@dataclass(frozen=True)
+class ExperimentContext:
+    """What the experimenter said about the whole experiment: the context of
+    every measurement in it, as a sample's context is of its own.
+
+    Each field becomes the section of ``experiment.md`` it is named after.
+
+    Attributes:
+        summary: What the proposal sets out to learn.
+        hypotheses: What the measurements should confirm or rule out.
+        notes: Anything else every measurement needs.
+        rev: Revision of this record; ``0`` until it is first written.
+        updated_at: When the record last changed, ISO-8601 UTC.
+        extra: Columns written by a newer nrw, preserved on save.
+    """
+
+    summary: str = ""
+    hypotheses: str = ""
+    notes: str = ""
+    rev: int = 0
+    updated_at: str = ""
+    extra: Mapping[str, Any] = field(default_factory=dict)
+
+    def content(self) -> tuple[Any, ...]:
+        """Everything a person decided, for telling an edit from a no-op."""
+        return (self.summary, self.hypotheses, self.notes)
+
+
+#: The experiment's fields a person may change: each a section of experiment.md.
+EXPERIMENT_FIELDS = ("summary", "hypotheses", "notes")
+
+
+def _clean_experiment_field(name: str, value: Any) -> str:
+    if name in EXPERIMENT_FIELDS:
+        return clean_prose(name, value, document="experiment.md")
+    raise CatalogValidationError(f"the experiment has no field {name!r}")
+
+
 #: Run fields a person may change, and how each is checked.
 RUN_FIELDS = ("sample_id", "measurement", "condition", "include", "note")
 
@@ -605,6 +666,19 @@ class SampleChange:
 
 
 @dataclass(frozen=True)
+class ExperimentChange:
+    """An edit to the experiment's context.
+
+    Attributes:
+        base_rev: The revision the editor saw; ``0`` before it is first written.
+        changes: Field name to new value, a subset of :data:`EXPERIMENT_FIELDS`.
+    """
+
+    base_rev: int
+    changes: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Catalog:
     """Everything the experimenter has decided, as one immutable value.
 
@@ -617,10 +691,13 @@ class Catalog:
     Attributes:
         runs: Run records by key.
         samples: Sample context records by id.
+        experiment: The experiment's own context: empty, at revision 0,
+            until it is first written.
     """
 
     runs: Mapping[RunKey, RunEntry] = field(default_factory=dict)
     samples: Mapping[str, SampleContext] = field(default_factory=dict)
+    experiment: ExperimentContext = field(default_factory=ExperimentContext)
 
     def sample_ids(self) -> list[str]:
         """Every sample the catalog knows, from either table, sorted."""
@@ -648,6 +725,7 @@ def apply_changes(
     *,
     runs: Iterable[RunChange] = (),
     samples: Iterable[SampleChange] = (),
+    experiment: ExperimentChange | None = None,
     now: str,
 ) -> Catalog:
     """Apply a person's edits, refusing any made against a stale record.
@@ -659,6 +737,7 @@ def apply_changes(
         catalog: The current catalog, freshly loaded.
         runs: Edits to run records.
         samples: Edits to sample records.
+        experiment: An edit to the experiment's context.
         now: The timestamp to record on changed records.
 
     Returns:
@@ -724,9 +803,26 @@ def apply_changes(
             proposed, rev=base.rev + 1, updated_at=now
         )
 
+    experiment_record = catalog.experiment
+    if experiment is not None:
+        if _rev(experiment.base_rev) != experiment_record.rev:
+            stale.append("the experiment")
+        else:
+            cleaned = {
+                name: _clean_experiment_field(name, value)
+                for name, value in experiment.changes.items()
+            }
+            proposed = replace(experiment_record, **cleaned)
+            if proposed.content() != experiment_record.content():
+                experiment_record = replace(
+                    proposed, rev=experiment_record.rev + 1, updated_at=now
+                )
+
     if stale:
         raise RecordConflict(stale)
-    return Catalog(runs=run_records, samples=sample_records)
+    return Catalog(
+        runs=run_records, samples=sample_records, experiment=experiment_record
+    )
 
 
 def _rev(value: Any) -> int:

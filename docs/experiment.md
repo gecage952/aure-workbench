@@ -574,7 +574,8 @@ nrw experiment release Sample6
 |---|---|---|
 | `experiment/runs.parquet` | One row per run: its sample, type, condition, good or not, its notes | Yes |
 | `experiment/samples.parquet` | One row per sample: its context | Yes |
-| `experiment/catalog.json` | Digests of both, written last, so an interrupted save is noticed | Yes |
+| `experiment/experiment.parquet` | One row, once written: the experiment's own context, its summary, hypotheses and notes | Yes |
+| `experiment/catalog.json` | Digests of each, written last, so an interrupted save is noticed | Yes |
 | `samples/<id>/data/sources.json` | What apply copied | Yes |
 | `nrw.toml` (`[beamtime]`, `[experiment.*]`) | The IPTS, where the data is, and how new runs are noticed | Yes |
 
