@@ -945,7 +945,7 @@ def _create_free(
         # silently discards the value the spec asked for. That shipped once, and
         # it turned a 31.2 A Ti layer at rho -1.88 into a 1 A layer at rho +1.0 --
         # a physically impossible stack no optimiser could fit, in a spec that
-        # read correctly. See docs/ground_truths.md.
+        # read correctly.
         pinned = (
             value
             if isinstance(parameter.fixed, bool)

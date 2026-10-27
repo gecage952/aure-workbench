@@ -1481,7 +1481,7 @@ def _edge_reading(document: dict[str, Any], notes: str) -> list[str]:
     The addition is left to the model, which reads the notes and knows what a
     substrate's SLD is. Made here, it took a table of substrate names, which is
     never complete -- and before that the scaffold's placeholder stack, which
-    made every sample silicon (docs/ground_truths.md, 2026-10-13).
+    made every sample silicon.
 
     Args:
         document: The scaffolded spec; only its probe's ``back_reflection`` is

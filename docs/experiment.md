@@ -262,9 +262,6 @@ Some text is refused, with the reason, because a reader of `sample.md` would
 misread it. A run's notes are held to the same rules, since they are written
 there too:
 
-- **Characters nobody sees.** Zero-width spaces and other invisible
-  formatting marks, hidden variation selectors, tag characters: a language
-  model reads them all the same.
 - **A heading line inside a box.** A `## Fits to perform` typed into the
   Description would become the agent's task.
 - **`<!--` or `-->`.** These hide text from readers that strip comments.

@@ -16,7 +16,6 @@ rules.
 3. **Focus on progress tracking** — the user should always know what is happening and what is next
 4. **Test incrementally** — each step should be verifiable
 5. **Review after major changes** — use the reviewer subagents
-6. **Ground truths** — record key findings in [docs/ground_truths.md](../docs/ground_truths.md)
 
 ## 🔄 Standard Workflow
 

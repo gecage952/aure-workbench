@@ -602,8 +602,7 @@ is tested against. The contract your command has to meet is:
 newline-delimited JSON events on stdout, also UTF-8. A wrapper script that translates those arguments is the
 intended seam. One was verified end to end while the prompt was still named as
 `-p @<prompt-file>`; a wrapper written for that form must read stdin now,
-because Claude Code stops delivering a named file's text once it is large
-(docs/ground_truths.md, 2026-10-04).
+because Claude Code stops delivering a named file's text once it is large.
 
 If your harness emits a different event format, everything still works except
 the progress lines, which go quiet — `describe_event` returns nothing for a

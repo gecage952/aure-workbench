@@ -636,7 +636,7 @@ def test_the_quick_budget_is_one_refinement_as_aure_counts_them() -> None:
     Asked of AuRE's own initial state and router. What this cannot see is the
     step between them, `evaluation_node` adding one per evaluation, and the CLI
     handing the setup's key over as `max_iterations`; both are read off AuRE's
-    source in docs/ground_truths.md, 2026-10-09.
+    source.
     """
     pytest.importorskip("aure")
     from aure.nodes.routing import route_after_evaluation

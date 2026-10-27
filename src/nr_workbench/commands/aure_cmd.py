@@ -45,7 +45,7 @@ QUICK_REFINEMENTS = 1
 
 #: The run controls each budget writes into the setup. AuRE counts
 #: `max_refinements` in evaluations, the first fit's included, so it is one
-#: more than the refinements wanted (docs/ground_truths.md, 2026-10-09).
+#: more than the refinements wanted.
 BUDGETS: dict[str, dict[str, Any]] = {
     "quick": {
         "fit_method": "de",

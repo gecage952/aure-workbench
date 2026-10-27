@@ -85,7 +85,7 @@ PLANNED_FEED_KINDS = tuple(o.kind for o in FEED_OPTIONS if not o.available)
 #: Where the experiment's samples, runs and their conditions are kept: in the
 #: project alone. `nrw tiled push` shares a copy with everyone on the
 #: experiment; a store they all write was built and withdrawn twice
-#: (docs/ground_truths.md, 2026-09-28 and 2026-10-27).
+#: (2026-09-28 and 2026-10-27).
 CATALOG_OPTIONS = (
     Option(
         DEFAULT_CATALOG_KIND,

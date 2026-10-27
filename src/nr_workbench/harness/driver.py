@@ -15,8 +15,8 @@ The two backends differ in a way that matters and is not cosmetic:
   is not explicitly denied, so its deny list survives --- three mechanisms:
   the plugin, the deny list, and ``NRW_AGENT=1``.
 
-Both facts were measured against opencode 1.18.18, not read off a docs page;
-see docs/ground_truths.md. OpenCode 2 (measured on 2.0.22) changed how a guard
+Both facts were measured against opencode 1.18.18, not read off a docs page.
+OpenCode 2 (measured on 2.0.22) changed how a guard
 plugin is written and where a session runs; see :func:`opencode_argv` and
 :data:`OPENCODE_PLUGIN_2`.
 """
@@ -113,8 +113,7 @@ def claude_argv(
     large prompt never reaches the model: Claude Code sends the bare reference
     in place of the file's text, and the session starts without its
     instructions. Measured with claude 2.1.232: a 20 KB file arrived, a 120 KB
-    one did not, and the same 120 KB on stdin arrived whole. See
-    docs/ground_truths.md, 2026-10-04.
+    one did not, and the same 120 KB on stdin arrived whole.
 
     Args:
         prompt_file: Unused; the prompt is streamed to stdin. The file is still

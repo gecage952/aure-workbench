@@ -21,8 +21,7 @@ already full length in the *first* segment's file has not been checked on a
 real file: if they grow as segments are reduced instead, a count read from
 segment 1 is 1, and trusting it would copy a third of a measurement five
 minutes after it landed. Until a real first-segment file settles that, a
-fulfilled plan still waits for a later run (or a person) -- see
-``docs/ground_truths.md``.
+fulfilled plan still waits for a later run (or a person).
 
 A settled run without that evidence is *unconfirmed*. It is shown, it can be
 assigned, and a person can confirm it -- but it is never copied on its own.

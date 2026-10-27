@@ -164,8 +164,7 @@ way the project is, through git, and with everyone on the experiment and other
 programs by `nrw tiled push`, which publishes a copy (see
 [Tiled](#tiled-pushed-and-pulled-by-a-person), below). No other kind of store
 is planned: one that every member's project read and wrote as it went was
-built and withdrawn twice, on 2026-09-28 and 2026-10-27 (both in
-`docs/ground_truths.md`).
+built and withdrawn twice, on 2026-09-28 and 2026-10-27.
 
 Should one be built again, it implements `CatalogStore` above, and must:
 
@@ -183,8 +182,8 @@ Should one be built again, it implements `CatalogStore` above, and must:
   land where nobody else looks.
 
 Sharing one set of parquet files between projects was built and withdrawn:
-files on a network mount do not make a database. See the 2026-09-28 entry in
-`docs/ground_truths.md`, and the branch `shared-catalog-attempt`.
+files on a network mount do not make a database. See the branch
+`shared-catalog-attempt`.
 
 The parquet store's schema follows data-assembler's lakehouse split: run rows
 carry a nullable `sample_id`, and samples are their own table. Columns a store
@@ -246,8 +245,7 @@ pulled run counts as complete once its files have settled, as any new file does
 A push and a status run against a real Tiled 0.2.18, started with uvx apart
 from nrw's environment, in `pytest -m tiled_server`. A Globus login, the tags
 and `pull --data` are tested against a fake of the client alone, and were
-each checked once against tiled.ornl.gov (`docs/ground_truths.md`,
-2026-10-27).
+each checked once against tiled.ornl.gov (2026-10-27).
 
 ## tNR, later
 
