@@ -344,7 +344,7 @@ def test_settings_says_what_is_set_and_what_follows_the_default(expt: Path) -> N
     assert "poll       30 s  (nrw's default)" in result.output
     assert "SNS web monitor (watcher)" in result.output
     assert "catalog    parquet" in result.output
-    assert "A metadata service (catalog)" in result.output
+    assert "  coming     SNS web monitor (watcher)\n" in result.output
 
 
 def test_settings_json_is_the_settings_pages_view(expt: Path) -> None:

@@ -448,7 +448,7 @@ def test_experiment_config_settle_seconds_must_be_positive_seconds(value) -> Non
     assert any("settle_seconds" in p.message for p in config.problems)
 
 
-def test_experiment_config_keeps_a_planned_kind_for_the_registry_to_refuse() -> None:
+def test_experiment_config_keeps_an_unknown_kind_for_the_registry_to_refuse() -> None:
     """Falling back to the folder would watch a path nobody chose."""
     config = experiment_config(
         _Project(ipts="1", raw={"experiment": {"source": {"kind": "tiled"}}})

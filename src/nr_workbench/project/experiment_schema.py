@@ -54,13 +54,6 @@ SOURCE_OPTIONS = (
         True,
         "Reads the reduced files from one folder, usually on the data mount.",
     ),
-    Option(
-        "tiled",
-        "Tiled",
-        False,
-        "Coming: for working away from the data mount. At ORNL an experiment "
-        "is the container projects/isaac/IPTS-<n> on tiled.ornl.gov.",
-    ),
 )
 
 #: How nrw learns that a run exists.
@@ -79,12 +72,6 @@ FEED_OPTIONS = (
         "complete once its last angle is reduced -- the last run of a "
         "beamtime included.",
     ),
-    Option(
-        "tiled",
-        "Tiled",
-        False,
-        "Coming: Tiled can announce runs whatever the data comes from.",
-    ),
 )
 
 #: The data sources nrw can read, and the ones that are planned.
@@ -95,23 +82,16 @@ PLANNED_SOURCE_KINDS = tuple(o.kind for o in SOURCE_OPTIONS if not o.available)
 FEED_KINDS = tuple(o.kind for o in FEED_OPTIONS if o.available)
 PLANNED_FEED_KINDS = tuple(o.kind for o in FEED_OPTIONS if not o.available)
 
-#: Where the experiment's samples, runs and their conditions are kept. A
-#: metadata service is how they will be shared -- between projects, and with
-#: other programs -- rather than by several projects writing one set of files.
+#: Where the experiment's samples, runs and their conditions are kept: in the
+#: project alone. `nrw tiled push` shares a copy with everyone on the
+#: experiment; a store they all write was built and withdrawn twice
+#: (docs/ground_truths.md, 2026-09-28 and 2026-10-27).
 CATALOG_OPTIONS = (
     Option(
         DEFAULT_CATALOG_KIND,
         "Parquet files in this project",
         True,
         "Two tables and a manifest in experiment/, committed with the project.",
-    ),
-    Option(
-        "api",
-        "A metadata service",
-        False,
-        "Coming: samples, runs and their conditions kept by a facility service, "
-        "where everyone on the experiment -- and other programs -- read and "
-        "record them.",
     ),
 )
 

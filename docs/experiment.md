@@ -73,11 +73,10 @@ model, which is saved in the project's `.env` ([Language model](#language-model)
   A run whose headers name an experiment other than the IPTS on the page is
   flagged, run by run.
 - **How new runs are noticed.** Files appearing in the data folder. The SNS web
-  monitor and Tiled are listed as coming and cannot be chosen yet.
+  monitor is listed as coming and cannot be chosen yet.
 - **Where samples and assignments are kept.** Parquet files in this project's
-  `experiment/`, committed with it. A metadata service, through which they
-  would be shared with everyone on the experiment, is listed as coming; see
-  [experiment-sources.md](experiment-sources.md).
+  `experiment/`, committed with it. `nrw tiled push` shares a copy with
+  everyone on the experiment; see [experiment-sources.md](experiment-sources.md).
 - **Advanced**: the settle time and the poll interval.
 
 A save changes only the lines of `nrw.toml` that hold these settings, keeps

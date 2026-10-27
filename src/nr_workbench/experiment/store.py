@@ -162,19 +162,13 @@ def open_store(root: Path, kind: str = "parquet") -> ParquetCatalogStore:
     """The catalog store ``[experiment.catalog] kind`` names.
 
     Raises:
-        CatalogUnavailableError: For a planned or unknown kind. Deliberately not
-            a fallback to the local parquet store: edits meant for a facility
-            service would be written into the project instead, where nobody
-            else would see them.
+        CatalogUnavailableError: For an unknown kind. Deliberately not a
+            fallback to the local parquet store: edits meant for somewhere
+            else would be written into the project instead, where nobody else
+            would see them.
     """
     if kind == "parquet":
         return ParquetCatalogStore.for_project(root)
-    if kind == "api":
-        raise CatalogUnavailableError(
-            '[experiment.catalog] kind = "api" is planned but not implemented '
-            "yet; see docs/experiment-sources.md. The catalog is not editable "
-            'until it is, or until kind = "parquet".'
-        )
     raise CatalogUnavailableError(
         f'[experiment.catalog] kind = {kind!r} is not known. Known: "parquet".'
     )

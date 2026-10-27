@@ -7,8 +7,8 @@ replaced without touching the others or the page:
 | Question | Interface | Built | Planned |
 |---|---|---|---|
 | Where does the reduced data come from? | `DataSource` (`experiment/sources/`) | a local folder | none: `nrw tiled pull --data` copies Tiled's files into it |
-| How do we learn that a run exists? | `RunFeed` (`experiment/feeds/`) | files appearing in that folder | the SNS web monitor, Tiled |
-| Where is the organization kept? | `CatalogStore` (`experiment/store.py`) | parquet in the project | a metadata service |
+| How do we learn that a run exists? | `RunFeed` (`experiment/feeds/`) | files appearing in that folder | the SNS web monitor |
+| Where is the organization kept? | `CatalogStore` (`experiment/store.py`) | parquet in the project | none: `nrw tiled push` publishes a copy |
 
 They are configured independently in `nrw.toml` (`[experiment.source]`,
 `[experiment.feed]`, `[experiment.catalog]`), on the Settings page of
@@ -88,8 +88,7 @@ the container `projects/isaac/IPTS-<n>/`, which another process makes. Its
 files in `new_reduction/`, which carry no metadata. A Tiled *source* is not
 planned: the folder stays the source, and away from the mount `nrw tiled pull
 --data` copies those files into it ([Tiled](#tiled-pushed-and-pulled-by-a-person),
-below). The Settings page still lists a Tiled source and a Tiled feed as
-coming.
+below). Nor is a Tiled feed: nothing the poller runs talks to Tiled.
 
 The in-memory source in `tests/experiment_fixtures.py` is the second
 implementation that keeps this interface from quietly becoming folder-shaped.
@@ -116,7 +115,6 @@ and know them sooner:
   where ISAAC's key does, in `~/.nrw` or the shell: never in `nrw.toml`, and
   not in the project's `.env`, which anyone who can write the project can
   write.
-- **Tiled** can announce runs whatever the data source is.
 
 A feed returns every run it currently knows. `experiment/live.py` works out
 what changed, so a feed never keeps state about what it has already said. If a
@@ -159,16 +157,17 @@ the record it was based on:
 A facility service holding the same tables should keep those semantics.
 Otherwise two people editing one experiment overwrite each other.
 
-### Planned: a metadata service
+### Sharing it: a copy, not a store everyone writes
 
 The catalog is kept in the project, and committed with it. It is shared the
-way the project is: through git. Sharing it more widely -- between the projects
-of everyone on an experiment, and with other programs that record samples --
-is a metadata service's job, reached with `[experiment.catalog] kind = "api"`.
-That kind is refused by name today, and listed as coming on the Settings page
-and in `nrw experiment settings`.
+way the project is, through git, and with everyone on the experiment and other
+programs by `nrw tiled push`, which publishes a copy (see
+[Tiled](#tiled-pushed-and-pulled-by-a-person), below). No other kind of store
+is planned: one that every member's project read and wrote as it went was
+built and withdrawn twice, on 2026-09-28 and 2026-10-27 (both in
+`docs/ground_truths.md`).
 
-A store for it implements `CatalogStore` above, and must:
+Should one be built again, it implements `CatalogStore` above, and must:
 
 - **Keep revisions.** Every record carries one, and an edit made against an
   older one is refused with `RecordConflict`, never applied over the newer.
