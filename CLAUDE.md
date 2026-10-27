@@ -19,6 +19,10 @@ This is a research project. These rules override the workflow above:
   and nothing more: no extra features, no "while I'm here" improvements, no
   moving work between branches or phases. If something outside the plan
   seems needed, say so in one line and ask.
+- **An accepted plan goes in `PLAN.md`.** When the person accepts a plan,
+  write it at the repo root as a succinct, numbered checklist of the tasks
+  to accomplish, and tick each one as it is done, so the person can follow
+  progress. `PLAN.md` is git-ignored and never committed.
 - **No protections for use-cases that will never happen.** The person using
   nrw writes its text and runs its commands; do not harden against them (no
   prompt-injection defences, hidden-character rules or hostile-input checks
