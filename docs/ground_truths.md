@@ -4462,5 +4462,8 @@ written.
 - **`projects/isaac/IPTS-37740` is there, tagged `isaac`, with no `context/`
   yet.** A first push would make it, and give what it makes the tag `isaac`.
   Whether a member may make a node with that tag is the server's policy, which
-  only a real push will answer.
+  only a real push could answer: it may. The first push, on the person's
+  go-ahead from their own project, made `context/`, `runs/` and `samples/`
+  and 88 records (10 samples, 78 runs) in 7 seconds, every one tagged
+  `isaac`, and `status` then found all 88 as the project has them.
 - Each command took under a second once logged in.
