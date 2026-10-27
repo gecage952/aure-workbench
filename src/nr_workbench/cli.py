@@ -993,7 +993,7 @@ def isaac_push_command(
 
 @main.group("tiled")
 def tiled_group() -> None:
-    """Tiled: push the experiment's catalog, and say what is there.
+    """Tiled: push the experiment's catalog, say what is there, fetch data.
 
     Needs `pip install 'nr-workbench[tiled]'`. The server is TILED_URL, from
     your shell or ~/.nrw (tiled.ornl.gov by default), never a project's files.
@@ -1044,6 +1044,29 @@ def tiled_push_command(**kwargs: object) -> None:
     from nr_workbench.commands.tiled_cmd import run_push
 
     run_push(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("pull")
+@click.option("--data", is_flag=True, help="The experiment's reduced files.")
+@click.option(
+    "--run", "runs", type=int, multiple=True, help="Only this run; repeat for more."
+)
+@click.option(
+    "--into",
+    type=click.Path(file_okay=False),
+    help="Copy into this folder [default: the configured data folder].",
+)
+@click.option("--dry-run", is_flag=True, help="Say what would be copied; copy nothing.")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+def tiled_pull_command(**kwargs: object) -> None:
+    """Copy the experiment's reduced files from Tiled into the data folder.
+
+    For when the data mount is out of reach. Each file the folder lacks, or
+    holds at another size, is copied whole; the folder watcher does the rest.
+    """
+    from nr_workbench.commands.tiled_cmd import run_pull
+
+    run_pull(**kwargs)  # type: ignore[arg-type]
 
 
 @main.group("agent")

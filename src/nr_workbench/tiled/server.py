@@ -132,11 +132,14 @@ def library() -> Library:
     return Library(Context, from_context, Spec)
 
 
-def connect(root: Path | None = None, *, login: bool = False) -> Any:
+def connect(
+    root: Path | None = None, *, login: bool = False, include_data_sources: bool = False
+) -> Any:
     """A client of the person's server, at its root, acting as the person.
 
     With the key when one is set; otherwise with the login the client keeps.
-    A login is started only with *login*.
+    A login is started only with *login*. With *include_data_sources*, each
+    node read says what files it is, and their sizes.
 
     Raises:
         TiledSyncError: Not logged in, the server refused or did not answer,
@@ -156,7 +159,9 @@ def connect(root: Path | None = None, *, login: bool = False) -> Any:
                     f"Not logged in to {chosen.url}: run `nrw tiled login`."
                 )
             context.authenticate(remember_me=True)
-        return tiled.from_context(context, node_path_parts=path)
+        return tiled.from_context(
+            context, node_path_parts=path, include_data_sources=include_data_sources
+        )
     except TiledSyncError:
         raise
     except RuntimeError as exc:

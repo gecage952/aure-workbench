@@ -1,4 +1,5 @@
-"""``nrw tiled``: log in, say what is on Tiled for this experiment, push to it.
+"""``nrw tiled``: log in, say what is on Tiled for this experiment, push the
+catalog to it, and copy its reduced files in.
 
 Each command is a person's: it acts with their login. The guard refuses them
 all to an agent, and each refuses itself under one too.
@@ -251,3 +252,79 @@ def run_push(
     except TiledSyncError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"Pushed {len(written)} record(s).")
+
+
+def _data_folder(project: Path) -> Path:
+    from nr_workbench.experiment.config import experiment_config_for
+
+    folder = experiment_config_for(project).source.path
+    if folder is None:
+        raise click.ClickException(
+            "The data folder cannot be worked out from nrw.toml: give --into DIR, "
+            "or set [experiment.source] location."
+        )
+    return folder
+
+
+def run_pull(
+    *,
+    root: str | None = None,
+    data: bool = False,
+    runs: tuple[int, ...] = (),
+    into: str | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Copy the experiment's reduced files from Tiled into the data folder.
+
+    Each one the folder lacks, or holds at another size (reduced again since),
+    is copied whole; the folder watcher does the rest. Nothing is written on
+    Tiled.
+    """
+    from nr_workbench.agent.guard import refuse_if_agent
+    from nr_workbench.tiled.data import AUTOREDUCTION, plan_pull, pull
+    from nr_workbench.tiled.server import (
+        EXPERIMENT_PATH,
+        TiledSyncError,
+        connect,
+        experiment_node,
+    )
+
+    refuse_if_agent("tiled")
+    if not data:
+        raise click.ClickException(
+            "Say what to pull: --data copies the experiment's reduced files."
+        )
+    project = _project(root)
+    ipts = _ipts(project)
+    folder = Path(into).resolve() if into else _data_folder(project)
+    try:
+        client = connect(project, include_data_sources=True)
+        experiment = experiment_node(client, ipts)
+        where = f"{EXPERIMENT_PATH.format(ipts=ipts)}/{AUTOREDUCTION}"
+        try:
+            autoreduction = experiment[AUTOREDUCTION] if experiment else None
+        except KeyError:
+            autoreduction = None
+        if autoreduction is None:
+            raise TiledSyncError(
+                f"{where} is not on Tiled, or not shared with this login: "
+                "nothing was copied."
+            )
+        missing = plan_pull(autoreduction, folder, runs=runs)
+        again = sum(m.again for m in missing)
+        click.echo(
+            f"{where} -> {folder}: {len(missing)} file(s) to copy"
+            + (f", {again} of them reduced again since" if again else "")
+        )
+        for item in missing:
+            click.echo(f"  {'~' if item.again else '+'} {item.name}")
+        if not missing:
+            click.echo("The folder holds every file Tiled has.")
+            return
+        if dry_run:
+            click.echo("Nothing copied (--dry-run).")
+            return
+        written = pull(missing, folder)
+    except TiledSyncError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Copied {len(written)} file(s) into {folder}.")

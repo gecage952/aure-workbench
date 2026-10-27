@@ -53,7 +53,9 @@ class FakeNode:
         metadata: dict[str, Any] | None = None,
         specs: tuple[Any, ...] = (),
         log: list[tuple[str, ...]] | None = None,
+        content: bytes | None = None,
     ) -> None:
+        self.content = content
         self.children = dict(children or {})
         self.tags = list(tags)
         self.metadata = dict(metadata or {})
@@ -71,6 +73,20 @@ class FakeNode:
 
     def __iter__(self):
         return iter(self.children)
+
+    @property
+    def item(self) -> dict[str, Any]:
+        """What the client keeps of the node: a file's size, as registered."""
+        if self.content is None:
+            return {"attributes": {"data_sources": []}}
+        assets = [{"size": len(self.content)}]
+        return {"attributes": {"data_sources": [{"assets": assets}]}}
+
+    def raw_export(self, destination: dict[str, Any]) -> list[str]:
+        import io
+
+        destination[self.key or "file"] = io.BytesIO(self.content or b"")
+        return list(destination)
 
     def items(self) -> list[tuple[str, FakeNode]]:
         return list(self.children.items())
@@ -162,7 +178,9 @@ class FakeTiled:
                 fake.asked.append((url, api_key))
                 return fake.context, []
 
-        def from_context(context: FakeContext, node_path_parts=()):
+        def from_context(
+            context: FakeContext, node_path_parts=(), include_data_sources=False
+        ):
             fake.root.context = context
             return fake.root
 
@@ -676,10 +694,10 @@ def test_a_push_stopped_partway_says_what_it_wrote_and_the_next_finishes(
 
     made = FakeNode.create_container
 
-    def server_goes_away(self, key, **kwargs):
-        if key == "234280-steady":
+    def server_goes_away(self, name, **kwargs):
+        if name.startswith("234280"):
             raise httpx.ConnectError("the server went away")
-        return made(self, key, **kwargs)
+        return made(self, name, **kwargs)
 
     monkeypatch.setattr(FakeNode, "create_container", server_goes_away)
     stopped = pushed(project)
@@ -727,3 +745,164 @@ def test_a_field_a_newer_nrw_wrote_is_left_for_it_to_push(project: Path) -> None
     (record,) = records_of(catalog)
 
     assert "future" not in record.fields and record.fields["title"] == "Cu"
+
+
+# --------------------------------------------------------------------------
+# `nrw tiled pull --data`
+# --------------------------------------------------------------------------
+
+SEGMENT = "REFL_234277_1_234277_partial.txt"
+COMBINED = "REFL_234277_combined_data_auto.txt"
+OTHER_RUN = "REFL_234280_1_234280_partial.txt"
+
+
+def reduced(fake: FakeTiled, files: dict[str, bytes]) -> FakeNode:
+    """The experiment's autoreduction/ on Tiled, holding *files*."""
+    nodes = {}
+    for name, content in files.items():
+        node = FakeNode(content=content)
+        node.key = name
+        nodes[name] = node
+    experiment = on_tiled(fake)
+    experiment.children["autoreduction"] = FakeNode(nodes)
+    return experiment
+
+
+def pulled(project: Path, folder: Path, *args: str):
+    return nrw("pull", "--data", "--root", str(project), "--into", str(folder), *args)
+
+
+@pytest.fixture
+def away(project: Path, tiled: FakeTiled, tmp_path: Path) -> Path:
+    """Logged in, and a data folder of the person's own, away from the mount."""
+    tiled.context.kept = True
+    folder = tmp_path / "data"
+    folder.mkdir()
+    return folder
+
+
+def test_a_pull_copies_what_the_folder_lacks_and_leaves_the_rest(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    reduced(tiled, {SEGMENT: b"q r", COMBINED: b"q r dr", OTHER_RUN: b"x"})
+    (away / OTHER_RUN).write_bytes(b"x")
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 0, shown.output
+    assert "Copied 2 file(s)" in shown.output
+    assert (away / SEGMENT).read_bytes() == b"q r"
+    assert (away / COMBINED).read_bytes() == b"q r dr"
+    # Nothing half-written is left for the watcher to read.
+    assert [p.name for p in away.iterdir() if p.name.startswith(".")] == []
+
+
+def test_a_file_reduced_again_since_is_copied_again(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    reduced(tiled, {SEGMENT: b"reduced again, longer"})
+    (away / SEGMENT).write_bytes(b"first")
+
+    shown = pulled(project, away)
+
+    assert "1 of them reduced again since" in shown.output
+    assert (away / SEGMENT).read_bytes() == b"reduced again, longer"
+
+
+def test_only_names_the_reduction_writes_are_copied(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    """Nothing a node is called can become a path here."""
+    reduced(tiled, {SEGMENT: b"q", "../outside.txt": b"x", "notes.json": b"{}"})
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 0, shown.output
+    assert [p.name for p in away.iterdir()] == [SEGMENT]
+    assert not (away.parent / "outside.txt").exists()
+
+
+def test_a_pull_of_one_run_copies_its_files_alone(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    reduced(tiled, {SEGMENT: b"q", COMBINED: b"c", OTHER_RUN: b"x"})
+
+    pulled(project, away, "--run", "234280")
+
+    assert [p.name for p in away.iterdir()] == [OTHER_RUN]
+
+
+def test_a_dry_run_says_what_would_be_copied_and_copies_nothing(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    reduced(tiled, {SEGMENT: b"q"})
+
+    shown = pulled(project, away, "--dry-run")
+
+    assert f"+ {SEGMENT}" in shown.output and "Nothing copied" in shown.output
+    assert list(away.iterdir()) == []
+
+
+def test_a_folder_nrw_cannot_write_is_refused(
+    project: Path, tiled: FakeTiled, tmp_path: Path
+) -> None:
+    tiled.context.kept = True
+    reduced(tiled, {SEGMENT: b"q"})
+
+    shown = pulled(project, tmp_path / "not-there")
+
+    assert shown.exit_code == 1 and "not a folder nrw can write" in shown.output
+
+
+def test_a_download_that_fails_names_what_was_copied_before_it(
+    project: Path, tiled: FakeTiled, away: Path, monkeypatch
+) -> None:
+    import httpx
+
+    reduced(tiled, {COMBINED: b"c", SEGMENT: b"q"})
+    exported = FakeNode.raw_export
+
+    def goes_away(self, destination):
+        if self.key == COMBINED:
+            raise httpx.ReadTimeout("no answer")
+        return exported(self, destination)
+
+    monkeypatch.setattr(FakeNode, "raw_export", goes_away)
+
+    shown = pulled(project, away)
+
+    # In name order: the segment, then the combined curve.
+    assert shown.exit_code == 1
+    assert f"{COMBINED} could not be downloaded" in shown.output
+    assert "1 file(s) were copied before it" in shown.output
+    assert [p.name for p in away.iterdir()] == [SEGMENT]
+
+
+def test_an_experiment_with_no_reduced_data_on_tiled_says_so(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    on_tiled(tiled)
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 1 and "autoreduction is not on Tiled" in shown.output
+
+
+def test_a_pull_says_what_to_pull(project: Path, tiled: FakeTiled) -> None:
+    shown = nrw("pull", "--root", str(project))
+
+    assert shown.exit_code == 1 and "--data" in shown.output
+
+
+def test_a_pull_copies_into_the_configured_data_folder(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    from nr_workbench.project.settings import save
+
+    save(project, {"source.location": str(away)})
+    reduced(tiled, {SEGMENT: b"q"})
+
+    shown = nrw("pull", "--data", "--root", str(project))
+
+    assert shown.exit_code == 0, shown.output
+    assert (away / SEGMENT).read_bytes() == b"q"
