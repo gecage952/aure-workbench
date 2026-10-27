@@ -380,12 +380,12 @@ class ParquetCatalogStore:
         runs_bytes = _table_bytes(
             "runs",
             _RUN_COLUMNS,
-            [_run_row(entry) for key, entry in sorted(catalog.runs.items())],
+            [run_row(entry) for key, entry in sorted(catalog.runs.items())],
         )
         samples_bytes = _table_bytes(
             "samples",
             _SAMPLE_COLUMNS,
-            [_sample_row(catalog.samples[k]) for k in sorted(catalog.samples)],
+            [sample_row(catalog.samples[k]) for k in sorted(catalog.samples)],
         )
         manifest = {
             "schema": SCHEMA_ID,
@@ -523,7 +523,9 @@ def _same(before: Catalog, after: Catalog) -> bool:
     }
 
 
-def _run_row(entry: RunEntry) -> dict[str, Any]:
+def run_row(entry: RunEntry) -> dict[str, Any]:
+    """A run's record as a row: nrw's fields, over the ones it does not know.
+    The parquet table's, and what a push to Tiled writes."""
     row = dict(entry.extra)
     row.update(
         {
@@ -543,7 +545,8 @@ def _run_row(entry: RunEntry) -> dict[str, Any]:
     return row
 
 
-def _sample_row(entry: SampleContext) -> dict[str, Any]:
+def sample_row(entry: SampleContext) -> dict[str, Any]:
+    """A sample's record as a row, as :func:`run_row` is a run's."""
     row = dict(entry.extra)
     row.update(
         {

@@ -20,7 +20,7 @@ import os
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 #: The server nrw uses when the person names none: ORNL's.
 DEFAULT_URL = "https://tiled.ornl.gov"
@@ -107,8 +107,16 @@ def _scrub_environment() -> None:
             os.environ.pop(name, None)
 
 
-def _library() -> tuple[Any, Any]:
-    """The official client's ``Context`` and ``from_context``.
+class Library(NamedTuple):
+    """The parts of the official client nrw uses: the one place it is loaded."""
+
+    Context: Any
+    from_context: Any
+    Spec: Any
+
+
+def library() -> Library:
+    """The official client's parts, imported now.
 
     Raises:
         TiledSyncError: It is not installed.
@@ -116,11 +124,12 @@ def _library() -> tuple[Any, Any]:
     try:
         from tiled.client.constructors import from_context
         from tiled.client.context import Context
+        from tiled.structures.core import Spec
     except ImportError as exc:
         raise TiledSyncError(
             "The Tiled client is not installed here: pip install 'nr-workbench[tiled]'."
         ) from exc
-    return Context, from_context
+    return Library(Context, from_context, Spec)
 
 
 def connect(root: Path | None = None, *, login: bool = False) -> Any:
@@ -136,10 +145,10 @@ def connect(root: Path | None = None, *, login: bool = False) -> Any:
     import httpx
 
     chosen = server(root)
-    context_type, from_context = _library()
+    tiled = library()
     _scrub_environment()
     try:
-        context, path = context_type.from_any_uri(chosen.url, api_key=chosen.key)
+        context, path = tiled.Context.from_any_uri(chosen.url, api_key=chosen.key)
         providers = context.server_info.authentication.providers
         if chosen.key is None and providers and not context.use_cached_tokens():
             if not login:
@@ -147,7 +156,7 @@ def connect(root: Path | None = None, *, login: bool = False) -> Any:
                     f"Not logged in to {chosen.url}: run `nrw tiled login`."
                 )
             context.authenticate(remember_me=True)
-        return from_context(context, node_path_parts=path)
+        return tiled.from_context(context, node_path_parts=path)
     except TiledSyncError:
         raise
     except RuntimeError as exc:
@@ -177,10 +186,10 @@ def logout(root: Path | None = None) -> str:
             f"TILED_API_KEY, set in {chosen.key_source}, is what nrw sends to "
             f"{chosen.url}: there is no login to end. Remove the key to stop."
         )
-    context_type, _ = _library()
+    tiled = library()
     _scrub_environment()
     try:
-        context, _ = context_type.from_any_uri(chosen.url)
+        context, _ = tiled.Context.from_any_uri(chosen.url)
         if not context.use_cached_tokens():
             return f"Not logged in to {chosen.url}: nothing to end."
         context.logout()

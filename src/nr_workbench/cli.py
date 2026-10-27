@@ -993,7 +993,7 @@ def isaac_push_command(
 
 @main.group("tiled")
 def tiled_group() -> None:
-    """Tiled: log in, and say what is there for this experiment.
+    """Tiled: push the experiment's catalog, and say what is there.
 
     Needs `pip install 'nr-workbench[tiled]'`. The server is TILED_URL, from
     your shell or ~/.nrw (tiled.ornl.gov by default), never a project's files.
@@ -1027,6 +1027,23 @@ def tiled_status_command(**kwargs: object) -> None:
     from nr_workbench.commands.tiled_cmd import run_status
 
     run_status(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("push")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+@click.option(
+    "--dry-run", is_flag=True, help="Say what would be written; write nothing."
+)
+@click.option("--yes", is_flag=True, help="Skip the confirmation.")
+def tiled_push_command(**kwargs: object) -> None:
+    """Write this project's catalog to its experiment's context/ on Tiled.
+
+    The last writer wins: a record that differs is written over Tiled's copy,
+    keeping fields other programs keep on it. Records Tiled alone holds stay.
+    """
+    from nr_workbench.commands.tiled_cmd import run_push
+
+    run_push(**kwargs)  # type: ignore[arg-type]
 
 
 @main.group("agent")

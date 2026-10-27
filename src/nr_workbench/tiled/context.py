@@ -1,0 +1,254 @@
+"""The experiment's ``context/`` on Tiled: what a push writes there, and reads.
+
+``context/`` is a container in the experiment's own node. It holds ``runs/``
+and ``samples/``, with one container per record: nrw's fields are its
+metadata, and one spec names what it is. Its own metadata is a small header.
+
+A push writes the project's catalog there, the last writer winning (the
+person's choice, 2026-10-27): a record whose fields differ is replaced, one
+that matches is left alone, and fields another program keeps on a record
+stay. Nothing else is touched: a record only Tiled holds, another program's
+node, anything outside ``context/``. Whatever is made takes its parent's
+access tags, because a node made without them is its maker's alone, unseen
+by everyone else on the experiment; a parent with none is refused.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+from nr_workbench.experiment.model import Catalog, RunKey
+from nr_workbench.tiled import server as server_module
+from nr_workbench.tiled.server import TiledSyncError, said, tags_of
+
+#: The containers a push writes, in the experiment's own node.
+CONTEXT = "context"
+RUNS = "runs"
+SAMPLES = "samples"
+
+#: What each node says it is: a spec's name, and its fields' version.
+CONTEXT_SPEC = ("context-experiment", "1")
+RUN_SPEC = ("context-run", "1")
+SAMPLE_SPEC = ("context-sample", "1")
+
+
+@dataclass(frozen=True)
+class Record:
+    """One record, as a push writes it.
+
+    Attributes:
+        container: ``runs`` or ``samples``.
+        key: Its name there: ``234277-steady``, or the sample's id.
+        fields: nrw's fields of it, which are its metadata.
+        spec: What it says it is.
+    """
+
+    container: str
+    key: str
+    fields: Mapping[str, Any]
+    spec: tuple[str, str]
+
+    @property
+    def path(self) -> str:
+        """``samples/S1``, as a person reads it."""
+        return f"{self.container}/{self.key}"
+
+
+@dataclass(frozen=True)
+class Planned:
+    """What a push does with one record: ``create``, ``replace`` or ``same``."""
+
+    action: str
+    record: Record
+
+
+@dataclass
+class Remote:
+    """``context/`` as one read found it.
+
+    Attributes:
+        context: Its node; ``None`` when it is not made yet.
+        containers: ``runs/`` and ``samples/``, each ``None`` when not made.
+        records: Each record's metadata there, by container and key.
+        others: What else ``context/`` holds, which nrw neither reads nor
+            writes.
+    """
+
+    context: Any = None
+    containers: dict[str, Any] = field(
+        default_factory=lambda: {RUNS: None, SAMPLES: None}
+    )
+    records: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
+    others: list[str] = field(default_factory=list)
+
+
+def run_key(key: RunKey) -> str:
+    """A run's name on Tiled: ``234277-steady``. A key there holds no ``:``."""
+    return f"{key.run}-{key.kind}"
+
+
+def header(ipts: str) -> dict[str, Any]:
+    """``context/``'s own metadata: whose it is, and who writes it."""
+    return {"ipts": ipts, "written_by": "nr-workbench"}
+
+
+def records_of(catalog: Catalog) -> list[Record]:
+    """The catalog's records as a push writes them: samples, then runs, so a
+    reader never meets a run whose sample is not there yet."""
+    from nr_workbench.experiment.store import run_row, sample_row
+
+    samples = [
+        Record(SAMPLES, sample_id, _known(sample_row(entry), entry.extra), SAMPLE_SPEC)
+        for sample_id, entry in sorted(catalog.samples.items())
+    ]
+    runs = [
+        Record(RUNS, run_key(key), _known(run_row(entry), entry.extra), RUN_SPEC)
+        for key, entry in sorted(catalog.runs.items())
+    ]
+    return samples + runs
+
+
+def _known(row: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any]:
+    """*row*'s fields nrw keeps: a column a newer nrw wrote is that nrw's to
+    send, and its type is not known to be JSON's."""
+    return {name: value for name, value in row.items() if name not in extra}
+
+
+def read_remote(experiment: Any) -> Remote:
+    """``context/`` in the experiment's node *experiment*, read once.
+
+    Raises:
+        TiledSyncError: It could not be read.
+    """
+    import httpx
+
+    try:
+        try:
+            context = experiment[CONTEXT]
+        except KeyError:
+            return Remote()
+        remote = Remote(context=context)
+        for name in (RUNS, SAMPLES):
+            try:
+                container = context[name]
+            except KeyError:
+                continue
+            remote.containers[name] = container
+            for key, child in container.items():
+                remote.records[(name, key)] = dict(child.metadata)
+        remote.others = sorted(k for k in context if k not in (RUNS, SAMPLES))
+    except httpx.HTTPError as exc:
+        raise TiledSyncError(f"context/ could not be read: {said(exc)}") from None
+    return remote
+
+
+def plan_push(catalog: Catalog, remote: Remote) -> list[Planned]:
+    """What a push of *catalog* over *remote* would do, record by record."""
+    planned = []
+    for record in records_of(catalog):
+        there = remote.records.get((record.container, record.key))
+        if there is None:
+            action = "create"
+        elif all(there.get(k, _ABSENT) == v for k, v in record.fields.items()):
+            action = "same"
+        else:
+            action = "replace"
+        planned.append(Planned(action, record))
+    return planned
+
+
+_ABSENT = object()
+
+
+def push(
+    experiment: Any, remote: Remote, planned: list[Planned], *, ipts: str
+) -> list[Planned]:
+    """Write what *planned* changes, in its order; make what it is written in.
+
+    Args:
+        experiment: The experiment's own node.
+        remote: ``context/`` as it was read for *planned*.
+        planned: From :func:`plan_push`.
+        ipts: The experiment's IPTS, for ``context/``'s header.
+
+    Returns:
+        What was written, in order.
+
+    Raises:
+        TiledSyncError: A node to make something in has no access tags, or a
+            write failed. The message names what was written before it: a
+            push run again writes only what is still different.
+    """
+    import httpx
+
+    Spec = server_module.library().Spec  # noqa: N806 - the client's class
+    written: list[Planned] = []
+    where = "context/"
+    try:
+        context, context_tags = remote.context, None
+        if context is None:
+            context_tags = _given(experiment, "The experiment's own node")
+            context = experiment.create_container(
+                CONTEXT,
+                metadata=header(ipts),
+                specs=[Spec(*CONTEXT_SPEC)],
+                access_tags=context_tags,
+            )
+        containers: dict[str, tuple[Any, list[str] | None]] = {}
+        for name in (RUNS, SAMPLES):
+            node = remote.containers.get(name)
+            if node is None:
+                # Made with context/'s tags, as given or as read.
+                tags = context_tags or _given(context, "context/")
+                where = f"{name}/"
+                node = context.create_container(name, access_tags=tags)
+                containers[name] = (node, tags)
+            else:
+                containers[name] = (node, None)
+        for item in planned:
+            if item.action == "same":
+                continue
+            record = item.record
+            where = record.path
+            node, tags = containers[record.container]
+            if item.action == "create":
+                node.create_container(
+                    record.key,
+                    metadata=dict(record.fields),
+                    specs=[Spec(*record.spec)],
+                    access_tags=tags or _given(node, f"{record.container}/"),
+                )
+            else:
+                there = node[record.key]
+                # Fields another program keeps on it stay; nrw's are written
+                # over theirs. The tags are left as they are.
+                there.replace_metadata(
+                    metadata={**dict(there.metadata), **record.fields},
+                    specs=[Spec(*record.spec)],
+                )
+            written.append(item)
+    except httpx.HTTPError as exc:
+        raise TiledSyncError(
+            f"{where} could not be written: {said(exc)}. {len(written)} record(s) "
+            "were written before it; push again to write the rest."
+        ) from None
+    return written
+
+
+def _given(node: Any, what: str) -> list[str]:
+    """The tags what is made in *node* is given: its own.
+
+    Raises:
+        TiledSyncError: It has none, and what nrw made in it would be its
+            maker's alone.
+    """
+    tags = tags_of(node)
+    if not tags:
+        raise TiledSyncError(
+            f"{what} on Tiled has no access tags: what nrw made in it would be "
+            "its maker's alone, unseen by everyone else on the experiment. "
+            "Nothing more was made."
+        )
+    return tags

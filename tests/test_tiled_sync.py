@@ -1,8 +1,9 @@
-"""`nrw tiled`: the person's server, a client that asks no one to log in, and
-the guard that keeps every Tiled command a person's.
+"""`nrw tiled`: the person's server, a client that asks no one to log in, a
+push in which the last writer wins and nothing is made untagged, and the
+guard that keeps every Tiled command a person's.
 
 The official client is replaced by a fake at the one place `tiled/server.py`
-loads it (`_library`), so nothing here needs it installed, or sends anything.
+loads it (`library`), so nothing here needs it installed, or sends anything.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 from click.testing import CliRunner
@@ -41,7 +42,8 @@ def project_env(project: Path, text: str) -> None:
 
 
 class FakeNode:
-    """A node: its children by key, its tags, its metadata and specs."""
+    """A node: its children by key, its tags, its metadata and specs. What is
+    made in it, or written over it, goes in one log the whole tree shares."""
 
     def __init__(
         self,
@@ -49,11 +51,51 @@ class FakeNode:
         *,
         tags: tuple[str, ...] = ("isaac",),
         metadata: dict[str, Any] | None = None,
+        specs: tuple[Any, ...] = (),
+        log: list[tuple[str, ...]] | None = None,
     ) -> None:
         self.children = dict(children or {})
         self.tags = list(tags)
         self.metadata = dict(metadata or {})
+        self.specs = list(specs)
+        self.log = log if log is not None else []
+        self.key = ""
         self.context: Any = None
+        for child in self.children.values():
+            child.share(self.log)
+
+    def share(self, log: list[tuple[str, ...]]) -> None:
+        self.log = log
+        for child in self.children.values():
+            child.share(log)
+
+    def __iter__(self):
+        return iter(self.children)
+
+    def items(self) -> list[tuple[str, FakeNode]]:
+        return list(self.children.items())
+
+    def create_container(
+        self, key: str, *, metadata=None, specs=None, access_tags=None
+    ) -> FakeNode:
+        assert key not in self.children, f"{key} made twice"
+        made = FakeNode(
+            tags=tuple(access_tags or ()),
+            metadata=metadata,
+            specs=tuple(specs or ()),
+            log=self.log,
+        )
+        made.key = key
+        self.children[key] = made
+        self.log.append(("create", key, *sorted(access_tags or ())))
+        return made
+
+    def replace_metadata(self, metadata=None, specs=None, access_tags=None) -> None:
+        assert access_tags is None, "a replace leaves the tags"
+        self.metadata = dict(metadata or {})
+        if specs is not None:
+            self.specs = list(specs)
+        self.log.append(("replace", self.key))
 
     @property
     def access_blob(self) -> dict[str, Any]:
@@ -64,6 +106,13 @@ class FakeNode:
         for part in key.strip("/").split("/"):
             node = node.children[part]
         return node
+
+
+class FakeSpec(NamedTuple):
+    """The client's ``Spec``: a name, and a version."""
+
+    name: str
+    version: str | None = None
 
 
 class FakeContext:
@@ -104,7 +153,7 @@ class FakeTiled:
         self.context = FakeContext(**context)
         self.asked: list[tuple[str, str | None]] = []
 
-    def library(self) -> tuple[Any, Any]:
+    def library(self) -> server_module.Library:
         fake = self
 
         class Context:
@@ -117,7 +166,7 @@ class FakeTiled:
             fake.root.context = context
             return fake.root
 
-        return Context, from_context
+        return server_module.Library(Context, from_context, FakeSpec)
 
 
 @pytest.fixture
@@ -125,13 +174,14 @@ def tiled(monkeypatch, tmp_path: Path) -> FakeTiled:
     """The fake, loaded where the real client would be; its token cache in
     the test's own folder, never the person's."""
     fake = FakeTiled(FakeNode({"projects": FakeNode({"isaac": FakeNode({})})}))
-    monkeypatch.setattr(server_module, "_library", fake.library)
+    monkeypatch.setattr(server_module, "library", fake.library)
     monkeypatch.setenv("TILED_CACHE_DIR", str(tmp_path / "tiled-cache"))
     return fake
 
 
 def on_tiled(fake: FakeTiled, ipts: str = "IPTS-00001", **node: Any) -> FakeNode:
     experiment = FakeNode(**node)
+    experiment.share(fake.root.log)
     fake.root["projects/isaac"].children[ipts] = experiment
     return experiment
 
@@ -265,7 +315,9 @@ def test_a_server_that_does_not_answer_is_said_as_its_own(
         def from_any_uri(url: str, *, api_key=None):
             raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr(server_module, "_library", lambda: (Context, None))
+    monkeypatch.setattr(
+        server_module, "library", lambda: server_module.Library(Context, None, None)
+    )
 
     with pytest.raises(TiledSyncError, match="tiled.ornl.gov did not answer"):
         connect(project)
@@ -457,3 +509,221 @@ def test_doctor_says_where_tiled_commands_would_go_and_with_what(
 
     assert said in check.detail and KEY not in check.detail
     assert check.detail.startswith("https://tiled.ornl.gov (nrw's default)")
+
+
+# --------------------------------------------------------------------------
+# `nrw tiled push`
+# --------------------------------------------------------------------------
+
+NOW = "2026-10-27T12:00:00Z"
+
+
+def catalogued(project: Path, **sample: Any) -> None:
+    """A sample and two of its runs, in the project's own catalog."""
+    from nr_workbench.experiment.model import RunChange, RunKey, SampleChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    ParquetCatalogStore.for_project(project).update(
+        runs=[
+            RunChange(RunKey(234277), 0, {"sample_id": "S1", "condition": "OCV"}),
+            RunChange(RunKey(234280), 0, {"sample_id": "S1", "condition": "CA"}),
+        ],
+        samples=[SampleChange("S1", 0, {"title": "Cu/Pt", **sample})],
+        now=NOW,
+    )
+
+
+def pushed(project: Path, *args: str):
+    return nrw("push", "--root", str(project), "--yes", *args)
+
+
+@pytest.fixture
+def ready(project: Path, tiled: FakeTiled) -> FakeNode:
+    """Logged in, the experiment on Tiled, two runs and a sample to push."""
+    tiled.context.kept = True
+    catalogued(project)
+    return on_tiled(tiled, tags=("isaac", "ipts-1"))
+
+
+def test_a_first_push_makes_the_catalog_with_the_experiments_tags(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "Pushed 3 record(s)." in shown.output
+    tags = ("ipts-1", "isaac")
+    assert tiled.root.log == [
+        ("create", "context", *tags),
+        ("create", "runs", *tags),
+        ("create", "samples", *tags),
+        # The sample before its runs: no reader meets a run whose sample is
+        # not there yet.
+        ("create", "S1", *tags),
+        ("create", "234277-steady", *tags),
+        ("create", "234280-steady", *tags),
+    ]
+    context = ready["context"]
+    assert context.metadata == {"ipts": "IPTS-00001", "written_by": "nr-workbench"}
+    assert context.specs == [FakeSpec("context-experiment", "1")]
+    run = ready["context/runs/234277-steady"]
+    assert run.specs == [FakeSpec("context-run", "1")]
+    assert (run.metadata["run"], run.metadata["sample_id"]) == (234277, "S1")
+    assert ready["context/samples/S1"].metadata["title"] == "Cu/Pt"
+
+
+def test_a_push_of_what_tiled_holds_already_writes_nothing(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    pushed(project)
+    before = list(tiled.root.log)
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "Tiled already holds this catalog." in shown.output
+    assert tiled.root.log == before
+
+
+def test_the_last_writer_wins_and_another_programs_fields_stay(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    pushed(project)
+    sample = ready["context/samples/S1"]
+    sample.metadata["title"] = "Changed on Tiled"
+    sample.metadata["beamline_note"] = "kept by another program"
+    from nr_workbench.experiment.model import SampleChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    ParquetCatalogStore.for_project(project).update(
+        samples=[SampleChange("S1", 1, {"title": "Cu/Pt, annealed"})], now=NOW
+    )
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "0 new, 1 changed, 2 the same" in shown.output
+    assert sample.metadata["title"] == "Cu/Pt, annealed"
+    assert sample.metadata["beamline_note"] == "kept by another program"
+    assert sample.tags == ["isaac", "ipts-1"]
+
+
+def test_a_record_tiled_alone_holds_is_left_and_said(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    pushed(project)
+    ready["context/samples"].create_container("S9", metadata={"title": "theirs"})
+
+    shown = pushed(project)
+    status = json.loads(nrw("status", "--root", str(project), "--json").output)
+
+    assert "Tiled already holds this catalog." in shown.output
+    assert "S9" in ready["context/samples"].children
+    assert status["only_on_tiled"] == ["samples/S9"]
+    assert status["records"]["same"] == [
+        "runs/234277-steady",
+        "runs/234280-steady",
+        "samples/S1",
+    ]
+
+
+def test_nothing_is_made_where_there_are_no_tags_to_give(
+    project: Path, tiled: FakeTiled
+) -> None:
+    """A node made without them is its maker's alone: an empty catalog to
+    everyone else on the experiment, with no error anywhere."""
+    tiled.context.kept = True
+    catalogued(project)
+    on_tiled(tiled, tags=())
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 1
+    assert "has no access tags" in shown.output
+    assert tiled.root.log == []
+
+
+def test_a_dry_run_says_what_would_be_written_and_writes_nothing(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    shown = pushed(project, "--dry-run")
+
+    assert shown.exit_code == 0, shown.output
+    assert "3 new, 0 changed, 0 the same" in shown.output
+    assert "+ samples/S1" in shown.output and "+ runs/234277-steady" in shown.output
+    assert "Nothing written (--dry-run)." in shown.output
+    assert tiled.root.log == []
+
+
+def test_a_push_not_confirmed_writes_nothing(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    shown = CliRunner().invoke(
+        main, ["tiled", "push", "--root", str(project)], input="n\n"
+    )
+
+    assert shown.exit_code == 1
+    assert "for everyone on the experiment" in shown.output
+    assert tiled.root.log == []
+
+
+def test_a_push_stopped_partway_says_what_it_wrote_and_the_next_finishes(
+    project: Path, tiled: FakeTiled, ready: FakeNode, monkeypatch
+) -> None:
+    """Each record is written whole, or not at all: a push run again writes
+    only what is still different."""
+    import httpx
+
+    made = FakeNode.create_container
+
+    def server_goes_away(self, key, **kwargs):
+        if key == "234280-steady":
+            raise httpx.ConnectError("the server went away")
+        return made(self, key, **kwargs)
+
+    monkeypatch.setattr(FakeNode, "create_container", server_goes_away)
+    stopped = pushed(project)
+    monkeypatch.setattr(FakeNode, "create_container", made)
+    finished = pushed(project)
+
+    assert stopped.exit_code == 1
+    assert "runs/234280-steady could not be written" in stopped.output
+    assert "2 record(s) were written before it" in stopped.output
+    assert finished.exit_code == 0, finished.output
+    assert "1 new, 0 changed, 2 the same" in finished.output
+    assert "234280-steady" in ready["context/runs"].children
+
+
+def test_a_push_to_an_experiment_not_on_tiled_writes_nothing(
+    project: Path, tiled: FakeTiled
+) -> None:
+    tiled.context.kept = True
+    catalogued(project)
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 1
+    assert "projects/isaac/IPTS-00001 is not on https://tiled.ornl.gov" in shown.output
+
+
+def test_an_empty_catalog_has_nothing_to_push(project: Path, tiled: FakeTiled):
+    tiled.context.kept = True
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0 and "nothing to push" in shown.output
+    assert tiled.asked == []
+
+
+def test_a_field_a_newer_nrw_wrote_is_left_for_it_to_push(project: Path) -> None:
+    """Its type is not known to be JSON's, and it is that nrw's to send."""
+    from nr_workbench.experiment.model import Catalog, SampleContext
+    from nr_workbench.tiled.context import records_of
+
+    catalog = Catalog(
+        samples={"S1": SampleContext("S1", title="Cu", extra={"future": object()})}
+    )
+
+    (record,) = records_of(catalog)
+
+    assert "future" not in record.fields and record.fields["title"] == "Cu"
