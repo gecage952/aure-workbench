@@ -991,6 +991,44 @@ def isaac_push_command(
     )
 
 
+@main.group("tiled")
+def tiled_group() -> None:
+    """Tiled: log in, and say what is there for this experiment.
+
+    Needs `pip install 'nr-workbench[tiled]'`. The server is TILED_URL, from
+    your shell or ~/.nrw (tiled.ornl.gov by default), never a project's files.
+    Each command acts with your login, so an agent is refused them all.
+    """
+
+
+@tiled_group.command("login")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+def tiled_login_command(**kwargs: object) -> None:
+    """Log in through Globus: Tiled prints an address and a code to enter."""
+    from nr_workbench.commands.tiled_cmd import run_login
+
+    run_login(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("logout")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+def tiled_logout_command(**kwargs: object) -> None:
+    """End the login the Tiled client keeps for your server."""
+    from nr_workbench.commands.tiled_cmd import run_logout
+
+    run_logout(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("status")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def tiled_status_command(**kwargs: object) -> None:
+    """Whose your login is, and whether this experiment is on Tiled."""
+    from nr_workbench.commands.tiled_cmd import run_status
+
+    run_status(**kwargs)  # type: ignore[arg-type]
+
+
 @main.group("agent")
 def agent_group() -> None:
     """Run and constrain an unattended analysis harness."""

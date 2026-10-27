@@ -129,6 +129,7 @@ def collect_checks() -> list[Check]:
         checks.append(Check(name, _OK, detail))
 
     checks.extend(_llm_checks())
+    checks.extend(_tiled_checks())
     checks.extend(_project_checks())
     checks.extend(_agent_checks())
     checks.extend(_toolpath_checks())
@@ -520,6 +521,34 @@ def _llm_checks() -> list[Check]:
             )
         )
     return checks
+
+
+def _tiled_checks() -> list[Check]:
+    """Where ``nrw tiled`` would go, and with what: read from files, never sent."""
+    import importlib.util
+
+    from nr_workbench.tiled.server import TiledSyncError, kept_login, server
+
+    try:
+        chosen = server()
+    except TiledSyncError as exc:
+        return [Check("tiled", "warn", str(exc))]
+    detail = f"{chosen.url} ({chosen.source})"
+    if importlib.util.find_spec("tiled") is None:
+        return [
+            Check(
+                "tiled",
+                _MISSING,
+                f"{detail}; the client is not installed "
+                "(pip install 'nr-workbench[tiled]')",
+            )
+        ]
+    if chosen.key is not None:
+        said = f"{detail}; TILED_API_KEY is sent, set in {chosen.key_source}"
+        return [Check("tiled", _OK, said)]
+    if kept_login(chosen.url):
+        return [Check("tiled", _OK, f"{detail}; logged in, as the client keeps it")]
+    return [Check("tiled", _MISSING, f"{detail}; not logged in (nrw tiled login)")]
 
 
 def _project_checks() -> list[Check]:

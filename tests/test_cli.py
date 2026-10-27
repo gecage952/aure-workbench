@@ -25,6 +25,8 @@ FORBIDDEN_ON_HELP = (
     "scipy",
     "langchain_core",
     "pyarrow",
+    # The official Tiled client: only `nrw tiled`'s own commands import it.
+    "tiled",
 )
 
 
@@ -78,7 +80,7 @@ def test_help_does_not_import_heavy_modules() -> None:
 
 
 @pytest.mark.parametrize(
-    "group", ["aure", "model", "fit", "sample", "data", "experiment"]
+    "group", ["aure", "model", "fit", "sample", "data", "experiment", "tiled"]
 )
 def test_group_help_does_not_import_heavy_modules(group: str) -> None:
     """A group's own `--help` must stay as cheap as the top-level one.

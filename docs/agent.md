@@ -170,6 +170,7 @@ These are refused, and the preview beside each is not:
 | Organizing the experiment: `nrw experiment assign` and `release`, and `apply`, `adopt` or `settings` with `--write` | `nrw experiment status`, and the same three without `--write` |
 | `nrw sample reset` | `nrw sample reset --dry-run` |
 | `nrw init --nested` | `nrw sample new <ID>` in the existing project |
+| Every `nrw tiled` command, and Tiled's own command line (`tiled login`, `tree`, ...) | Saying in `ESCALATIONS.md` what to push or fetch: each acts with the person's login |
 | Any `--force` | |
 
 Most are plain. Which fit is the answer, which are good and which are set
