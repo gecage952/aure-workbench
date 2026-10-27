@@ -635,6 +635,117 @@ def test_the_request_carries_each_measurement_and_never_assumes_air() -> None:
     assert "per: state, in: [<that state>]" in system
 
 
+def test_the_request_carries_the_experiments_context_after_the_notes(
+    project: Path,
+) -> None:
+    _, user = build_prompt(
+        skeleton=SKELETON,
+        notes="Cu in THF",
+        skills=find_skills(project),
+        experiment="Summary:\nDoes Li plate on Cu?",
+    )
+
+    notes = user.index("===== THE SCIENTIST'S NOTES (sample.md) =====")
+    experiment = user.index("===== THE EXPERIMENT THIS SAMPLE IS PART OF =====")
+    assert notes < experiment < user.index("===== WHAT IS ON DISK =====")
+    assert "Summary:\nDoes Li plate on Cu?" in user
+    assert "the notes are about this sample" in user
+
+
+def test_the_request_says_nothing_of_an_experiment_nothing_was_written_about(
+    project: Path,
+) -> None:
+    _, user = build_prompt(
+        skeleton=SKELETON, notes="Cu in THF", skills=find_skills(project)
+    )
+
+    assert "THE EXPERIMENT THIS SAMPLE IS PART OF" not in user
+
+
+def test_from_notes_sends_the_experiments_context(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page's New model runs this: the experiment's context reaches the
+    language model beside the sample's notes."""
+    from click.testing import CliRunner
+
+    from nr_workbench import aure_adapter
+    from nr_workbench.cli import main
+    from nr_workbench.experiment.model import ExperimentChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    root = sample_with_data(project)
+    ParquetCatalogStore.for_project(root).update(
+        experiment=ExperimentChange(0, {"summary": "Does Li plate on Cu?"})
+    )
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        aure_adapter,
+        "llm_info",
+        lambda: {"available": True, "provider": "stub", "model": "test-model"},
+    )
+    asked: list[str] = []
+
+    def complete(system: str, user: str, *, temperature: float = 0.0) -> str:
+        asked.append(user)
+        return json.dumps(PROPOSED)
+
+    monkeypatch.setattr(aure_adapter, "complete", complete)
+
+    result = CliRunner().invoke(
+        main, ["model", "new", "Sample1", "--name", "m", "--from-notes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    (user,) = asked
+    assert "Summary:\nDoes Li plate on Cu?" in user
+
+
+@pytest.mark.parametrize(
+    ("loaded", "says"),
+    [
+        ("left-out", "! Left out of the request: the experiment's summary"),
+        ("unreadable", "! The experiment's catalog could not be read"),
+    ],
+)
+def test_from_notes_tells_the_person_what_of_the_experiment_it_lacks(
+    project: Path, monkeypatch: pytest.MonkeyPatch, loaded: str, says: str
+) -> None:
+    """The person, not only the language model: a request without the
+    experiment's context is weaker, as one without a skill is."""
+    from click.testing import CliRunner
+
+    from nr_workbench import aure_adapter
+    from nr_workbench.cli import main
+    from nr_workbench.experiment.model import Catalog, ExperimentContext
+    from nr_workbench.experiment.store import CatalogCorruptError, ParquetCatalogStore
+
+    def load(self):
+        if loaded == "unreadable":
+            raise CatalogCorruptError("the runs table does not match its manifest")
+        return Catalog(experiment=ExperimentContext(summary="## a\nx", rev=1))
+
+    root = sample_with_data(project)
+    monkeypatch.setattr(ParquetCatalogStore, "exists", lambda self: True)
+    monkeypatch.setattr(ParquetCatalogStore, "load", load)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        aure_adapter,
+        "llm_info",
+        lambda: {"available": True, "provider": "stub", "model": "test-model"},
+    )
+    monkeypatch.setattr(
+        aure_adapter, "complete", lambda system, user, **kw: json.dumps(PROPOSED)
+    )
+
+    result = CliRunner().invoke(
+        main, ["model", "new", "Sample1", "--name", "m", "--from-notes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert says in result.output
+
+
 def test_from_notes_asks_with_each_runs_condition(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

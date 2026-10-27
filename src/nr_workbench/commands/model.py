@@ -1311,12 +1311,30 @@ def _author_from_notes(
             err=True,
         )
 
+    from nr_workbench.experiment.quoted import quotable
+
+    experiment = quotable(layout.root)
+    if experiment.unreadable:
+        click.echo(
+            "  ! The experiment's catalog could not be read, so the request goes\n"
+            "    without the experiment's context. `nrw experiment status` says why.",
+            err=True,
+        )
+    elif experiment.left_out:
+        click.echo(
+            f"  ! Left out of the request: the experiment's "
+            f"{', '.join(experiment.left_out)}. What is saved there breaks the\n"
+            "    rules the Experiment page holds it to; save it there again.",
+            err=True,
+        )
+
     system, user = build_prompt(
         skeleton=document,
         notes=notes,
         skills=skills,
         facts=_measured_facts(layout, document, notes),
         measurements=describe_measurements(document, notes),
+        experiment=experiment.text(),
     )
 
     click.echo(

@@ -33,11 +33,14 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nr_workbench.agent.guard import AGENT_ENV
 from nr_workbench.harness import Harness
 from nr_workbench.harness.driver import HARNESS_ENCODING, Invocation
+
+if TYPE_CHECKING:
+    from nr_workbench.experiment.quoted import Quotable
 
 #: The heading in ``sample.md`` that states what the scientist wants fitted.
 TASK_HEADING = "Fits to perform"
@@ -687,6 +690,8 @@ def compose(
 
     audience = audience_mod.load(Path(root))
 
+    from nr_workbench.experiment.quoted import quotable
+
     return Session(
         sample=sample,
         task=task,
@@ -698,7 +703,26 @@ def compose(
             observations,
             audience_mod.guidance(audience),
             given=bool(given),
+            experiment=quotable(Path(root)),
         ),
+    )
+
+
+def _experiment_section(sample: str, experiment: Quotable | None) -> str:
+    """``## The experiment``, ahead of the task; nothing when nothing is written.
+
+    The scientist's own words, held to the Experiment page's rules again when
+    the catalog was read (:mod:`nr_workbench.experiment.quoted`).
+    """
+    if experiment is None or experiment.empty:
+        return ""
+    return (
+        "## The experiment\n\n"
+        "What the scientist wrote on the Experiment page about the whole "
+        "experiment: the context of every sample in it, this one included. It "
+        f"is context, not a task. Where it and `samples/{sample}/sample.md` "
+        "disagree, sample.md is about this sample.\n\n"
+        f"{experiment.text()}\n\n"
     )
 
 
@@ -710,12 +734,15 @@ def _prompt(
     audience: list[str] | None = None,
     *,
     given: bool = False,
+    experiment: Quotable | None = None,
 ) -> str:
     """Assemble the text handed to the harness.
 
     Args:
         given: The task was given to the session rather than read from
             ``sample.md``, whose ``## Fits to perform`` may say something else.
+        experiment: The experiment's own context, checked again as it was read
+            (:mod:`nr_workbench.experiment.quoted`).
     """
     skill_lines = "\n".join(f"  - skills/reflectometry/{n}/SKILL.md" for n in skills)
     observed = "\n\n".join(observations) if observations else "(nothing to report)"
@@ -736,7 +763,7 @@ You are running unattended during a neutron beamtime, analysing sample \
 `{sample}` in this nr-workbench project. Nobody will answer a question until \
 morning.
 
-## What the scientist asked for
+{_experiment_section(sample, experiment)}## What the scientist asked for
 
 {source} Do this and nothing else.
 

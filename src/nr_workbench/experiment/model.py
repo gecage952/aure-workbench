@@ -195,27 +195,59 @@ def validate_sample_id(sample_id: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Invisible, and needed: emoji sequences and some scripts are spelled with them.
+_JOINERS = frozenset("\N{ZERO WIDTH NON-JOINER}\N{ZERO WIDTH JOINER}")
+
+
 def _invisible_trouble(value: str, *, allow: str) -> str | None:
     """Name the first character that is not safe to store, or ``None``."""
+    previous = ""
     for char in value:
-        if char in allow:
-            continue
-        if char in _LINE_BREAKS:
-            return f"a line break ({unicodedata.name(char, repr(char))})"
-        if char in _BIDI_CONTROLS:
-            return f"a text-direction control ({unicodedata.name(char)})"
-        category = unicodedata.category(char)
-        if category == "Cc":
-            return f"a control character ({char!r})"
-        if category == "Cs":
-            # Half of a surrogate pair: JSON carries it, no encoding stores
-            # it, and left in it would fail the whole save at the parquet.
-            return f"a lone surrogate ({char!r}), which no encoding can store"
-        if 0xE0000 <= ord(char) <= 0xE007F:
-            # Shown by no one, read by a language model: a sentence spelled in
-            # them is an instruction no reviewer of the text could see.
-            return f"an invisible tag character ({unicodedata.name(char, 'unnamed')})"
+        trouble = None if char in allow else _trouble_with(char, previous)
+        if trouble:
+            return trouble
+        previous = char
     return None
+
+
+def _trouble_with(char: str, previous: str) -> str | None:
+    """Name what is wrong with one character, given the one before it."""
+    if char in _LINE_BREAKS:
+        return f"a line break ({unicodedata.name(char, repr(char))})"
+    if char in _BIDI_CONTROLS:
+        return f"a text-direction control ({unicodedata.name(char)})"
+    category = unicodedata.category(char)
+    if category == "Cc":
+        return f"a control character ({char!r})"
+    if category == "Cs":
+        # Half of a surrogate pair: JSON carries it, no encoding stores
+        # it, and left in it would fail the whole save at the parquet.
+        return f"a lone surrogate ({char!r}), which no encoding can store"
+    code = ord(char)
+    if 0xE0000 <= code <= 0xE007F:
+        # Shown by no one, read by a language model: a sentence spelled in
+        # them is an instruction no reviewer of the text could see.
+        return f"an invisible tag character ({_name_of(char)})"
+    if category == "Cf" and char not in _JOINERS:
+        # Zero-width spaces, marks, invisible operators: nothing a reader sees,
+        # and a way to hide in plain text what only a program would find.
+        return f"an invisible formatting character ({_name_of(char)})"
+    if 0xE0100 <= code <= 0xE01EF or (_selector(char) and _selector(previous)):
+        # One selector picks how an emoji looks; one from the supplement, or a
+        # run of them, spells bytes nobody can see.
+        return f"a hidden variation selector ({_name_of(char)})"
+    if 0xE0080 <= code <= 0xE0FFF:
+        # The rest of the tags' block: unassigned, and shown as nothing.
+        return f"an invisible character ({_name_of(char)})"
+    return None
+
+
+def _selector(char: str) -> bool:
+    return bool(char) and 0xFE00 <= ord(char) <= 0xFE0F
+
+
+def _name_of(char: str) -> str:
+    return unicodedata.name(char, "unnamed")
 
 
 #: Where a person's prose is read, which decides how each refusal explains
@@ -532,7 +564,12 @@ class ExperimentContext:
 EXPERIMENT_FIELDS = ("summary", "hypotheses", "notes")
 
 
-def _clean_experiment_field(name: str, value: Any) -> str:
+def clean_experiment_field(name: str, value: Any) -> str:
+    """Hold one of the experiment's fields to the page's rules.
+
+    Raises:
+        CatalogValidationError: With the reason, or for a field it has not.
+    """
     if name in EXPERIMENT_FIELDS:
         return clean_prose(name, value, where="experiment")
     raise CatalogValidationError(f"the experiment has no field {name!r}")
@@ -824,7 +861,7 @@ def apply_changes(
             stale.append("the experiment")
         else:
             cleaned = {
-                name: _clean_experiment_field(name, value)
+                name: clean_experiment_field(name, value)
                 for name, value in experiment.changes.items()
             }
             proposed = replace(experiment_record, **cleaned)
