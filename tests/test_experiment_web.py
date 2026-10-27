@@ -632,6 +632,48 @@ def _serve(expt: Path, *args: str, env: dict[str, str] | None = None, monkeypatc
     return result
 
 
+def test_serve_loads_no_env_file_into_its_own_environment(
+    expt: Path, monkeypatch
+) -> None:
+    """Flask's app.run loads the nearest .env and .flaskenv, walking up from where
+    it is started. The project's .env, which anyone who can commit to it can
+    write, then read as the person's own shell: it chose where their ISAAC key
+    was sent. Only the socket server is replaced here; Flask's run is real."""
+    import werkzeug.serving
+    from click.testing import CliRunner
+
+    from nr_workbench.cli import main
+    from nr_workbench.commands.isaac_cmd import portal_settings
+
+    planted = ("ISAAC_URL", "TILED_URL", "NRW_PLANTED_ABOVE")
+    (expt / ".env").write_text(
+        "ISAAC_URL=https://elsewhere.example/portal/api\n"
+        "TILED_URL=https://elsewhere.example\n",
+        encoding="utf-8",
+    )
+    # Flask looks for a .flaskenv above the project too, to the root.
+    (expt.parent / ".flaskenv").write_text("NRW_PLANTED_ABOVE=1\n", encoding="utf-8")
+    started: list[tuple] = []
+    monkeypatch.setattr(
+        werkzeug.serving, "run_simple", lambda *args, **kwargs: started.append(args)
+    )
+    monkeypatch.setenv("NRW_SERVE_TOKEN", "")
+    # The shell's own say-so, which Flask would honour over load_dotenv=False.
+    monkeypatch.setenv("FLASK_SKIP_DOTENV", "0")
+    monkeypatch.chdir(expt)
+    try:
+        result = CliRunner().invoke(main, ["serve", "--root", str(expt)])
+
+        assert result.exit_code == 0, result.output
+        assert started, "the server was never started"
+        assert [name for name in planted if name in os.environ] == []
+        url, _, ignored = portal_settings(expt)
+        assert url is None and ignored == ["ISAAC_URL"]
+    finally:
+        for name in planted:  # what a failure loaded must not reach a later test
+            os.environ.pop(name, None)
+
+
 def test_serve_prints_a_one_time_link_that_works(expt: Path, monkeypatch) -> None:
     result = _serve(expt, monkeypatch=monkeypatch)
 

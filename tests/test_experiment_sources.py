@@ -405,7 +405,7 @@ def test_open_source_builds_the_local_folder(tmp_path: Path) -> None:
     assert source.kind == "local"
 
 
-@pytest.mark.parametrize("kind,message", [("tiled", "planned"), ("s3", "not known")])
+@pytest.mark.parametrize("kind,message", [("tiled", "not known"), ("s3", "not known")])
 def test_open_source_refuses_rather_than_falling_back(kind: str, message: str) -> None:
     with pytest.raises(SourceUnavailableError, match=message):
         open_source(SourceConfig(kind=kind), ipts=None)
@@ -415,8 +415,8 @@ def test_open_feed_builds_the_folder_feed() -> None:
     assert isinstance(open_feed(FeedConfig()), DirectoryFeed)
 
 
-@pytest.mark.parametrize("kind,message", [("monitor", "ORNL"), ("tiled", "planned")])
-def test_open_feed_refuses_a_planned_feed(kind: str, message: str) -> None:
+@pytest.mark.parametrize("kind,message", [("monitor", "ORNL"), ("tiled", "not known")])
+def test_open_feed_refuses_a_planned_or_unknown_feed(kind: str, message: str) -> None:
     with pytest.raises(FeedUnavailableError, match=message):
         open_feed(FeedConfig(kind=kind))
 

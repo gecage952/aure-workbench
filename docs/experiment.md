@@ -73,11 +73,10 @@ model, which is saved in the project's `.env` ([Language model](#language-model)
   A run whose headers name an experiment other than the IPTS on the page is
   flagged, run by run.
 - **How new runs are noticed.** Files appearing in the data folder. The SNS web
-  monitor and Tiled are listed as coming and cannot be chosen yet.
+  monitor is listed as coming and cannot be chosen yet.
 - **Where samples and assignments are kept.** Parquet files in this project's
-  `experiment/`, committed with it. A metadata service, through which they
-  would be shared with everyone on the experiment, is listed as coming; see
-  [experiment-sources.md](experiment-sources.md).
+  `experiment/`, committed with it. `nrw tiled push` shares a copy with
+  everyone on the experiment; see [experiment-sources.md](experiment-sources.md).
 - **Advanced**: the settle time and the poll interval.
 
 A save changes only the lines of `nrw.toml` that hold these settings, keeps
@@ -591,6 +590,14 @@ Parquet is binary, which has two consequences:
 
 A catalog file that exists but cannot be read is never treated as empty. The
 page shows it read-only, and nothing is saved over it until it is restored.
+
+**Sharing it on Tiled.** `nrw tiled push` writes the catalog to the
+experiment's `context/` on tiled.ornl.gov, where everyone on the experiment,
+and other programs, can read it; `nrw tiled status` says what is there, and
+`nrw tiled pull --data` copies the reduced files in when the data mount is out
+of reach. The catalog stays here: Tiled holds a copy, as of the last push,
+and the last writer wins. See [experiment-sources.md](experiment-sources.md),
+"Tiled".
 
 ## Unattended agents
 

@@ -140,6 +140,7 @@ def only_fit_dir(root: Path) -> Path:
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.fit
 def test_fit_run_produces_a_complete_record(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -154,6 +155,7 @@ def test_fit_run_produces_a_complete_record(
     assert list((fit_dir / "fit").glob("*")), "bumps wrote no output"
 
 
+@pytest.mark.fit
 def test_fit_run_records_the_data_file_the_script_actually_opened(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -170,6 +172,7 @@ def test_fit_run_records_the_data_file_the_script_actually_opened(
     assert "samples/S1/data/steady/REFL_100001_combined_data_auto.txt" in paths
 
 
+@pytest.mark.fit
 def test_fit_run_records_no_absolute_paths(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -181,6 +184,7 @@ def test_fit_run_records_no_absolute_paths(
     assert all(not entry["path"].startswith("/") for entry in inputs["inputs"])
 
 
+@pytest.mark.fit
 def test_fit_run_freezes_the_script_as_executed(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -197,6 +201,7 @@ def test_fit_run_freezes_the_script_as_executed(
     assert "FitProblem" in frozen
 
 
+@pytest.mark.fit
 def test_fit_run_appends_one_index_entry(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -209,6 +214,7 @@ def test_fit_run_appends_one_index_entry(
     assert json.loads(lines[0])["status"] == "ok"
 
 
+@pytest.mark.fit
 def test_identical_rerun_is_refused_by_default(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -222,6 +228,7 @@ def test_identical_rerun_is_refused_by_default(
     assert len(fit_dirs(fitted_project)) == 1
 
 
+@pytest.mark.fit
 def test_identical_rerun_is_allowed_with_force_and_marked_a_replicate(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -237,6 +244,7 @@ def test_identical_rerun_is_allowed_with_force_and_marked_a_replicate(
     assert manifest["params"]["replicate_of"] == first
 
 
+@pytest.mark.fit
 def test_changing_a_setting_makes_a_distinct_run(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -300,6 +308,7 @@ def test_a_failing_script_is_still_recorded(
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.fit
 def test_a_launch_reason_is_filed_under_why_this_run(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -316,6 +325,7 @@ def test_a_launch_reason_is_filed_under_why_this_run(
     assert not is_blank(text), "a reason that was stated must not read as unwritten"
 
 
+@pytest.mark.fit
 def test_a_documented_fit_stops_being_counted_as_undocumented(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -332,6 +342,7 @@ def test_a_documented_fit_stops_being_counted_as_undocumented(
     assert undocumented_fits(layout, "S1") == []
 
 
+@pytest.mark.fit
 def test_a_run_with_no_reason_is_still_reported_as_undocumented(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -345,6 +356,7 @@ def test_a_run_with_no_reason_is_still_reported_as_undocumented(
     assert len(undocumented_fits(layout, "S1")) == 1
 
 
+@pytest.mark.fit
 def test_the_summary_names_the_note_command_and_the_sections_still_missing(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -357,6 +369,7 @@ def test_the_summary_names_the_note_command_and_the_sections_still_missing(
     assert "--why" not in result.output, "--note already answered that one"
 
 
+@pytest.mark.fit
 def test_the_summary_asks_for_all_three_when_no_reason_was_given(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -366,6 +379,7 @@ def test_the_summary_asks_for_all_three_when_no_reason_was_given(
     assert "--why" in result.output
 
 
+@pytest.mark.fit
 def test_an_unattended_session_is_not_pointed_at_a_command_it_cannot_run(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -385,6 +399,7 @@ def test_an_unattended_session_is_not_pointed_at_a_command_it_cannot_run(
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.fit
 def test_whence_traces_an_artifact_back_to_its_fit(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -401,6 +416,7 @@ def test_whence_traces_an_artifact_back_to_its_fit(
     assert payload["provenance"]["model"] == "film"
 
 
+@pytest.mark.fit
 def test_whence_on_a_data_file_lists_its_consumers(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -420,6 +436,7 @@ def test_whence_on_a_data_file_lists_its_consumers(
     assert len(payload["consumed_by"]) == 1
 
 
+@pytest.mark.fit
 def test_whence_reports_stale_after_an_input_changes(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -444,6 +461,7 @@ def test_whence_reports_stale_after_an_input_changes(
     assert any(i["state"] == "stale" for i in payload["inputs"])
 
 
+@pytest.mark.fit
 def test_whence_reports_broken_when_an_input_is_deleted(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -463,6 +481,7 @@ def test_whence_reports_broken_when_an_input_is_deleted(
     assert json.loads(result.output)["freshness"] == "broken"
 
 
+@pytest.mark.fit
 def test_whence_finds_a_figure_copied_out_of_the_project(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -496,6 +515,7 @@ def test_whence_exits_nonzero_for_an_untraceable_file(
     assert result.exit_code == 1
 
 
+@pytest.mark.fit
 def test_ls_shows_the_fit_and_its_freshness(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -508,6 +528,7 @@ def test_ls_shows_the_fit_and_its_freshness(
     assert "fresh" in result.output
 
 
+@pytest.mark.fit
 def test_promote_requires_a_reason_and_records_who(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -538,6 +559,7 @@ def test_promote_requires_a_reason_and_records_who(
     assert promotion["who"]
 
 
+@pytest.mark.fit
 def test_promote_refuses_a_stale_fit(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -562,6 +584,7 @@ def test_promote_refuses_a_stale_fit(
     assert "STALE" in result.output
 
 
+@pytest.mark.fit
 def test_promote_supersedes_and_keeps_the_earlier_decision(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -587,6 +610,7 @@ def test_promote_supersedes_and_keeps_the_earlier_decision(
     assert len([e for e in entries if e["event"] == "promote"]) == 2
 
 
+@pytest.mark.fit
 def test_check_passes_on_a_clean_project(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -598,6 +622,7 @@ def test_check_passes_on_a_clean_project(
     assert "no problems" in result.output
 
 
+@pytest.mark.fit
 def test_check_fails_when_an_input_has_changed(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

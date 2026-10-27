@@ -162,19 +162,13 @@ def open_store(root: Path, kind: str = "parquet") -> ParquetCatalogStore:
     """The catalog store ``[experiment.catalog] kind`` names.
 
     Raises:
-        CatalogUnavailableError: For a planned or unknown kind. Deliberately not
-            a fallback to the local parquet store: edits meant for a facility
-            service would be written into the project instead, where nobody
-            else would see them.
+        CatalogUnavailableError: For an unknown kind. Deliberately not a
+            fallback to the local parquet store: edits meant for somewhere
+            else would be written into the project instead, where nobody else
+            would see them.
     """
     if kind == "parquet":
         return ParquetCatalogStore.for_project(root)
-    if kind == "api":
-        raise CatalogUnavailableError(
-            '[experiment.catalog] kind = "api" is planned but not implemented '
-            "yet; see docs/experiment-sources.md. The catalog is not editable "
-            'until it is, or until kind = "parquet".'
-        )
     raise CatalogUnavailableError(
         f'[experiment.catalog] kind = {kind!r} is not known. Known: "parquet".'
     )
@@ -524,41 +518,44 @@ def _same(before: Catalog, after: Catalog) -> bool:
 
 
 def _run_row(entry: RunEntry) -> dict[str, Any]:
-    row = dict(entry.extra)
-    row.update(
-        {
-            "run": entry.key.run,
-            "kind": entry.key.kind,
-            "sample_id": entry.sample_id,
-            "measurement": entry.measurement,
-            "condition": entry.condition,
-            "include": entry.include,
-            "note": entry.note,
-            "title": entry.title,
-            "start_time": entry.start_time,
-            "rev": entry.rev,
-            "updated_at": entry.updated_at,
-        }
-    )
-    return row
+    return {**entry.extra, **run_fields(entry)}
+
+
+def run_fields(entry: RunEntry) -> dict[str, Any]:
+    """A run's fields nrw keeps, without those it does not know: what a push
+    to Tiled writes."""
+    return {
+        "run": entry.key.run,
+        "kind": entry.key.kind,
+        "sample_id": entry.sample_id,
+        "measurement": entry.measurement,
+        "condition": entry.condition,
+        "include": entry.include,
+        "note": entry.note,
+        "title": entry.title,
+        "start_time": entry.start_time,
+        "rev": entry.rev,
+        "updated_at": entry.updated_at,
+    }
 
 
 def _sample_row(entry: SampleContext) -> dict[str, Any]:
-    row = dict(entry.extra)
-    row.update(
-        {
-            "sample_id": entry.sample_id,
-            "title": entry.title,
-            "description": entry.description,
-            "details": entry.details,
-            "mounting": entry.mounting,
-            "measurement_conditions": entry.measurement_conditions,
-            "fits_to_perform": entry.fits_to_perform,
-            "rev": entry.rev,
-            "updated_at": entry.updated_at,
-        }
-    )
-    return row
+    return {**entry.extra, **sample_fields(entry)}
+
+
+def sample_fields(entry: SampleContext) -> dict[str, Any]:
+    """A sample's fields nrw keeps, as :func:`run_fields` a run's."""
+    return {
+        "sample_id": entry.sample_id,
+        "title": entry.title,
+        "description": entry.description,
+        "details": entry.details,
+        "mounting": entry.mounting,
+        "measurement_conditions": entry.measurement_conditions,
+        "fits_to_perform": entry.fits_to_perform,
+        "rev": entry.rev,
+        "updated_at": entry.updated_at,
+    }
 
 
 def _run_from_row(row: dict[str, Any]) -> RunEntry:

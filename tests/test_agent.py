@@ -1044,6 +1044,29 @@ def test_the_missing_harness_error_distinguishes_it_from_an_endpoint(
     assert "--dry-run" in said
 
 
+def ready_to_run(root: Path) -> None:
+    """A sample with a task, and the hook a session will not start without."""
+    sample = root / "samples" / "S1"
+    sample.mkdir(parents=True)
+    (sample / "sample.md").write_text(NOTES_WITH_TASK, encoding="utf-8")
+    (root / ".claude").mkdir()
+    (root / ".claude" / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"command": "nrw agent guard"}],
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_provider_variables_reach_the_harness(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1063,26 +1086,7 @@ def test_provider_variables_reach_the_harness(
         transcript.write_text("", encoding="utf-8")
         return 0, False
 
-    sample = tmp_path / "samples" / "S1"
-    sample.mkdir(parents=True)
-    (sample / "sample.md").write_text(NOTES_WITH_TASK, encoding="utf-8")
-    (tmp_path / ".claude").mkdir()
-    (tmp_path / ".claude" / "settings.json").write_text(
-        json.dumps(
-            {
-                "hooks": {
-                    "PreToolUse": [
-                        {
-                            "matcher": "Bash",
-                            "hooks": [{"command": "nrw agent guard"}],
-                        }
-                    ]
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-
+    ready_to_run(tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_USE_FOUNDRY", "1")
     monkeypatch.setenv("ANTHROPIC_FOUNDRY_RESOURCE", "ornl-neutrons")
     monkeypatch.setattr(session, "_stream", capture)
@@ -1093,6 +1097,41 @@ def test_provider_variables_reach_the_harness(
     assert seen.get("CLAUDE_CODE_USE_FOUNDRY") == "1"
     assert seen.get("ANTHROPIC_FOUNDRY_RESOURCE") == "ornl-neutrons"
     assert seen.get(guard.AGENT_ENV) == "1", "and ours is still set on top"
+
+
+def test_a_session_is_given_no_tiled_login(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The person's Tiled login is theirs alone. A session starts with no
+    TILED_API_KEY and a token cache of its own, empty, so a Tiled client it
+    starts -- `nrw tiled`, Tiled's own command, or a line of Python -- finds
+    no login to act with. The guard refuses what the agent types; this takes
+    the login itself away.
+    """
+    persons = tmp_path / "persons-cache"
+    (persons / "tokens").mkdir(parents=True)
+    seen: dict[str, str] = {}
+    cache_held: list[str] = []
+
+    def capture(argv, *, root, environment, transcript, timeout, on_progress, **_):
+        seen.update(environment)
+        cache_held.extend(p.name for p in Path(seen["TILED_CACHE_DIR"]).iterdir())
+        transcript.write_text("", encoding="utf-8")
+        return 0, False
+
+    ready_to_run(tmp_path)
+    monkeypatch.setenv("TILED_API_KEY", "the-persons-own")
+    monkeypatch.setenv("TILED_CACHE_DIR", str(persons))
+    monkeypatch.setattr(session, "_stream", capture)
+    monkeypatch.setattr(session, "harness_command", lambda *a, **k: ["true"])
+
+    session.run(tmp_path, "S1")
+
+    assert "TILED_API_KEY" not in seen
+    assert Path(seen["TILED_CACHE_DIR"]) != persons
+    assert cache_held == [], "a cache of its own, holding no login"
+    assert not Path(seen["TILED_CACHE_DIR"]).exists(), "and gone with the session"
+    assert os.environ["TILED_API_KEY"] == "the-persons-own", "the person's is kept"
 
 
 # --------------------------------------------------------------------------

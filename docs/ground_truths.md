@@ -3675,7 +3675,9 @@ False)` puts a file's values into `os.environ`. A child process inherits
 had `nrw serve` ever called `load_env()`, each job would run with the provider
 the server read at that moment, whatever `.env` said afterwards. The server
 does not call it today; the page only needs `is_available()`, which finds AuRE
-without importing it. Two things keep it that way:
+without importing it. (Flask loaded the files instead, until 2026-10-21: see
+"`nrw serve` loaded the project's `.env`, through Flask".) Two things keep it
+that way:
 
 - `where_set` works out each setting from the files, without loading them.
 - `load_env` records what it loaded (`loaded_from_files()`), and
@@ -4297,3 +4299,186 @@ and proposed d8-THF at 6.35, so this removes a contradiction rather than a
 failure anyone saw.
 
 Each of 52 reintroduced bugs fails a test.
+
+### 2026-10-21: `nrw serve` loaded the project's `.env`, through Flask
+
+- **`Flask.run` loads `.env` files by default.** Before serving, it sets
+  every key not already set from the nearest `.flaskenv` and `.env`. It finds
+  them by walking up from the working directory to `/`, not stopping at the
+  project. It reads them with `dotenv_values`, so `PYTHON_DOTENV_DISABLED`
+  does not stop it. Only `load_dotenv=False` or `FLASK_SKIP_DOTENV` does, and
+  a shell's `FLASK_SKIP_DOTENV=0` wins over `load_dotenv=False`.
+- **nrw then took those values for the person's own.** It records only what
+  its own `load_env` loaded (`_set_by_files`), so `where_set(skip_project=True)`
+  counted Flask's loads as the shell's. Under `nrw serve`, the project's `.env`
+  therefore chose `ISAAC_URL`: once the person confirmed the host the page
+  showed, a push would have sent their own `ISAAC_KEY` there. It also reached
+  every job the server started, as if exported. The 2026-09-30 entry "the
+  page chooses the language model in `.env`, and the server loads none"
+  rested on the server not calling `load_env`. That was true, but Flask
+  loaded the files anyway.
+- **Fixed:** the server starts through `web.app.run_app`, with
+  `load_dotenv=False` and `FLASK_SKIP_DOTENV=1`.
+  `test_serve_loads_no_env_file_into_its_own_environment` runs Flask's real
+  `run`, replacing only the socket server. The older serve tests replace
+  `Flask.run` whole, which is why none of them caught this.
+- Found by the security review of the Tiled attempt withdrawn on 2026-10-27,
+  whose `TILED_URL` rested on the same rule as `ISAAC_URL`.
+
+### 2026-10-21: the suite ran 121 real fits, and now runs none by default
+
+- **Found by refusing every fit, not by reading.** A scan put a hook on
+  `bumps.fitters`, in the test process and in every subprocess, through
+  `PYTHONPATH`: nrw starts its own with `-P`, not `-I`. The hook raised on
+  `fit` and `FitDriver.fit` and logged `PYTEST_CURRENT_TEST`. 121 tests in 11
+  files asked for a fit. Most did so through per-test `fitted` fixtures that
+  need a fit's record (pack, ISAAC export, notes, assess, lifecycle, the fit
+  pages), not the fit.
+- **What is recorded is the optimizer's answer, not the record.** A copied
+  record would go stale without a word once nrw changes what it records, and
+  the tests downstream would go on checking the old format. So bumps' `fit` is
+  replayed instead (`tests/fit_replay.py`): the problem is set to the recorded
+  answer, and nrw's runner writes every file of the record from there. About
+  88 tests make 10 distinct fits, in `tests/data/fits/`, 40 kB.
+- **A fit is identified by** its parameters, their starting values and bounds,
+  the misfit at the start (to 9 significant digits, above platform noise), the
+  fitter, and its settings other than `parallel` and `verbose`.
+- **DREAM is not replayed.** Its uncertainty block comes from the sampler's
+  state, which a recording does not keep. The one test of a DREAM band is
+  among the 33 marked `fit`, which run for real with `pytest -m fit`.
+- **It is also the guard.** Outside a `fit` test, a fit that no recording
+  answers fails and names the command that records it (`pytest --record-fits
+  <test>`), so a real fit cannot slip into the default run in-process. A fit
+  started in a subprocess by an unmarked test would not be stopped; there is
+  none today, and the two that start one from the page are marked.
+- **Effect:** the default run, 2,864 tests, passes in about 82 s with no fit,
+  against about 110 s before. Under the scan hook it logged none.
+
+### 2026-10-27: a catalog on Tiled was built, reviewed, and withdrawn
+
+The experiment's catalog was made a store on tiled.ornl.gov, which every
+member's project would read and edit as it went, beside a data source on Tiled
+and a login of nrw's own. The attempt is on branch `tiled-catalog`
+(677ebbf..1e1564a, 27 commits) and was withdrawn before it was merged. It came
+to 10,800 lines of code and 13,600 of tests, against the 3,000 its plan
+promised: more than the shared catalog withdrawn on 2026-09-28, and for the
+same reason.
+
+**Why.**
+
+- **A pin is not a reason to write a client.** The `tiled` library requires
+  `pydantic-settings<2.12`, a downgrade nothing here needed. For that, nrw
+  wrote its own HTTP client, its own model of Tiled's answers, and its own
+  Globus login and token file: 3,850 lines that `tiled[minimal-client]`
+  provides, with dependencies nrw mostly has already.
+- **Write the requirement in the person's words.** They asked that nrw make
+  the experiment's `context/` and that members can write there. The plan's
+  word was "live": a store every page read and wrote as it went, which others
+  edit at the same moment. That took locks, a test of each record before it
+  is replaced, a read-back after a lost answer, shared reads, and
+  confirmations. 15 of the 24 defences the reviews added served that one
+  word, and a push from the project was never weighed.
+- **A registry for two kinds is a cost, not a seam.** A backend per kind of
+  source and of catalog, a test parsing every module to hold the rule, and
+  command options generated from it all served exactly two kinds.
+- **An agent that can reach a server needs a sandbox; one that cannot needs
+  none.** Recording the places on Tiled a session began with, and refusing
+  the rest, existed only because an agent could read Tiled with the person's
+  login.
+- **Each review added defences, and each defence a review.** Steps ran at two
+  to seven times their estimates. The plan called each piece "a place to
+  stop", and none was taken.
+
+**Decision.** Tiled is reached only by `nrw tiled` commands a person runs, on
+the official client: `push` publishes the project's catalog to the
+experiment's `context/` (the last writer wins), `status` says what is there,
+and `pull --data` copies reduced files in when the data mount is out of reach.
+Nothing `nrw serve`, the poller or an agent runs talks to Tiled, and an agent
+is refused every `nrw tiled` command. The catalog stays in the project's
+`experiment/`, as 2026-09-28 decided. nr-watcher's use of the attempt's
+session baseline was reverted with it (nr-watcher a35fd77 and fd2e98d).
+
+**Still true of Tiled 0.2.18**, learned against it, and against tiled.ornl.gov
+read-only:
+
+- An experiment's node is `projects/isaac/IPTS-<n>`, tagged `isaac`. Another
+  process fills `autoreduction/` with flat `bytes` nodes named as the files in
+  `new_reduction/`, which carry no metadata.
+- A node made without tags is its maker's alone, invisible to everyone else on
+  the experiment, and a child does not take its parent's tags: whatever nrw
+  makes must be given its parent's.
+- A JSON Patch whose `test` fails is a bare 500, not a 409; creating a key that
+  exists is a real 409. Every metadata write keeps the version it replaced.
+- Its directory walker cannot register a parquet file. Registered through the
+  API as an external asset, one reads back with its types, but only inside the
+  storage the server was started on.
+- `api_version` is 0: nothing about the API is promised between releases. A
+  local server's API key must be alphanumeric.
+
+### 2026-10-27: what holds the thin Tiled sync
+
+`nrw tiled` (`src/nr_workbench/tiled/`, on the official client) was reviewed
+once, and five things it rests on are not in the code's shape:
+
+- **An agent's Tiled login is taken away, not matched.** The guard refuses
+  `nrw tiled` and `tiled` by the words an agent types; a line of Python using
+  the client, or a token read from its cache, contains neither. What holds is
+  `nrw agent run` starting each session with no `TILED_API_KEY` and
+  `TILED_CACHE_DIR` pointed at an empty folder of the session's own. Claude
+  Code's `Read(...)` deny lines cover its own file tools, not `cat` through
+  Bash, and a session the person starts keeps their login: Claude Code's
+  sandbox, denying reads of the token cache, `~/.nrw` and `~/.aure`, would
+  close that, and is the person's to choose.
+- **The client logs in by itself.** `from_context`, on a server with login
+  providers and no kept tokens, starts the device-code flow and waits for
+  someone at the terminal. nrw asks `context.use_cached_tokens()` first, and
+  only `nrw tiled login` calls `authenticate`.
+- **`click.Abort` is a `RuntimeError`.** The client raises `RuntimeError` for
+  its own refusals on connecting (a key and a login both, say). Caught around
+  a whole command, that turned a declined confirm into an error; it is caught
+  in `connect` alone.
+- **Both metadata writes are EXPERIMENTAL in 0.2.18.** `replace_metadata` and
+  `update_metadata` are "subject to change or removal without notice". A push
+  replaces with Tiled's fields under nrw's, and passes no specs, so another
+  program's fields and specs stay. The `<0.3` pin and `pytest -m
+  tiled_server` hold it.
+- **A pull adds, and never replaces.** Neither a size nor a time tells a file
+  reduced again from the same one, and a copy over the facility's
+  `new_reduction/` would stand in for the reduction's own file: so a file the
+  folder holds is left, and nrw's default data folder is refused as a pull's
+  target.
+
+### 2026-10-27: `nrw tiled` against tiled.ornl.gov
+
+The first live check: `nrw tiled login`, `status` on IPTS-37740, and `push
+--dry-run` from a scratch project with a stand-in catalog, which wrote
+nothing; then, on the person's go-ahead, a first push from their own project,
+and a pull of the whole experiment into a scratch folder.
+
+- **The server offers two logins, `globus` and `password`,** so the client
+  asks at the terminal which to use, with `input()`, before it prints Globus's
+  address and code. Without a terminal, `nrw tiled login` reads the end of its
+  input and click aborts it, sending nothing. A person types `1`. The scope
+  asked of Globus includes the server's own `lakehouse` scope.
+- **`projects/isaac/IPTS-37740` is there, tagged `isaac`, with no `context/`
+  yet.** A first push would make it, and give what it makes the tag `isaac`.
+  Whether a member may make a node with that tag is the server's policy, which
+  only a real push could answer: it may. The first push, on the person's
+  go-ahead from their own project, made `context/`, `runs/` and `samples/`
+  and 88 records (10 samples, 78 runs) in 7 seconds, every one tagged
+  `isaac`, and `status` then found all 88 as the project has them.
+- **The client's `raw_export` logs a failed download instead of raising
+  it.** `_download_url` in `tiled/client/download.py` catches every
+  exception, prints `ERROR ...` through rich, and returns, so a refused or
+  broken download reaches the caller as a node of no files; and it draws a
+  progress bar for every file. A pull fetches each file itself instead, by the
+  route `raw_export` takes: the node's `links.self` with `/metadata` made
+  `/asset/bytes`, and `?id=` its one asset. Its copies of run 234277 were byte
+  for byte `raw_export`'s.
+- **A pull of IPTS-37740 copied 247 files in 16 seconds,** every angle
+  segment of 89 runs, with what backs each node asked for in the one listing
+  (`include_data_sources`), and nrw then read the folder as those 89 runs. The
+  89 nodes it skipped are each run's `REFL_<run>_combined_autoreduction.dat`,
+  a name nrw does not know. A pulled run counts as complete once its files
+  have settled, as any new file does.
+- Each command took under a second once logged in, but the pull.

@@ -91,6 +91,12 @@ nrw experiment apply --write
 The organization is kept in `experiment/*.parquet`.
 **[docs/experiment.md](docs/experiment.md)** walks through it.
 
+To share it with everyone on the experiment, `nrw tiled push` writes it to the
+experiment's node on tiled.ornl.gov, `nrw tiled status` says what is there, and
+`nrw tiled pull --data` copies the reduced files in when the data mount is out
+of reach. Each acts with your own Tiled login (`nrw tiled login`), and needs
+the installer's `NRW_EXTRAS=tiled`.
+
 ### Choosing an assistant
 
 A scaffolded project carries the instructions, subagent stubs and limits for
@@ -344,7 +350,7 @@ Working. The scaffold and skills, the provenance spine, the tNR assessment
 tools, the model spec and generator, the web UI — its Experiment page, fit
 curation and ISAAC publishing included — and the data tools are all
 implemented, along with `nrw pack`, `nrw note`, `nrw assess`, `nrw isaac
-export` and `push`, and the unattended agent above.
+export` and `push`, `nrw tiled`, and the unattended agent above.
 
 ## Development
 

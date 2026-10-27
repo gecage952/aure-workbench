@@ -57,25 +57,22 @@ def test_the_settings_say_what_is_set_what_is_default_and_what_is_coming(
     assert payload["values"]["feed.poll_seconds"] is None
     assert payload["defaults"]["feed.poll_seconds"] == 30
     kinds = {o["kind"]: o["available"] for o in payload["options"]["feed"]}
-    assert kinds == {"directory": True, "monitor": False, "tiled": False}
+    assert kinds == {"directory": True, "monitor": False}
     assert payload["effective"]["needs_setup"] is False
 
 
-def test_a_metadata_service_is_listed_as_coming_where_the_catalog_is_kept(
+def test_the_catalog_is_kept_in_the_project_and_nothing_else_is_offered(
     app,
 ) -> None:
+    """A store everyone writes was withdrawn: none is promised as coming."""
     payload = app.test_client().get("/api/experiment/settings").get_json()
 
-    catalogs = {o["kind"]: o for o in payload["options"]["catalog"]}
-    assert {k: o["available"] for k, o in catalogs.items()} == {
-        "parquet": True,
-        "api": False,
-    }
-    assert catalogs["api"]["label"] == "A metadata service"
+    catalogs = {o["kind"]: o["available"] for o in payload["options"]["catalog"]}
+    assert catalogs == {"parquet": True}
     assert payload["effective"]["catalog_kind"] == "parquet"
 
 
-def test_the_planned_service_is_refused_by_name_never_replaced_by_files(
+def test_an_unknown_catalog_is_refused_never_replaced_by_files(
     expt: Path,
 ) -> None:
     """Edits meant for everyone must not land in the project, where nobody looks."""
@@ -95,8 +92,7 @@ def test_the_planned_service_is_refused_by_name_never_replaced_by_files(
     )
 
     said = [p["message"] for p in overview["problems"] if p["scope"] == "catalog"]
-    assert any("planned but not implemented" in m for m in said)
-    assert any("docs/experiment-sources.md" in m for m in said)
+    assert any("kind = 'api' is not known" in m for m in said)
     assert overview["writable"] is False
     assert saved.status_code == 503
     assert not (expt / "experiment" / "runs.parquet").exists()
@@ -468,7 +464,7 @@ def test_a_check_reads_the_kind_of_source_the_save_would_set(
     response = check(writer, app, location=str(tmp_path), kind="tiled")
 
     assert response.status_code == 400
-    assert "not available yet" in response.get_json()["error"]
+    assert "'tiled' is not known" in response.get_json()["error"]
 
 
 def test_checking_a_folder_inside_the_project_is_a_400(app, writer, expt: Path) -> None:

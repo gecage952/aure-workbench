@@ -52,13 +52,17 @@ KNOWN_VARS = (
     # with -- read by nr-isaac-format, which nrw passes its environment.
     "ISAAC_URL",
     "ISAAC_KEY",
+    # The Tiled server `nrw tiled` uses, and the key it sends instead of a
+    # login: the person's alone, read from the shell, ~/.nrw or ~/.aure.
+    "TILED_URL",
+    "TILED_API_KEY",
 )
 
 #: Variables whose value must never be printed.
 #: The language model's keys: one of these set is "a key is set" for it.
 LLM_KEYS = ("LLM_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "ALCF_ACCESS_TOKEN")
 
-SECRET_VARS = frozenset({*LLM_KEYS, "ISAAC_KEY"})
+SECRET_VARS = frozenset({*LLM_KEYS, "ISAAC_KEY", "TILED_API_KEY"})
 
 #: Set once loading has run, so repeated calls are free.
 _loaded = False

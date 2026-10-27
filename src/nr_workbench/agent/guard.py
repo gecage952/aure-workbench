@@ -96,7 +96,29 @@ _REASONS = {
         "new <ID>` adds one to the existing project. If a nested project is "
         "genuinely correct here, say so in ESCALATIONS.md and stop."
     ),
+    "tiled": (
+        "Tiled is reached with the person's own login: a push publishes this "
+        "project's claims to everyone on the experiment, a login or a logout "
+        "acts as the person, and a read could reach any experiment they may "
+        "read. Say in ESCALATIONS.md what you would push or fetch, and stop."
+    ),
 }
+
+#: The commands of Tiled's own command line: each one either acts with the
+#: person's login, or serves data. `tiled` before anything else -- `grep
+#: tiled` -- is no call of it.
+_TILED_CLI = (
+    "login",
+    "logout",
+    "whoami",
+    "tree",
+    "register",
+    "api_key",
+    "admin",
+    "profile",
+    "serve",
+    "catalog",
+)
 
 
 @dataclass(frozen=True)
@@ -207,8 +229,12 @@ def _judge_text(piece: str) -> Verdict:
 
     The floor under the parser. It cannot tell a flag from a filename, so it
     only fires when the text names this tool *and* one of the refused things
-    --- which is enough to stop a quoting accident from being a hole.
+    --- which is enough to stop a quoting accident from being a hole. Tiled's
+    own command line counts as this tool's: it acts with the same login.
     """
+    tiled_cli = r"(?<![\w./-])tiled\s+(?:" + "|".join(_TILED_CLI) + r")(?![\w-])"
+    if re.search(tiled_cli, piece):
+        return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
     if not re.search(r"(?<![\w./-])(nrw|nr-workbench)(?![\w-])", piece):
         return Verdict(allowed=True)
     # The two whose preview stays allowed: `--dry-run` anywhere in the text
@@ -228,6 +254,8 @@ def _judge_text(piece: str) -> Verdict:
         return Verdict(allowed=False, rule="experiment", reason=_REASONS["experiment"])
     if re.search(r"(?<![\w-])isaac\s+push(?![\w-])", piece):
         return Verdict(allowed=False, rule="upload", reason=_REASONS["upload"])
+    if re.search(r"(?<![\w-])tiled(?![\w-])", piece):
+        return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
     for pattern, rule in (
         (r"(?<![\w-])promote(?![\w-])", "promote"),
         (r"(?<![\w-])fit\s+(?:" + "|".join(_CURATION) + r")(?![\w-])", "curate"),
@@ -253,6 +281,12 @@ def _judge_one(tokens: list[str]) -> Verdict:
         if not inner.allowed:
             return inner
 
+    # Tiled's own command line, `tiled` or `python -m tiled`, then one of its
+    # commands: the person's login, used by another program.
+    for place, word in enumerate(words[:-1]):
+        if word.rsplit("/", 1)[-1] == "tiled" and words[place + 1] in _TILED_CLI:
+            return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
+
     # Reached through `nrw`, `nr-workbench`, or `python -m nr_workbench.cli`.
     # Every token, not the first few: an env-var prefix (`NRW_AGENT= nrw
     # promote x`), a `cd` first, or a `then`/`do` keyword all push the real
@@ -266,6 +300,9 @@ def _judge_one(tokens: list[str]) -> Verdict:
 
     if "promote" in subcommands:
         return Verdict(allowed=False, rule="promote", reason=_REASONS["promote"])
+
+    if "tiled" in subcommands:
+        return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
 
     if "experiment" in subcommands and (
         {"assign", "release"} & set(subcommands)
@@ -418,7 +455,7 @@ def refuse_if_agent(action: str) -> None:
 
     Args:
         action: ``promote``, ``upload``, ``force``, ``nested``,
-            ``aure-run``, ``experiment``, ``curate`` or ``reset``.
+            ``aure-run``, ``experiment``, ``curate``, ``reset`` or ``tiled``.
 
     Raises:
         click.ClickException: When ``NRW_AGENT`` is set.

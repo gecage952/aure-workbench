@@ -900,6 +900,7 @@ def test_an_expression_naming_an_unknown_parameter_is_skipped() -> None:
     assert band == {}
 
 
+@pytest.mark.fit
 @pytest.mark.integration
 def test_a_trajectory_band_brackets_the_fitted_values(
     project: Path, monkeypatch: pytest.MonkeyPatch

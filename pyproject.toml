@@ -104,6 +104,9 @@ dependencies = [
 
 [project.optional-dependencies]
 nexus = ["h5py>=3.9"]
+# `nrw tiled`: the official client, without the array and table stacks. It pins
+# pydantic-settings below 2.12, which nothing else here needs.
+tiled = ["tiled[minimal-client]>=0.2.18,<0.3"]
 # The ISAAC schema mapping lives upstream: data-assembler produces neutral
 # typed records, nr-isaac-format maps them and talks to the Portal. Both are
 # git references, so this extra cannot go to PyPI -- which nr-workbench cannot
@@ -121,7 +124,7 @@ dev = [
   "pip-audit>=2.7",
 ]
 docs = ["mkdocs-material>=9.5", "sphinx>=7.2", "myst-parser>=2.0"]
-all = ["nr-workbench[nexus,isaac,dev,docs]"]
+all = ["nr-workbench[nexus,isaac,tiled,dev,docs]"]
 
 [project.urls]
 Homepage = "https://github.com/neutrons-ai/aure-workbench"
@@ -193,12 +196,19 @@ addopts = [
   "auto",
   "--dist",
   "loadscope",
+  # Real fits only when asked: `pytest -m fit`. Every other test's fit is
+  # replayed from a recording; see tests/fit_replay.py. A real Tiled server
+  # only when asked too: `pytest -m tiled_server`.
+  "-m",
+  "not fit and not tiled_server",
   "--cov=src/nr_workbench",
   "--cov-report=term-missing",
 ]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "integration: marks tests as integration tests",
+  "fit: runs a real refl1d/bumps fit; left out by default, run with `pytest -m fit`",
+  "tiled_server: runs against a real Tiled server; left out by default, run with `pytest -m tiled_server`",
   "unit: marks tests as unit tests",
   "needs_aure: requires the optional aure extra to be installed",
 ]

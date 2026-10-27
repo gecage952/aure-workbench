@@ -38,6 +38,7 @@ from .test_web_models import (  # noqa: F401 - fixtures
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.fit
 @pytest.mark.integration
 def test_a_page_fit_is_recorded_as_nrw_fit_run_records_it_refused_again_and_forced(
     app, writer, project: Path
@@ -103,6 +104,7 @@ def aure_run_stands_in(monkeypatch) -> None:
     monkeypatch.setattr(jobs_module, "nrw_command", command)
 
 
+@pytest.mark.fit
 def test_a_quick_fit_with_aure_is_recorded_as_a_fit_of_the_spec_it_proposed(
     app, writer, project: Path, monkeypatch
 ) -> None:
@@ -152,6 +154,7 @@ def test_a_quick_fit_without_an_endpoint_stops_at_aure_run_and_says_how_to_set_o
     assert FitIndex(project / ".nrw" / "index.jsonl").fits(sample="S1") == []
 
 
+@pytest.mark.fit
 def test_a_quick_fit_runs_again_after_the_notes_change_and_aure_hears_them(
     app, writer, project: Path, monkeypatch
 ) -> None:

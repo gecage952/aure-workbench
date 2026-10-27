@@ -113,7 +113,7 @@
     $("s-label").value = values.label || "";
     renderOptions($("s-sources"), shown.options.source, "s-source", effective("source.kind"));
     renderOptions($("s-feeds"), shown.options.feed, "s-feed", effective("feed.kind"));
-    // Shown, not saved: only one kind exists yet, and the planned one is coming.
+    // Shown, not saved: the project's own files are where it is kept.
     renderOptions($("s-catalogs"), shown.options.catalog, "s-catalog",
       shown.effective.catalog_kind);
     const custom = isSet(values["source.location"]);

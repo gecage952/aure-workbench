@@ -319,6 +319,7 @@ def test_a_model_is_written_from_the_samples_data_once_it_has_some(
     assert page.text("expt-fit-run") == "Fit the placeholder anyway"
 
 
+@pytest.mark.fit
 def test_a_fit_started_on_the_page_is_followed_to_its_record(
     page: Page, site: Site, project: Path, monkeypatch
 ) -> None:

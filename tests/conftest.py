@@ -69,3 +69,33 @@ def project(tmp_path: Path, context: RenderContext) -> Path:
     planned.extend(plan_sample_files(context, "Sample1"))
     apply_scaffold(tmp_path, planned)
     return tmp_path
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--record-fits",
+        action="store_true",
+        help=(
+            "run real fits in the tests that replay them, and record the "
+            "optimizer's answers in tests/data/fits/ (see tests/fit_replay.py)"
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def replayed_fits(request: pytest.FixtureRequest, monkeypatch) -> None:
+    """Outside a test marked `fit`, every fit is replayed from a recording.
+
+    The default run fits nothing: a test that needs a fit's record gets one
+    written by nrw's own runner, from the optimizer's answer recorded once.
+    See ``tests/fit_replay.py``.
+    """
+    if request.node.get_closest_marker("fit") is not None:
+        return
+    from .fit_replay import install
+
+    install(
+        monkeypatch,
+        record=bool(request.config.getoption("--record-fits")),
+        test=request.node.nodeid,
+    )
