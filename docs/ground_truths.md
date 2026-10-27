@@ -4353,3 +4353,64 @@ Each of 52 reintroduced bugs fails a test.
   none today, and the two that start one from the page are marked.
 - **Effect:** the default run, 2,864 tests, passes in about 82 s with no fit,
   against about 110 s before. Under the scan hook it logged none.
+
+### 2026-10-27: a catalog on Tiled was built, reviewed, and withdrawn
+
+The experiment's catalog was made a store on tiled.ornl.gov, which every
+member's project would read and edit as it went, beside a data source on Tiled
+and a login of nrw's own. The attempt is on branch `tiled-catalog`
+(677ebbf..1e1564a, 27 commits) and was withdrawn before it was merged. It came
+to 10,800 lines of code and 13,600 of tests, against the 3,000 its plan
+promised: more than the shared catalog withdrawn on 2026-09-28, and for the
+same reason.
+
+**Why.**
+
+- **A pin is not a reason to write a client.** The `tiled` library requires
+  `pydantic-settings<2.12`, a downgrade nothing here needed. For that, nrw
+  wrote its own HTTP client, its own model of Tiled's answers, and its own
+  Globus login and token file: 3,850 lines that `tiled[minimal-client]`
+  provides, with dependencies nrw mostly has already.
+- **Write the requirement in the person's words.** They asked that nrw make
+  the experiment's `context/` and that members can write there. The plan's
+  word was "live": a store every page read and wrote as it went, which others
+  edit at the same moment. That took locks, a test of each record before it
+  is replaced, a read-back after a lost answer, shared reads, and
+  confirmations. 15 of the 24 defences the reviews added served that one
+  word, and a push from the project was never weighed.
+- **A registry for two kinds is a cost, not a seam.** A backend per kind of
+  source and of catalog, a test parsing every module to hold the rule, and
+  command options generated from it all served exactly two kinds.
+- **An agent that can reach a server needs a sandbox; one that cannot needs
+  none.** Recording the places on Tiled a session began with, and refusing
+  the rest, existed only because an agent could read Tiled with the person's
+  login.
+- **Each review added defences, and each defence a review.** Steps ran at two
+  to seven times their estimates. The plan called each piece "a place to
+  stop", and none was taken.
+
+**Decision.** Tiled is reached only by `nrw tiled` commands a person runs, on
+the official client: `push` publishes the project's catalog to the
+experiment's `context/` (the last writer wins), `status` says what is there,
+and `pull --data` copies reduced files in when the data mount is out of reach.
+Nothing `nrw serve`, the poller or an agent runs talks to Tiled, and an agent
+is refused every `nrw tiled` command. The catalog stays in the project's
+`experiment/`, as 2026-09-28 decided. nr-watcher's use of the attempt's
+session baseline was reverted with it (nr-watcher a35fd77 and fd2e98d).
+
+**Still true of Tiled 0.2.18**, learned against it, and against tiled.ornl.gov
+read-only:
+
+- An experiment's node is `projects/isaac/IPTS-<n>`, tagged `isaac`. Another
+  process fills `autoreduction/` with flat `bytes` nodes named as the files in
+  `new_reduction/`, which carry no metadata.
+- A node made without tags is its maker's alone, invisible to everyone else on
+  the experiment, and a child does not take its parent's tags: whatever nrw
+  makes must be given its parent's.
+- A JSON Patch whose `test` fails is a bare 500, not a 409; creating a key that
+  exists is a real 409. Every metadata write keeps the version it replaced.
+- Its directory walker cannot register a parquet file. Registered through the
+  API as an external asset, one reads back with its types, but only inside the
+  storage the server was started on.
+- `api_version` is 0: nothing about the API is promised between releases. A
+  local server's API key must be alphanumeric.
