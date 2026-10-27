@@ -23,9 +23,6 @@ from nr_workbench.provenance import curation
 from nr_workbench.provenance.index import FitIndex
 from nr_workbench.web.app import create_app
 
-TOKEN = "t" * 32
-ORIGIN = "http://localhost"
-
 A = "20260930-100000Z-aaaaaaaa"
 B = "20260930-110000Z-bbbbbbbb"
 C = "20260930-120000Z-cccccccc"
@@ -409,36 +406,25 @@ def test_nrw_check_says_nothing_of_a_fit_deleted_on_purpose(
 
 @pytest.fixture
 def app(project: Path):
-    return create_app(project, token=TOKEN, autostart=False)
+    return create_app(project, autostart=False)
 
 
 @pytest.fixture
 def writer(app):
-    client = app.test_client()
-    assert client.get(f"/auth/{TOKEN}").status_code == 303
-    return client
+    return app.test_client()
 
 
 def post(client, app, fit_id: str, action: str, body: dict | None = None):
-    return client.post(
-        f"/api/experiment/fits/{fit_id}/{action}",
-        json=body or {},
-        headers={"X-NRW-Token": app.config["NRW_PAGE_TOKEN"], "Origin": ORIGIN},
-    )
+    return client.post(f"/api/experiment/fits/{fit_id}/{action}", json=body or {})
 
 
-def test_curating_from_the_page_needs_the_link_and_a_writable_server(
-    app, project: Path
-) -> None:
+def test_curating_from_the_page_needs_a_writable_server(project: Path) -> None:
     recorded(project, A)
-    read_only = create_app(project, token=TOKEN, autostart=False, writable=False)
-    viewer = read_only.test_client()
-    viewer.get(f"/auth/{TOKEN}")
+    read_only = create_app(project, autostart=False, writable=False)
 
-    stranger = post(app.test_client(), app, A, "star", {"starred": True})
-    refused = post(viewer, read_only, A, "star", {"starred": True})
+    refused = post(read_only.test_client(), read_only, A, "star", {"starred": True})
 
-    assert (stranger.status_code, refused.status_code) == (403, 403)
+    assert refused.status_code == 403
     assert events(project, "star") == []
 
 
@@ -504,21 +490,6 @@ def test_finalizing_from_the_page_asks_again_when_the_inputs_changed(
     assert forced.json["supersedes"] == B
     listed = {r["fit_id"]: r["labels"] for r in app.config["NRW_DATA"].fits()}
     assert (listed[A], listed[B]) == (["final"], [])  # B is final no longer
-
-
-def test_the_fit_page_gives_its_token_only_to_a_writer(app, writer, project) -> None:
-    recorded(project, A)
-    token = app.config["NRW_PAGE_TOKEN"]
-
-    seen = app.test_client().get(f"/f/{A}")
-    written = writer.get(f"/f/{A}")
-
-    for page in (seen, written):
-        assert page.status_code == 200
-        # Only the page's own scripts run where a token can be.
-        assert "script-src 'self' 'nonce-" in page.headers["Content-Security-Policy"]
-    assert token not in seen.get_data(as_text=True)
-    assert token in written.get_data(as_text=True)
 
 
 def test_the_fits_list_keeps_the_discarded_behind_a_toggle(

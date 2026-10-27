@@ -987,11 +987,8 @@ class ProjectData:
         return list(curation_of(self.index.entries()).get(fit_id, NONE).labels)
 
     def _series_dir(self, sample_id: str, name: str) -> Path:
-        """Resolve a series directory, rejecting anything outside the sample."""
-        base = (self.layout.sample(sample_id) / "data" / "tnr").resolve()
-        directory = (base / name).resolve()
-        if not _within(directory, base):
-            raise FileNotFoundError(f"No series {name!r} for {sample_id}")
+        """Resolve a series directory."""
+        directory = self.layout.sample(sample_id) / "data" / "tnr" / name
         if not directory.is_dir():
             raise FileNotFoundError(f"No series {name!r} for {sample_id}")
         return directory
@@ -1099,15 +1096,6 @@ def _or_none(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
-
-
-def _within(path: Path, parent: Path) -> bool:
-    """Return whether ``path`` sits inside ``parent``."""
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True
 
 
 __all__ = ["ProjectData", "Problem", "Curve", "Profile"]

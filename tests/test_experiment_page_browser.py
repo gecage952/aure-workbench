@@ -15,11 +15,11 @@ skipped where there is no Chrome.
 
 from __future__ import annotations
 
-import secrets
 import sys
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -73,26 +73,31 @@ def empty_home(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(home))
 
 
-@pytest.fixture
-def served(project: Path) -> Iterator[tuple[Site, object]]:
-    """The project served, and the app serving it."""
+@contextmanager
+def serving(app) -> Iterator[Site]:
+    """*app* served on a free port, for as long as the block runs."""
     from werkzeug.serving import make_server
 
-    from nr_workbench.web.app import create_app
-
-    token = secrets.token_urlsafe(24)
-    app = create_app(project, token=token, autostart=False)
-    app.config["NRW_EXPERIMENT"].live.scan_once()
     server = make_server("127.0.0.1", 0, app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    url = f"http://127.0.0.1:{server.server_port}"
     try:
-        yield Site(url=url, link=f"{url}/auth/{token}"), app
+        yield Site(url=f"http://127.0.0.1:{server.server_port}")
     finally:
         server.shutdown()
         # A test that failed mid-fit leaves nothing running to slow the next.
         app.config["NRW_MODELS"].jobs.stop()
         app.config["NRW_EXPERIMENT"].reload()
+
+
+@pytest.fixture
+def served(project: Path) -> Iterator[tuple[Site, object]]:
+    """The project served, and the app serving it."""
+    from nr_workbench.web.app import create_app
+
+    app = create_app(project, autostart=False)
+    app.config["NRW_EXPERIMENT"].live.scan_once()
+    with serving(app) as site:
+        yield site, app
 
 
 @pytest.fixture
@@ -107,7 +112,6 @@ def field(page: Page, element_id: str) -> str:
 def test_what_you_typed_survives_a_save_of_the_same_sample_made_elsewhere(
     page: Page, site: Site, project: Path
 ) -> None:
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     page.wait_for(
         "Array.from(document.querySelectorAll('#expt-samples button'))"
@@ -148,7 +152,6 @@ def test_what_you_typed_survives_a_save_of_the_same_sample_made_elsewhere(
 def test_what_you_typed_about_the_experiment_survives_a_save_made_elsewhere(
     page: Page, site: Site, project: Path
 ) -> None:
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     # Nothing is written yet, so the panel is open, to be filled in.
     page.wait_for(
@@ -193,7 +196,6 @@ def test_an_experiment_saved_empty_reads_as_not_written(
     store.update(experiment=ExperimentChange(0, {"summary": "A first try."}))
     store.update(experiment=ExperimentChange(1, {"summary": ""}))
 
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
 
     page.wait_for(
@@ -208,7 +210,6 @@ def test_a_save_here_does_not_hide_what_was_saved_elsewhere(
     """A save's answer covers everything saved before it, from anywhere: were
     the page to take its version from that answer, the poll would see nothing
     new, and a sample saved in another tab would never show."""
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     page.wait_for(
         "!document.getElementById('c-summary').disabled", what="the experiment's panel"
@@ -233,7 +234,6 @@ def test_a_save_here_does_not_hide_what_was_saved_elsewhere(
 
 
 def open_s1(page: Page, site: Site) -> None:
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     page.wait_for(
         "Array.from(document.querySelectorAll('#expt-samples button'))"
@@ -328,7 +328,6 @@ def test_the_bulk_bar_leaves_each_runs_type_unless_one_is_chosen(
     store = ParquetCatalogStore.for_project(project)
     entry = store.load().runs[RunKey(234277)]
     store.update(runs=[RunChange(entry.key, entry.rev, {"measurement": "tNR"})])
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     page.wait_for(
         "document.querySelector('#expt-runs tbody input[type=checkbox]') !== null",
@@ -599,45 +598,50 @@ def test_a_page_opened_onto_a_running_fit_follows_it_and_can_cancel_it(
 
 
 def test_a_view_only_page_offers_no_writes_and_no_cancel(
-    page: Page, served, project: Path, monkeypatch
+    page: Page, project: Path, monkeypatch
 ) -> None:
-    site, app = served
+    from nr_workbench.web.app import create_app
+
     long_step(monkeypatch)
     spec = project / "samples" / "S1" / "models" / "oxide.yaml"
     spec.parent.mkdir(parents=True)
     spec.write_text("{}\n")
     write_partials(project / "samples" / "S1" / "data" / "steady", 234277)
+    app = create_app(
+        project, autostart=False, writable=False, read_only_reason="view only"
+    )
+    app.config["NRW_EXPERIMENT"].live.scan_once()
     app.config["NRW_MODELS"].jobs.start(
         label="dream fit of oxide", sample="S1", model="oxide", steps=[["x"]]
     )
 
-    # No link opened: the page is view-only.
-    page.goto(f"{site.url}/experiment")
-    page.wait_for(
-        "Array.from(document.querySelectorAll('#expt-samples button'))"
-        ".some(b => b.textContent.includes('S1'))",
-        what="the sample list",
-    )
-    page.js(
-        "Array.from(document.querySelectorAll('#expt-samples button'))"
-        ".find(b => b.textContent.includes('S1')).click()"
-    )
-    page.wait_for(
-        "document.querySelector('#expt-models-list .expt-model-fit') !== null",
-        what="the spec listed",
-    )
-    page.wait_for(
-        "document.getElementById('expt-job-state').textContent === 'step 1 of 1'",
-        what="the running fit, shown",
-    )
+    with serving(app) as site:
+        page.goto(f"{site.url}/experiment")
+        page.wait_for(
+            "Array.from(document.querySelectorAll('#expt-samples button'))"
+            ".some(b => b.textContent.includes('S1'))",
+            what="the sample list",
+        )
+        page.js(
+            "Array.from(document.querySelectorAll('#expt-samples button'))"
+            ".find(b => b.textContent.includes('S1')).click()"
+        )
+        page.wait_for(
+            "document.querySelector('#expt-models-list .expt-model-fit') !== null",
+            what="the spec listed",
+        )
+        page.wait_for(
+            "document.getElementById('expt-job-state').textContent === 'step 1 of 1'",
+            what="the running fit, shown",
+        )
 
-    assert "view-only" in page.text("expt-models-list")
-    for button in ("expt-model-create", "expt-model-quick"):
-        assert page.js(f"document.getElementById('{button}').disabled") is True
-    # Nothing written, but nothing to write it with: left folded away.
-    assert page.js("document.getElementById('expt-context').open") is False
-    for box in ("c-summary", "c-hypotheses", "c-notes", "expt-context-save"):
-        assert page.js(f"document.getElementById('{box}').disabled") is True
+        assert "view-only" in page.text("expt-models-list")
+        for button in ("expt-model-create", "expt-model-quick"):
+            assert page.js(f"document.getElementById('{button}').disabled") is True
+        # Nothing written, but nothing to write it with: left folded away.
+        assert page.js("document.getElementById('expt-context').open") is False
+        for box in ("c-summary", "c-hypotheses", "c-notes", "expt-context-save"):
+            assert page.js(f"document.getElementById('{box}').disabled") is True
     assert page.js(
         "document.querySelector('#expt-models-list .expt-model-fit').disabled"
     )

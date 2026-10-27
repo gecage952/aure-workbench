@@ -43,8 +43,6 @@ from nr_workbench.web import jobs as jobs_module
 from nr_workbench.web import llm_settings as llm_module
 from nr_workbench.web.app import create_app
 
-TOKEN = "t" * 32
-ORIGIN = "http://localhost"
 LLM = "/api/experiment/settings/llm"
 POSIX = pytest.mark.skipif(os.name == "nt", reason="POSIX files and modes")
 
@@ -80,14 +78,12 @@ def home(tmp_path: Path, monkeypatch) -> Path:
 
 @pytest.fixture
 def app(project: Path, home: Path):
-    return create_app(project, token=TOKEN, autostart=False)
+    return create_app(project, autostart=False)
 
 
 @pytest.fixture
 def writer(app):
-    client = app.test_client()
-    assert client.get(f"/auth/{TOKEN}").status_code == 303
-    return client
+    return app.test_client()
 
 
 @pytest.fixture
@@ -103,7 +99,7 @@ def environ_restored() -> Iterator[None]:
 
 
 def headers(app) -> dict[str, str]:
-    return {"X-NRW-Token": app.config["NRW_PAGE_TOKEN"], "Origin": ORIGIN}
+    return {}
 
 
 def choose(client, app, provider, model: str = "", revision: str | None = None):
@@ -484,7 +480,7 @@ def test_an_existing_env_keeps_its_mode(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_the_section_says_what_applies_and_where_without_the_link_or_a_key(
+def test_the_section_says_what_applies_and_where_and_never_the_key(
     app,
 ) -> None:
     shown = app.test_client().get(LLM).json
@@ -504,7 +500,7 @@ def test_the_section_says_what_applies_and_where_without_the_link_or_a_key(
     assert shown["outside"] == shown["effective"]
     assert shown["environment"] == []
     assert shown["claude_code"]["id"] == "claude_code"
-    # Not even its shape: reading this needs no link.
+    # Not even its shape.
     assert PLANTED[-4:] not in json.dumps(shown)
 
 
@@ -607,36 +603,13 @@ def marker_command(monkeypatch, marker: Path) -> None:
     )
 
 
-def test_saving_or_checking_needs_the_link(
-    app, project: Path, tmp_path: Path, monkeypatch
+def test_a_read_only_server_shows_the_section_and_changes_nothing(
+    project: Path, home: Path, tmp_path: Path, monkeypatch
 ) -> None:
     marker = tmp_path / "checked"
     marker_command(monkeypatch, marker)
-    stranger = app.test_client()
-
-    put = stranger.put(
-        LLM, json={"revision": ABSENT, "provider": "claude_code"}, headers=headers(app)
-    )
-    check = stranger.post(f"{LLM}/check", json={}, headers=headers(app))
-
-    assert (put.status_code, check.status_code) == (403, 403)
-    assert not marker.exists()  # no billed call for someone without the link
-    assert not (project / ".env").exists()
-
-
-@pytest.mark.parametrize("why", ["read-only", "agent"])
-def test_a_read_only_or_agent_driven_server_shows_the_section_and_changes_nothing(
-    project: Path, home: Path, tmp_path: Path, monkeypatch, why: str
-) -> None:
-    marker = tmp_path / "checked"
-    marker_command(monkeypatch, marker)
-    if why == "agent":
-        monkeypatch.setenv("NRW_AGENT", "1")
-    app = create_app(project, token=TOKEN, autostart=False, writable=why != "agent")
-    if why == "read-only":
-        app = create_app(project, token=TOKEN, autostart=False, writable=False)
+    app = create_app(project, autostart=False, writable=False)
     client = app.test_client()
-    client.get(f"/auth/{TOKEN}")
 
     shown = client.get(LLM)
     put = choose(client, app, "claude_code", revision=ABSENT)
@@ -644,8 +617,6 @@ def test_a_read_only_or_agent_driven_server_shows_the_section_and_changes_nothin
 
     assert shown.status_code == 200
     assert shown.json["writable"] is False
-    if why == "agent":
-        assert "NRW_AGENT" in shown.json["read_only_reason"]
     assert (put.status_code, check.status_code) == (403, 403)
     assert not marker.exists()
     assert not (project / ".env").exists()
@@ -885,11 +856,9 @@ def test_the_real_check_runs_and_says_what_is_missing_without_calling_anything(
     empty = tmp_path / "empty-home"
     empty.mkdir()
     monkeypatch.setenv("HOME", str(empty))
-    app = create_app(project, token=TOKEN, autostart=False)
-    writer = app.test_client()
-    writer.get(f"/auth/{TOKEN}")
+    app = create_app(project, autostart=False)
 
-    response = check(writer, app)
+    response = check(app.test_client(), app)
 
     assert response.status_code == 200, response.json
     probe = response.json["probe"]

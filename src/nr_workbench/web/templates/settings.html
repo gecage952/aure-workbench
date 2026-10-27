@@ -176,9 +176,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
-  window.NRW_SETTINGS = {{ payload|nrwjson|safe }};
-  window.NRW_WRITE_TOKEN = {{ page_token|nrwjson|safe }};
+<script>
+  window.NRW_SETTINGS = {{ payload|tojson }};
 </script>
 <script src="{{ url_for('static', filename='nrwpage.js') }}"></script>
 <script src="{{ url_for('static', filename='settings.js') }}"></script>

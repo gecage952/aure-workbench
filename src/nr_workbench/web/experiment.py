@@ -16,9 +16,7 @@ a timeout rather than a thread each, forever.
 
 **Writes are the catalog's and apply's.** This class decides nothing: the
 catalog validates edits, apply decides what may be copied. It refuses every
-write when the server was started read-only, which the request gate in
-:mod:`nr_workbench.web.security` also enforces -- two mechanisms, as with the
-agent guard, so that forgetting one is not a hole.
+write when the server was started read-only.
 """
 
 from __future__ import annotations
@@ -54,16 +52,8 @@ from nr_workbench.problems import Problem
 from nr_workbench.project.layout import ProjectLayout
 
 #: Reads of the data source that may be waiting at once, per configuration:
-#: quick looks and plan reviews, which anyone who can see the pages may ask for.
+#: quick looks, plan reviews and apply's own read.
 READ_SLOTS = 4
-
-#: Apply's own reads, apart from those: an apply is started only with the
-#: link, one at a time, so nobody who can only view the pages can use them up.
-APPLY_SLOTS = 2
-
-#: Most files one run's quick look reads. A run has three or four; a folder
-#: anyone on the team can write to could hold a thousand under one run number.
-MAX_CURVE_FILES = 12
 
 
 class _BoundedSource:
@@ -149,12 +139,11 @@ class _Wiring:
             one of them even within one tick of a coarse clock.
         revision: Its sha256, to tell an edit from a touch.
         workspace: Source, feed and catalog store built from it.
-        source: The source, every byte read bounded, for anyone's reads.
+        source: The source, every byte read bounded.
         live: The background poller over that source.
         reads: The deadline and the slots those reads run under -- this
             wiring's own, so reads stuck on the old folder's dead mount do not
             also take the new folder's.
-        applying: Apply's deadline and slots, apart from everyone else's.
     """
 
     stamp: tuple[int, int, int, int] | None
@@ -163,11 +152,6 @@ class _Wiring:
     source: _BoundedSource
     live: Any
     reads: Bounded
-    applying: Bounded
-
-    def source_for_apply(self) -> _BoundedSource:
-        """The source, every byte read under apply's own slots."""
-        return _BoundedSource(self.workspace.source, self.applying.run)
 
     def close(self) -> None:
         """Retire it: its poller stops for good."""
@@ -280,9 +264,6 @@ class ExperimentData:
             source=_BoundedSource(workspace.source, reads.run),
             live=workspace.live(clock=self._clock, autostart=self._autostart),
             reads=reads,
-            applying=Bounded(
-                slots=APPLY_SLOTS, timeout=SOURCE_TIMEOUT, name="nrw-apply-read"
-            ),
         )
 
     @property
@@ -431,15 +412,7 @@ class ExperimentData:
             for source_file, theta in zip(view.source.files, thetas, strict=False)
             if source_file in fitting
         ]
-        if len(pairs) > MAX_CURVE_FILES:
-            problems.append(
-                Problem(
-                    f"curve:{key.run}",
-                    f"run {key.run} lists {len(pairs)} files; showing the first "
-                    f"{MAX_CURVE_FILES}.",
-                ).as_dict()
-            )
-        for source_file, theta in pairs[:MAX_CURVE_FILES]:
+        for source_file, theta in pairs:
             label = (
                 f"{key.run}#{source_file.segment}"
                 if source_file.segment is not None
@@ -686,14 +659,14 @@ class ExperimentData:
         # Under the deadline, because the poll itself lists the source. The
         # wait for a poll already under way gets half of it, so a poller stuck
         # on a dead mount is what the answer names.
-        snapshot = w.applying.run(w.live.scan_fresh, w.applying.timeout / 2)
+        snapshot = w.reads.run(w.live.scan_fresh, w.reads.timeout / 2)
         runs, statuses = self._observed(snapshot)
         report = apply(
             self.root,
             catalog,
             runs,
             statuses,
-            w.source_for_apply(),
+            w.source,
             w.workspace.render_context(),
             expected_plan_id=plan_id,
             samples=_sample_list(samples),

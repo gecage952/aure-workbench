@@ -6,34 +6,20 @@ and there should never be any -- if a view needs a number computed, the
 computation belongs in ``ProjectData`` where it can be tested without a
 request context.
 
-The server is for ``localhost``. Every page and ``/api`` route only reads.
-The one exception is the Experiment page's blueprint
-(:mod:`nr_workbench.web.experiment_api`), whose writes are gated by
-:mod:`nr_workbench.web.security`: loopback only, from a browser that opened
-the one-time link ``nrw serve`` prints, and disabled entirely when bound
-elsewhere or running under ``NRW_AGENT``.
+The server is for ``localhost``. Every page and ``/api`` route only reads;
+the Experiment page's blueprint (:mod:`nr_workbench.web.experiment_api`)
+writes, unless the server is bound beyond loopback, which makes it read-only.
 """
 
 from __future__ import annotations
 
-import json
+import ipaddress
 import os
-import secrets
 from pathlib import Path
 from typing import Any
 
-from flask import (
-    Flask,
-    abort,
-    make_response,
-    redirect,
-    render_template,
-    request,
-    send_from_directory,
-    url_for,
-)
+from flask import Flask, abort, render_template, send_from_directory
 
-from nr_workbench.web import security
 from nr_workbench.web.api import api
 from nr_workbench.web.curation import CurationData
 from nr_workbench.web.experiment import ExperimentData
@@ -51,7 +37,6 @@ def create_app(
     writable: bool = True,
     read_only_reason: str = "",
     bound_host: str = "127.0.0.1",
-    token: str | None = None,
     autostart: bool = True,
 ) -> Flask:
     """Build the application for one project.
@@ -62,7 +47,6 @@ def create_app(
             when ``bound_host`` is not loopback.
         read_only_reason: What the page says when it may not.
         bound_host: The interface the server listens on.
-        token: The secret behind the one-time link; generated if omitted.
         autostart: Start polling the data source on first use.
 
     Returns:
@@ -78,25 +62,10 @@ def create_app(
             "Run `nrw init` there first, or pass --root."
         )
 
-    from nr_workbench.agent.guard import AGENT_ENV
-
-    if os.environ.get(AGENT_ENV):
-        # Here as well as in `nrw serve`: any other way of starting the app
-        # (web.app.serve, a WSGI server) must be read-only for an agent too.
-        writable = False
-        read_only_reason = read_only_reason or (
-            f"{AGENT_ENV} is set, so this server does not accept edits."
-        )
-
     app = Flask(__name__)
     app.config["NRW_DATA"] = ProjectData(root)
     app.config["NRW_ROOT"] = root
-    security.install(
-        app,
-        bound_host=bound_host,
-        writable=writable,
-        token=token or secrets.token_urlsafe(24),
-    )
+    app.config["NRW_WRITABLE"] = writable and is_loopback(bound_host)
     app.config["NRW_READ_ONLY_REASON"] = read_only_reason or (
         "" if app.config["NRW_WRITABLE"] else _default_reason(bound_host)
     )
@@ -140,18 +109,6 @@ def create_app(
     app.register_blueprint(api)
     app.register_blueprint(experiment_api)
 
-    @app.before_request
-    def _only_the_experiment_blueprint_writes() -> None:
-        # The second mechanism, beside the blueprint's own gate: an unsafe
-        # method anywhere else is refused, so a write route added outside the
-        # blueprint cannot slip past the gate by accident.
-        if (
-            request.method not in security.SAFE_METHODS
-            and request.blueprint != "experiment_api"
-        ):
-            abort(405)
-
-    app.jinja_env.filters["nrwjson"] = _compact_json
     app.jinja_env.filters["markdown"] = _render_markdown
 
     # A global rather than a per-route variable: the fit-story row is included
@@ -166,44 +123,17 @@ def create_app(
     return app
 
 
-def _inert(response: Any) -> Any:
-    """A project file, served so that nothing in it runs as this server.
-
-    Figures and results are the project's files, and anyone who can write the
-    project can put an HTML or SVG file among them. Opened directly, a script
-    in it would run with this server's origin: it could read a page's write
-    token and send writes that pass every check the write gate makes. The
-    sandbox renders it as an inert document; an image is unaffected.
-    """
-    response.headers["Content-Security-Policy"] = (
-        "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'"
-    )
-    return response
-
-
-def _compact_json(value: Any) -> str:
-    """Serialise for embedding inside a ``<script>`` block.
-
-    ``</`` is escaped because the browser's HTML tokeniser finds ``</script>``
-    inside a string literal and ends the block there -- a run label or a note
-    containing that text would otherwise truncate the page's JavaScript and
-    spill the rest as visible markup. ``json.dumps`` does not do this on its
-    own, and Jinja's autoescaping does not apply inside a script tag.
-    """
-    text = json.dumps(value, separators=(",", ":"), default=str)
-    # Every character that can change how the HTML parser reads a script
-    # block, as a JSON escape. `</` alone is not enough: `<!--<script>` puts
-    # the tokeniser into a state where the block's own `</script>` no longer
-    # closes it, and the rest of the page becomes script.
-    for char, escape in (
-        ("<", "\\u003c"),
-        (">", "\\u003e"),
-        ("&", "\\u0026"),
-        ("\u2028", "\\u2028"),
-        ("\u2029", "\\u2029"),
-    ):
-        text = text.replace(char, escape)
-    return text
+def is_loopback(address: str | None) -> bool:
+    """Whether an address is this machine's loopback, including IPv4-mapped."""
+    if not address:
+        return False
+    try:
+        parsed = ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        return address == "localhost"
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is not None:
+        parsed = parsed.ipv4_mapped
+    return parsed.is_loopback
 
 
 def _render_markdown(text: str | None) -> Any:
@@ -272,21 +202,13 @@ def _register_views(app: Flask) -> None:
         )
 
     def curating(template: str, **context: Any) -> Any:
-        """A page that curates fits: the write token for a writer, and the
-        policy that keeps any script but the page's own from reading it."""
-        nonce = secrets.token_urlsafe(16)
-        writer = security.can_write()
-        page = render_template(
+        """A page that curates fits: its controls are offered to a writer."""
+        return render_template(
             template,
-            page_token=app.config["NRW_PAGE_TOKEN"] if writer else "",
-            writer=writer,
-            csp_nonce=nonce,
+            writer=app.config["NRW_WRITABLE"],
             read_only_reason=app.config["NRW_READ_ONLY_REASON"],
             **context,
         )
-        response = make_response(page)
-        response.headers["Content-Security-Policy"] = security.page_csp(nonce)
-        return response
 
     @app.get("/f/<fit_id>")
     def fit(fit_id: str) -> Any:
@@ -308,110 +230,33 @@ def _register_views(app: Flask) -> None:
 
     @app.get("/figures/<sample_id>/<label>/<path:filename>")
     def figure(sample_id: str, label: str, filename: str) -> Any:
-        """Serve a figure from an assessment directory.
-
-        ``send_from_directory`` rejects paths that escape the directory, which
-        is what keeps a crafted ``filename`` from reading the rest of the disk.
-        The sample and label are resolved through the layout rather than joined
-        as strings for the same reason.
-        """
-        project = data()
-        directory = (project.layout.sample(sample_id) / "assessments" / label).resolve()
+        """Serve a figure from an assessment directory."""
+        directory = data().layout.sample(sample_id) / "assessments" / label
         if not directory.is_dir():
             abort(404)
-        try:
-            directory.relative_to(project.root)
-        except ValueError:
-            abort(404)
-        return _inert(send_from_directory(directory, filename))
+        return send_from_directory(directory, filename)
 
     @app.get("/results/<sample_id>/<fit_id>/<path:filename>")
     def result_file(sample_id: str, fit_id: str, filename: str) -> Any:
         """Serve a file from a fit's immutable result directory."""
-        project = data()
-        directory = (project.layout.sample(sample_id) / "results" / fit_id).resolve()
+        directory = data().layout.sample(sample_id) / "results" / fit_id
         if not directory.is_dir():
             abort(404)
-        try:
-            directory.relative_to(project.root)
-        except ValueError:
-            abort(404)
-        return _inert(send_from_directory(directory, filename))
-
-    @app.get("/auth/<token>")
-    def authorize(token: str) -> Any:
-        """The one-time link `nrw serve` prints: grants this browser write access.
-
-        Good once. The browser gets a fresh session value in an HttpOnly
-        cookie -- not the link's secret -- and is redirected to a clean URL, so
-        the secret does not linger in the address bar, leak in a Referer, or
-        stay useful to anyone who later finds it in a log.
-        """
-        if not (
-            app.config.get("NRW_WRITABLE") and security.is_loopback(request.remote_addr)
-        ):
-            abort(403, "This link is not valid for this server.")
-        # Where to land, decided before the link is spent: a project nobody has
-        # set up yet goes straight to Settings, and so does one whose nrw.toml
-        # cannot be read -- which must not cost the only link there is.
-        try:
-            setup = app.config["NRW_SETTINGS"].needs_setup()
-        except Exception:  # noqa: BLE001 - see above
-            setup = True
-        landing = "settings_page" if setup else "experiment"
-        session = security.redeem_link(token)
-        if session is None:
-            if security.link_used():
-                abort(
-                    403,
-                    "This link has already been used; it works once. Restart "
-                    "`nrw serve` for a new one.",
-                )
-            abort(403, "This link is not valid for this server.")
-        response = make_response(redirect(url_for(landing), code=303))
-        response.set_cookie(
-            security.COOKIE,
-            session,
-            httponly=True,
-            samesite="Strict",
-            path="/",
-            max_age=security.SESSION_MAX_AGE,
-        )
-        return response
+        return send_from_directory(directory, filename)
 
     @app.get("/experiment")
     def experiment() -> Any:
         """Every run of the experiment, organized into samples."""
-        nonce = secrets.token_urlsafe(16)
-        writer = security.can_write()
-        page = render_template(
-            "experiment.html",
-            payload=app.config["NRW_EXPERIMENT"].overview(),
-            page_token=app.config["NRW_PAGE_TOKEN"] if writer else "",
-            writer=writer,
-            csp_nonce=nonce,
+        return render_template(
+            "experiment.html", payload=app.config["NRW_EXPERIMENT"].overview()
         )
-        response = make_response(page)
-        response.headers["Content-Security-Policy"] = security.page_csp(nonce)
-        return response
 
     @app.get("/settings")
     def settings_page() -> Any:
         """The IPTS, where the data is, and how new runs are noticed."""
-        nonce = secrets.token_urlsafe(16)
-        writer = security.can_write()
-        page = render_template(
-            "settings.html",
-            payload=app.config["NRW_SETTINGS"].settings(),
-            page_token=app.config["NRW_PAGE_TOKEN"] if writer else "",
-            writer=writer,
-            csp_nonce=nonce,
+        return render_template(
+            "settings.html", payload=app.config["NRW_SETTINGS"].settings()
         )
-        response = make_response(page)
-        response.headers["Content-Security-Policy"] = security.page_csp(
-            nonce, plotly=False
-        )
-        return response
 
     @app.errorhandler(403)
     def forbidden(error: Any) -> tuple[str, int]:
@@ -430,7 +275,7 @@ def _register_views(app: Flask) -> None:
 
 
 def _default_reason(bound_host: str) -> str:
-    if not security.is_loopback(bound_host):
+    if not is_loopback(bound_host):
         return (
             f"The server is bound to {bound_host}, not loopback, so it only "
             "shows the experiment. Run `nrw serve` without --host to edit it."
@@ -460,15 +305,12 @@ def serve(
 
 
 def run_app(app: Flask, *, host: str, port: int, debug: bool) -> None:
-    """Serve *app* -- without Flask's own loading of ``.env`` files.
+    """Serve *app* without Flask's own loading of ``.env`` files.
 
-    ``Flask.run`` loads the nearest ``.env`` and ``.flaskenv``, walking up from
-    the working directory, into this process's environment. The project's
-    ``.env``, which anyone who can commit to it can write, would then read as
-    the person's own shell: it would choose where ``ISAAC_KEY`` and a Tiled
-    login are sent, which nrw takes from the person's own settings only, and
-    it would pass to every job the server starts. ``FLASK_SKIP_DOTENV`` is set
-    as well, because Flask lets it say "load" over ``load_dotenv=False``.
+    ``Flask.run`` loads the nearest ``.env`` and ``.flaskenv`` into this
+    process's environment, where a value would pass to every job the server
+    starts and win over the project's ``.env`` there. ``FLASK_SKIP_DOTENV`` is
+    set as well, because Flask lets it say "load" over ``load_dotenv=False``.
 
     Args:
         app: The application.

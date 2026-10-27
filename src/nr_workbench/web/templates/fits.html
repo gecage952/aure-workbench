@@ -29,7 +29,7 @@
   <tbody{% if row.curation.discarded %} data-discarded class="d-none"{% endif %}>
     <tr>
       <td class="fit-star-col">
-        {% if page_token and not row.curation.discarded %}
+        {% if writer and not row.curation.discarded %}
         <button type="button" class="btn btn-link btn-sm p-0 fit-star" data-fit-id="{{ row.fit_id }}"
                 aria-pressed="{{ 'true' if row.curation.starred else 'false' }}"
                 aria-label="star {{ row.fit_id }}"
@@ -58,8 +58,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
-  window.NRW_WRITE_TOKEN = {{ page_token|nrwjson|safe }};
+<script>
+  window.NRW_WRITER = {{ writer|tojson }};
 </script>
 <script src="{{ url_for('static', filename='nrwpage.js') }}"></script>
 <script src="{{ url_for('static', filename='curation.js') }}"></script>

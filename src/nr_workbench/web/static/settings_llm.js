@@ -12,14 +12,13 @@
   const N = window.NRWPage;
   const $ = N.$;
   const el = N.el;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
-  const api = N.client(TOKEN);
+  const api = N.client();
   const PATH = "/api/experiment/settings/llm";
   const CONTROLS = ["llm-claude", "llm-outside", "llm-model", "llm-save", "llm-check"];
   let shown = null;
 
   function writable() {
-    return Boolean(shown && shown.writable && TOKEN);
+    return Boolean(shown && shown.writable);
   }
 
   function isClaude(provider) {
@@ -104,8 +103,7 @@
       });
     }
     if (off) {
-      $("llm-status").textContent = shown.read_only_reason ||
-        "View only: open the link nrw serve printed to change this.";
+      $("llm-status").textContent = shown.read_only_reason || "View only.";
     }
   }
 

@@ -7,9 +7,8 @@
  * so far. Each step runs as a job, one at a time with the page's fits, and the
  * panel follows it. Push asks first, naming what leaves and where.
  *
- * Only a browser that opened the link `nrw serve` printed has the page token;
- * without it the panel is shown, and nothing is offered. Every value is set as
- * text.
+ * On a view-only server the panel is shown, and nothing is offered. Every
+ * value is set as text.
  */
 "use strict";
 
@@ -17,8 +16,7 @@
   const N = window.NRWPage;
   const $ = N.$;
   const el = N.el;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
-  const api = N.client(TOKEN);
+  const api = N.client();
   const panel = $("isaac");
   const said = window.NRW_CURATION;
   if (!panel || !said) return;
@@ -101,7 +99,7 @@
       return;
     }
     setup();
-    if (!TOKEN || !shown.writable) return;  // shown, not offered
+    if (!shown.writable) return;  // shown, not offered
     const tools = Object.values(shown.tools).every(Boolean);
     const sendable = tools && shown.records.length && shown.portal.host && shown.key.set;
     const why = !tools ? "install the tools first"

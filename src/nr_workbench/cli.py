@@ -1841,14 +1841,14 @@ def import_command(**kwargs: object) -> None:
 @click.option(
     "--debug",
     is_flag=True,
-    help="Enable the Flask reloader and its debugger (loopback only).",
+    help="Enable the Flask reloader and its debugger.",
 )
 def serve_command(**kwargs: object) -> None:
     """Browse the project, and organize the experiment's runs into samples.
 
     Pages only read, except where they change the project -- the Experiment
-    and Settings pages, and curating and publishing fits -- and those work
-    only in a browser that opened the one-time link printed at start-up.
+    and Settings pages, and curating and publishing fits -- and those are
+    offered when the server is bound to loopback, as it is without --host.
     """
     from nr_workbench.commands.serve import run_serve
 

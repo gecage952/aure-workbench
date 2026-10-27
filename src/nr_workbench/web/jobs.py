@@ -94,25 +94,22 @@ def nrw_command(*args: str) -> list[str]:
 
 
 def child_environment() -> dict[str, str]:
-    """The environment for an nrw child: this one's, less two things.
+    """The environment for an nrw child: this one's, less what this process
+    loaded from a ``.env`` file.
 
-    - The one-time link's secret, which ``nrw serve`` keeps in its environment
-      for its reloader. A fit, the script it runs, and AuRE have no use for it.
-    - Anything this process loaded from a ``.env`` file. The child reads the
-      files itself; passed down, a value would win over the project's
-      ``.env`` as though the shell had set it, and a language model chosen on
-      the Settings page would reach no job until the server restarted.
+    The child reads the files itself; passed down, a value would win over the
+    project's ``.env`` as though the shell had set it, and a language model
+    chosen on the Settings page would reach no job until the server restarted.
 
     Returns:
         The environment to pass.
     """
     from nr_workbench import env
-    from nr_workbench.commands.serve import TOKEN_ENV
 
     return {
         key: value
         for key, value in os.environ.items()
-        if key != TOKEN_ENV and key not in env.loaded_from_files()
+        if key not in env.loaded_from_files()
     }
 
 
@@ -447,9 +444,6 @@ class JobRunner:
     # -- records ---------------------------------------------------------------
 
     def _path(self, job_id: str, suffix: str) -> Path:
-        # Ids are made here, but the page sends them back: never a path.
-        if not isinstance(job_id, str) or not _ID_RE.fullmatch(job_id):
-            raise JobNotFound(f"No job {job_id!r} here.")
         return self.directory / f"{job_id}{suffix}"
 
     def _prepare(self) -> None:

@@ -81,7 +81,7 @@ nrw sample new Sample6 --title "Cu/Pt in d8-THF, 1 M LiBF4 (expt 11)"
 > for you. It watches the reduction's output folder, lets you assign each run to
 > a sample, and copies the data in only once a run has finished arriving. Its
 > **Settings** page sets the IPTS and the data folder if `nrw init` was run
-> without `--ipts`; the one-time link `nrw serve` prints opens it. See
+> without `--ipts`. See
 > [experiment.md](experiment.md). The manual route below is what it automates
 > — and it is still the route for a sliced time-resolved series like this
 > walkthrough's, which the page does not handle yet
@@ -700,12 +700,6 @@ nrw serve
   http://127.0.0.1:8765/experiment      the experiment's runs
   http://127.0.0.1:8765/settings        its IPTS, data folder, watcher and language model
   http://127.0.0.1:8765/api/overview    the same data as JSON
-  ...
-  To edit the experiment, curate fits or change the settings, open this link
-  in your browser:
-    http://127.0.0.1:8765/auth/<token>
-  It works once, for one browser, and is kept out of the request log.
-  Without it the pages are view-only.
 ```
 
 `/s/Sample6` is the sample landscape: every steady-state segment as R(Q), the
@@ -715,8 +709,8 @@ that slice's R(Q) overlays onto the top panel, so you can see what the sample
 looked like at the moment the change was happening.
 
 `/f/<fit_id>` is the fit: data and model per experiment with a residual strip,
-all 21 SLD profiles, the parameter table, and a provenance panel. Opened
-through the link, it also curates: **Star** a fit worth coming back to,
+all 21 SLD profiles, the parameter table, and a provenance panel. It also
+curates: **Star** a fit worth coming back to,
 **Finalize** it as the sample's answer, with the reason (what `nrw promote --as
 final` does in the next step), or **Discard** it and, later, delete its files.
 See [Curating fits](experiment.md#curating-fits).

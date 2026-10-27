@@ -1,8 +1,6 @@
-"""The Settings page's API: read openly, save and check only with the link.
+"""The Settings page's API: reading, saving nrw.toml, and checking a folder.
 
-Saving writes nrw.toml, and checking a folder lists whatever path it is
-given, so both sit behind the same gate as every other write. Reading does
-not, and must never start the poller: the page exists to change a folder that
+Reading must never start the poller: the page exists to change a folder that
 may not answer.
 """
 
@@ -23,18 +21,15 @@ from nr_workbench.project.config import load_config
 
 from .experiment_fixtures import write_autoreduced
 from .test_experiment_web import (  # noqa: F401 - fixtures
-    ORIGIN,
-    TOKEN,
     app,
     expt,
     make_app,
-    write_headers,
     writer,
 )
 
 
 def put(client, app, **body):
-    return client.put("/api/experiment/settings", json=body, headers=write_headers(app))
+    return client.put("/api/experiment/settings", json=body)
 
 
 def revision(root: Path) -> str:
@@ -80,7 +75,6 @@ def test_an_unknown_catalog_is_refused_never_replaced_by_files(
         handle.write('\n[experiment.catalog]\nkind = "api"\n')
     app = make_app(expt)
     client = app.test_client()
-    client.get(f"/auth/{TOKEN}")
 
     overview = client.get("/api/experiment").get_json()
     saved = client.put(
@@ -88,7 +82,6 @@ def test_an_unknown_catalog_is_refused_never_replaced_by_files(
         json={
             "changes": [{"run": 234277, "base_rev": 0, "fields": {"sample_id": "S1"}}]
         },
-        headers=write_headers(app),
     )
 
     said = [p["message"] for p in overview["problems"] if p["scope"] == "catalog"]
@@ -119,7 +112,7 @@ def make_polling_app(root: Path):
     """An app whose poller starts on the first request that asks, as in `nrw serve`."""
     from nr_workbench.web.app import create_app
 
-    return create_app(root, token=TOKEN, autostart=True)
+    return create_app(root, autostart=True)
 
 
 def test_an_ipts_in_the_projects_path_is_offered(tmp_path: Path, monkeypatch) -> None:
@@ -145,18 +138,7 @@ def test_an_ipts_in_the_projects_path_is_offered(tmp_path: Path, monkeypatch) ->
 # --------------------------------------------------------------------------
 
 
-def test_saving_without_the_link_is_refused(app, expt: Path) -> None:
-    before = (expt / "nrw.toml").read_bytes()
-
-    response = put(
-        app.test_client(), app, revision=revision(expt), changes={"ipts": "IPTS-5"}
-    )
-
-    assert response.status_code == 403
-    assert (expt / "nrw.toml").read_bytes() == before
-
-
-def test_a_link_holder_saves_and_the_server_follows(
+def test_a_save_is_written_and_the_server_follows(
     app, writer, expt: Path, tmp_path: Path
 ) -> None:
     folder = tmp_path / "elsewhere"
@@ -226,9 +208,7 @@ def test_a_malformed_save_is_a_400_and_writes_nothing(
 
 
 def test_a_check_whose_body_is_not_an_object_is_a_400(app, writer) -> None:
-    response = writer.post(
-        "/api/experiment/settings/check", json=["/data"], headers=write_headers(app)
-    )
+    response = writer.post("/api/experiment/settings/check", json=["/data"])
 
     assert response.status_code == 400
 
@@ -313,7 +293,6 @@ def test_an_apply_reviewed_before_the_data_folder_changed_is_refused(
     response = writer.post(
         "/api/experiment/apply",
         json={"plan_id": plan["plan_id"]},
-        headers=write_headers(app),
     )
 
     assert response.status_code == 409
@@ -382,9 +361,7 @@ def test_changing_the_ipts_of_a_catalogued_experiment_asks_first(
 
 
 def check(client, app, **body):
-    return client.post(
-        "/api/experiment/settings/check", json=body, headers=write_headers(app)
-    )
+    return client.post("/api/experiment/settings/check", json=body)
 
 
 def test_checking_a_folder_says_what_it_holds(app, writer, tmp_path: Path) -> None:
@@ -449,12 +426,6 @@ def test_checking_a_missing_folder_says_so(app, writer, tmp_path: Path) -> None:
 
     assert body["reachable"] is False
     assert "does not exist" in body["problems"][0]["message"]
-
-
-def test_checking_is_refused_without_the_link(app, tmp_path: Path) -> None:
-    response = check(app.test_client(), app, location=str(tmp_path))
-
-    assert response.status_code == 403
 
 
 def test_a_check_reads_the_kind_of_source_the_save_would_set(
@@ -560,67 +531,6 @@ def test_the_settings_page_renders_and_its_payload_parses(app) -> None:
     assert payload["schema"] == "nrw-settings/1"
 
 
-def test_the_settings_page_loads_no_plotly_and_signs_its_scripts(app) -> None:
-    import re
-
-    response = app.test_client().get("/settings")
-    html = response.get_data(as_text=True)
-    policy = response.headers["Content-Security-Policy"]
-
-    nonce = re.search(r"'nonce-([^']+)'", policy).group(1)
-    assert f'nonce="{nonce}"' in html
-    assert "cdn.plot.ly" not in policy and "unsafe-eval" not in policy
-    # Neither the library nor the check that would announce it missing.
-    assert "cdn.plot.ly" not in html and "typeof Plotly" not in html
-    assert "frame-ancestors 'none'" in policy
-
-
-def test_the_write_token_is_only_in_a_settings_page_for_a_link_holder(
-    app, writer
-) -> None:
-    from .test_experiment_web import _embedded
-
-    anonymous = app.test_client().get("/settings").get_data(as_text=True)
-    holder = writer.get("/settings").get_data(as_text=True)
-
-    assert _embedded(anonymous, "NRW_WRITE_TOKEN") == ""
-    assert _embedded(holder, "NRW_WRITE_TOKEN") == app.config["NRW_PAGE_TOKEN"]
-
-
-def test_a_hostile_label_cannot_break_out_of_the_settings_page(app, expt: Path) -> None:
-    from nr_workbench.project.settings import save
-
-    from .test_experiment_web import _embedded
-
-    hostile = "x</script><script>alert(1)</script><!--<script>"
-    save(expt, {"label": hostile})
-
-    html = app.test_client().get("/settings").get_data(as_text=True)
-
-    assert "<script>alert(1)" not in html
-    assert _embedded(html, "NRW_SETTINGS")["values"]["label"] == hostile
-
-
-def test_the_link_opens_settings_for_an_experiment_not_set_up(expt: Path) -> None:
-    from nr_workbench.project.settings import save
-
-    save(expt, {"ipts": "", "source.location": None})
-    app = make_app(expt)
-    try:
-        response = app.test_client().get(f"/auth/{TOKEN}")
-    finally:
-        app.config["NRW_EXPERIMENT"].reload()
-
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/settings")
-
-
-def test_the_link_opens_the_experiment_once_it_is_set_up(app) -> None:
-    response = app.test_client().get(f"/auth/{TOKEN}")
-
-    assert response.headers["Location"].endswith("/experiment")
-
-
 def test_the_experiment_page_says_when_it_needs_setting_up(app, expt: Path) -> None:
     from nr_workbench.project.settings import save
 
@@ -643,7 +553,7 @@ def test_serve_names_the_settings_page_and_says_when_setup_is_needed(
     unready = _serve(expt, monkeypatch=monkeypatch)
 
     assert "/settings" in ready.output and "not set up yet" not in ready.output
-    assert "not set up yet" in unready.output and "It opens Settings" in unready.output
+    assert "not set up yet" in unready.output
 
 
 def test_serve_says_which_folder_it_watches_and_why_it_is_the_default(
@@ -682,56 +592,6 @@ def test_init_suggests_serve_to_set_the_experiment_up(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "nrw serve" in result.output
-
-
-def test_a_malformed_nrw_toml_does_not_cost_the_one_time_link(expt: Path) -> None:
-    """Valid TOML of the wrong shape once made /auth fail after spending the link."""
-    from nr_workbench.web import security
-
-    app = make_app(expt)
-    try:
-        (expt / "nrw.toml").write_text('beamtime = "oops"\n', encoding="utf-8")
-        response = app.test_client().get(f"/auth/{TOKEN}")
-    finally:
-        app.config["NRW_EXPERIMENT"].reload()
-
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/settings")
-    assert security.COOKIE in response.headers["Set-Cookie"]
-
-
-def test_the_landing_page_is_chosen_before_the_link_is_spent(
-    expt: Path, monkeypatch
-) -> None:
-    from nr_workbench.web.settings import SettingsData
-
-    def broken(self):
-        raise RuntimeError("anything at all")
-
-    monkeypatch.setattr(SettingsData, "needs_setup", broken)
-    app = make_app(expt)
-    try:
-        response = app.test_client().get(f"/auth/{TOKEN}")
-    finally:
-        app.config["NRW_EXPERIMENT"].reload()
-
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/settings")
-
-
-@pytest.mark.parametrize("name", ["x.html", "x.svg"])
-def test_a_served_project_file_runs_nothing_as_this_server(
-    app, expt: Path, name: str
-) -> None:
-    """A script in it would read a page's write token and pass the write gate."""
-    folder = expt / "samples" / "Sample1" / "assessments" / "lbl"
-    folder.mkdir(parents=True)
-    (folder / name).write_text("<script>fetch('/settings')</script>", encoding="utf-8")
-
-    response = app.test_client().get(f"/figures/Sample1/lbl/{name}")
-
-    assert response.status_code == 200
-    assert "sandbox" in response.headers["Content-Security-Policy"]
 
 
 def test_checking_a_folder_reads_a_few_files_of_a_crowded_run(

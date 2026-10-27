@@ -209,10 +209,10 @@
 {% block scripts %}
 <script>
 (function () {
-  const curves = {{ curves|nrwjson|safe }};
-  const series = {{ (series or None)|nrwjson|safe }};
-  const amplitude = {{ ((assessment or {}).get('amplitude_series') or None)|nrwjson|safe }};
-  const sampleId = {{ sample.id|nrwjson|safe }};
+  const curves = {{ curves|tojson }};
+  const series = {{ (series or None)|tojson }};
+  const amplitude = {{ ((assessment or {}).get('amplitude_series') or None)|tojson }};
+  const sampleId = {{ sample.id|tojson }};
 
   const refl = NRW.reflPanel("plot-refl", curves, { toggleId: "rq4-toggle" });
   if (!series) return;
