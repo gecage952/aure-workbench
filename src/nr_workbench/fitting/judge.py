@@ -11,7 +11,7 @@ is titanium at all. That reading is the one thing a model is asked for here.
 holds.** AuRE's fit evaluator, which this replaced, is written for AuRE's
 refinement loop: it called every nrw fit a "single-file fit", reported no
 residual fringes when nothing had looked, and said each pinned range "has been
-auto-expanded for the next fit" (docs/ground_truths.md, 2026-10-13). Here a
+auto-expanded for the next fit". Here a
 section carries what the record says, or it is left out.
 
 Nothing here imports AuRE or calls a model. :func:`build_prompt` and
@@ -30,8 +30,7 @@ from nr_workbench.fitting.assess import QUALITIES, VERDICT_LISTS, Assessment
 
 #: What the fitter's convergence record means, in words the judge can use.
 #: Three states, because ``None`` is a fitter that does not test convergence
-#: at all; reporting it as converged once asserted something no fitter checked
-#: (docs/ground_truths.md, 2026-08-10).
+#: at all; reporting it as converged once asserted something no fitter checked.
 CONVERGENCE = {
     True: "the sampler ran and raised no convergence warning",
     False: "the sampler warned that it had NOT converged",

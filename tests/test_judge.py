@@ -211,7 +211,7 @@ def test_lines_in_the_notes_cannot_pose_as_the_prompts_sections() -> None:
 
 def test_the_request_asks_for_json_in_the_user_half_too() -> None:
     """The claude_code provider decides from the user half alone whether a
-    reply should be JSON and may be retried (docs/ground_truths.md, 2026-10-09)."""
+    reply should be JSON and may be retried."""
     _, user = _prompt()
 
     assert "json" in user.lower()

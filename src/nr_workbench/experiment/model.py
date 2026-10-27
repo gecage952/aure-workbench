@@ -42,9 +42,8 @@ MEASUREMENT_TYPES = ("steady", "tNR")
 DEFAULT_MEASUREMENT = "steady"
 
 #: Whether the sample was moved between measurements. Not derivable from the
-#: data, and it decides whether alignment is one parameter or one per state --
-#: see ``docs/ground_truths.md``, "theta_offset scope is a claim about
-#: remounting, not about change".
+#: data, and it decides whether alignment is one parameter or one per state:
+#: theta_offset's scope is a claim about remounting, not about change.
 MOUNTINGS = ("unknown", "once", "remounted")
 
 #: Sample ids become directory names, script tokens and URL segments. The

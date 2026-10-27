@@ -82,7 +82,7 @@ HARNESSES: tuple[Harness, ...] = (
         template_subdir="claude",
         agents_dir=".claude/agents",
         # Understood by Claude Code, and the reason its dispatchers are
-        # read-only. See docs/ground_truths.md, 2026-08-05.
+        # read-only.
         dispatcher_frontmatter=("tools: Read, Grep, Glob, Bash",),
         local_settings=".claude/settings.local.json",
         vscode_extension="anthropic.claude-code",
@@ -107,7 +107,7 @@ HARNESSES: tuple[Harness, ...] = (
         vscode_extension="sst-dev.opencode",
         # Enabled only after measuring, against opencode 1.18.18, that the
         # guard plugin's `tool.execute.before` hook actually fires under
-        # `--auto` and blocks the call. See docs/ground_truths.md.
+        # `--auto` and blocks the call.
         drives_sessions=True,
         binary="opencode",
         build_argv=driver.opencode_argv,

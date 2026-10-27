@@ -490,7 +490,7 @@ def test_the_endpoint_is_sent_the_notes_without_the_templates_guidance(
 
 def test_the_request_asks_for_json_in_the_user_half_too(project: Path) -> None:
     """The claude_code provider decides from the user half alone whether a
-    reply should be JSON and may be retried (docs/ground_truths.md, 2026-10-09)."""
+    reply should be JSON and may be retried."""
     _, user = build_prompt(skeleton=SKELETON, notes="", skills=find_skills(project))
 
     assert "json" in user.lower()

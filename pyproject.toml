@@ -43,8 +43,7 @@ classifiers = [
 # between releases and we track it. Because this is a PEP 508 direct
 # reference, nr-workbench is install-from-git, not PyPI -- and it will stay
 # that way: the PyPI name `aure` is taken by an unrelated project, so there is
-# no version of this that ends in `pip install nr-workbench`. See
-# docs/ground_truths.md.
+# no version of this that ends in `pip install nr-workbench`.
 #
 # Currently 487a31d, which is the v1.0.2 release (reports 1.0.2). A SHA
 # rather than the tag, for the reason above -- main moves between releases
@@ -269,7 +268,7 @@ ignore = [
 # The tNR modules hold numerics moved byte-for-byte from experiments-2025.
 # Adding `strict=` to those zips would change behaviour -- raising instead of
 # truncating -- in code the characterization tests pin exactly. Left alone
-# deliberately; see docs/ground_truths.md.
+# deliberately.
 "src/nr_workbench/tnr/ascii.py" = ["B905"]
 "src/nr_workbench/tnr/plots.py" = ["B905"]
 # ConstraintForm's classmethods define the interface subclasses implement; a

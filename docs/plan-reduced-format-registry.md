@@ -1,8 +1,7 @@
 # Plan: one registry for reduced-file formats
 
 > **A design record, kept for its reasoning.** What the code does now is in
-> the code and `docs/ground_truths.md`; where they disagree with this plan,
-> they are right.
+> the code; where it disagrees with this plan, it is right.
 
 **Status:** **done, 2026-09-21** — differently from the design below, and the
 difference is the interesting part. See "How it was actually resolved" at the
@@ -149,5 +148,4 @@ alone rather than folded in here.
 **Resolved (2026-09-28): the angles are gone.** The finding never fired: both
 readers asked the config for an attribute it does not have, and got an empty
 list. `standard_thetas` and `tnr_theta` are removed from `nrw.toml`, with the
-check, and a spec reads every angle from its files -- see ground_truths.md,
-"no angle is assumed".
+check, and a spec reads every angle from its files.

@@ -190,7 +190,7 @@
     <text x="14" y="68" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">claude -p --max-turns 200 --output-format stream-json</text>
     <text x="14" y="82" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">  --verbose --permission-mode bypassPermissions [--model M]</text>
     <text x="14" y="96" font-size="10" fill="#78716c">the prompt on stdin: named as -p @file, a large prompt never</text>
-    <text x="14" y="110" font-size="10" fill="#78716c">reached the model (docs/ground_truths.md, 2026-10-04)</text>
+    <text x="14" y="110" font-size="10" fill="#78716c">reached the model (2026-10-04)</text>
     <text x="14" y="130" font-size="11" font-weight="700" fill="#334155">OpenCode, --harness opencode</text>
     <text x="14" y="144" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">opencode run [--standalone] --format json --auto [--model]</text>
     <text x="14" y="158" font-size="10" fill="#78716c">the prompt on stdin; no turn cap, so --timeout is required</text>
