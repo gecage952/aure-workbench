@@ -194,11 +194,14 @@ def talking(url: str, tiled: Library) -> Iterator[None]:
         ) from None
 
 
-def connect(root: Path | None = None, *, login: bool = False) -> Any:
+def connect(
+    root: Path | None = None, *, login: bool = False, data_sources: bool = False
+) -> Any:
     """A client of the person's server, at its root, acting as the person.
 
     With the key when one is set; otherwise with the login the client keeps.
-    A login is started only with *login*.
+    A login is started only with *login*. With *data_sources*, each node read
+    says what files back it, in the same answer.
 
     Raises:
         TiledSyncError: Not logged in, the server refused or did not answer,
@@ -216,7 +219,9 @@ def connect(root: Path | None = None, *, login: bool = False) -> Any:
                         f"Not logged in to {chosen.url}: run `nrw tiled login`."
                     )
                 context.authenticate(remember_me=True)
-            return tiled.from_context(context, node_path_parts=path)
+            return tiled.from_context(
+                context, node_path_parts=path, include_data_sources=data_sources
+            )
         except RuntimeError as exc:
             # The client's own, on connecting: a server that takes keys
             # alone, or a key and a login both.

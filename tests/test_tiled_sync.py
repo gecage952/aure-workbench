@@ -62,7 +62,10 @@ class FakeNode:
         self.specs = list(specs)
         self.log = log if log is not None else []
         self.key = ""
-        self.context: Any = None
+        self.status = 200
+        self.context: Any = (
+            SimpleNamespace(http_client=FakeHttp(self)) if content is not None else None
+        )
         for child in self.children.values():
             child.share(self.log)
 
@@ -76,17 +79,14 @@ class FakeNode:
 
     @property
     def item(self) -> dict[str, Any]:
-        """What the client keeps of the node: a file's size, as registered."""
+        """What the client keeps of the node: its own address."""
+        return {"links": {"self": f"https://tiled.ornl.gov/api/v1/metadata/{self.key}"}}
+
+    def data_sources(self) -> list[Any]:
+        """What backs the node: one file, when it holds one."""
         if self.content is None:
-            return {"attributes": {"data_sources": []}}
-        assets = [{"size": len(self.content)}]
-        return {"attributes": {"data_sources": [{"assets": assets}]}}
-
-    def raw_export(self, destination: dict[str, Any]) -> list[str]:
-        import io
-
-        destination[self.key or "file"] = io.BytesIO(self.content or b"")
-        return list(destination)
+            return []
+        return [SimpleNamespace(assets=[SimpleNamespace(id=7, is_directory=False)])]
 
     def items(self) -> list[tuple[str, FakeNode]]:
         return list(self.children.items())
@@ -122,6 +122,35 @@ class FakeNode:
         for part in key.strip("/").split("/"):
             node = node.children[part]
         return node
+
+
+class FakeHttp:
+    """A file node's ``context.http_client``: it serves the node's file, or
+    the refusal its ``status`` says, and keeps what it was asked."""
+
+    def __init__(self, node: FakeNode) -> None:
+        self.node = node
+        self.asked: list[tuple[str, dict[str, Any], str]] = []
+
+    def get(self, url: str, *, params=None, headers=None) -> FakeResponse:
+        self.asked.append(
+            (url, dict(params or {}), (headers or {}).get("Accept-Encoding"))
+        )
+        return FakeResponse(self.node.content or b"", self.node.status)
+
+
+class FakeResponse:
+    """An answer, as httpx gives it."""
+
+    def __init__(self, content: bytes, status: int) -> None:
+        self.content = content
+        self.status = status
+
+    def raise_for_status(self) -> None:
+        import httpx
+
+        request = httpx.Request("GET", "https://tiled.ornl.gov/api/v1/asset/bytes/x")
+        httpx.Response(self.status, request=request).raise_for_status()
 
 
 class FakeSpec(NamedTuple):
@@ -177,6 +206,8 @@ class FakeTiled:
         self.root = root or FakeNode()
         self.context = FakeContext(**context)
         self.asked: list[tuple[str, str | None]] = []
+        # Whether each client made asked for what backs each node with it.
+        self.data_sources: list[bool] = []
 
     def library(self) -> server_module.Library:
         fake = self
@@ -190,6 +221,7 @@ class FakeTiled:
         def from_context(
             context: FakeContext, node_path_parts=(), include_data_sources=False
         ):
+            fake.data_sources.append(include_data_sources)
             fake.root.context = context
             return fake.root
 
@@ -974,14 +1006,14 @@ def test_a_download_that_fails_names_what_was_copied_before_it(
     import httpx
 
     reduced(tiled, {COMBINED: b"c", SEGMENT: b"q"})
-    exported = FakeNode.raw_export
+    served = FakeHttp.get
 
-    def goes_away(self, destination):
-        if self.key == COMBINED:
+    def goes_away(self, url, **kwargs):
+        if self.node.key == COMBINED:
             raise httpx.ReadTimeout("no answer")
-        return exported(self, destination)
+        return served(self, url, **kwargs)
 
-    monkeypatch.setattr(FakeNode, "raw_export", goes_away)
+    monkeypatch.setattr(FakeHttp, "get", goes_away)
 
     shown = pulled(project, away)
 
@@ -992,22 +1024,78 @@ def test_a_download_that_fails_names_what_was_copied_before_it(
     assert [p.name for p in away.iterdir()] == [SEGMENT]
 
 
-def test_a_node_that_is_several_files_is_not_copied_in_part(
-    project: Path, tiled: FakeTiled, away: Path, monkeypatch
+@pytest.mark.parametrize(
+    "assets",
+    [
+        [
+            SimpleNamespace(id=1, is_directory=False),
+            SimpleNamespace(id=2, is_directory=False),
+        ],
+        [SimpleNamespace(id=1, is_directory=True)],
+    ],
+    ids=["two-files", "a-folder"],
+)
+def test_a_node_that_is_not_one_file_is_not_copied_in_part(
+    project: Path, tiled: FakeTiled, away: Path, monkeypatch, assets: list[Any]
 ) -> None:
-    import io
-
-    reduced(tiled, {SEGMENT: b"q"})
-
-    def two_files(self, destination):
-        destination.update(a=io.BytesIO(b"1"), b=io.BytesIO(b"2"))
-
-    monkeypatch.setattr(FakeNode, "raw_export", two_files)
+    experiment = reduced(tiled, {SEGMENT: b"q"})
+    monkeypatch.setattr(
+        FakeNode, "data_sources", lambda self: [SimpleNamespace(assets=assets)]
+    )
 
     shown = pulled(project, away)
 
     assert shown.exit_code == 1
-    assert f"{SEGMENT} on Tiled is 2 files, not one" in shown.output
+    assert f"{SEGMENT} on Tiled is not one file" in shown.output
+    assert list(away.iterdir()) == []
+    assert experiment[f"autoreduction/{SEGMENT}"].context.http_client.asked == []
+
+
+def test_each_file_is_fetched_from_its_own_address_whole(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    """The route the client's raw_export takes, uncompressed; what backs each
+    node asked for in the one listing, not file by file."""
+    experiment = reduced(tiled, {SEGMENT: b"q"})
+
+    pulled(project, away)
+
+    http = experiment[f"autoreduction/{SEGMENT}"].context.http_client
+    address = f"https://tiled.ornl.gov/api/v1/asset/bytes/{SEGMENT}"
+    assert http.asked == [(address, {"id": 7}, "identity")]
+    assert tiled.data_sources == [True]
+
+
+def test_a_download_the_server_refuses_is_said_and_nothing_is_copied(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    """Said as the server's refusal, not as a node of no files: the client's
+    own export would have logged it, and copied nothing."""
+    experiment = reduced(tiled, {SEGMENT: b"q"})
+    experiment[f"autoreduction/{SEGMENT}"].status = 403
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 1
+    assert f"{SEGMENT} could not be downloaded" in shown.output
+    assert "403 Forbidden" in shown.output
+    assert list(away.iterdir()) == []
+
+
+def test_a_login_that_runs_out_during_a_pull_says_to_log_in_again(
+    project: Path, tiled: FakeTiled, away: Path, monkeypatch
+) -> None:
+    reduced(tiled, {SEGMENT: b"q"})
+
+    def run_out(self, url, **kwargs):
+        raise CannotRefresh("Server rejected attempt to refresh token.")
+
+    monkeypatch.setattr(FakeHttp, "get", run_out)
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 1
+    assert "The login for https://tiled.ornl.gov has run out" in shown.output
     assert list(away.iterdir()) == []
 
 

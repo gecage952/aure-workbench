@@ -11,11 +11,14 @@ Only names the reduction writes are copied, so nothing a node is called can
 become a path here. Each lands in a file of a random name, made new, and is
 renamed whole: the watcher never reads half of one, and nothing planted in
 the folder is written through. Nothing is written on Tiled.
+
+Each file is fetched by the route the client's own ``raw_export`` takes, but
+not through it: in tiled 0.2.18 that logs a failed download as a line of
+output, rather than raising it, and draws a progress bar for every file.
 """
 
 from __future__ import annotations
 
-import io
 import os
 import tempfile
 from collections.abc import Iterable
@@ -74,6 +77,24 @@ def plan_pull(
     return sorted(missing, key=lambda m: m.name), held
 
 
+def content_of(node: Any) -> bytes | None:
+    """The one file a ``bytes`` node holds; ``None`` when it holds other than
+    one file.
+
+    Raises:
+        httpx.HTTPError: The download failed, or the server refused it.
+    """
+    assets = [asset for source in node.data_sources() or () for asset in source.assets]
+    if len(assets) != 1 or assets[0].is_directory:
+        return None
+    link = node.item["links"]["self"].replace("/metadata", "/asset/bytes", 1)
+    response = node.context.http_client.get(
+        link, params={"id": assets[0].id}, headers={"Accept-Encoding": "identity"}
+    )
+    response.raise_for_status()
+    return response.content
+
+
 def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
     """Copy each of *missing* into *folder*, whole.
 
@@ -97,20 +118,18 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
         target = folder / item.name
         partial: Path | None = None
         try:
-            buffers: dict[str, io.BytesIO] = {}
-            item.node.raw_export(destination=buffers)
-            if len(buffers) != 1:
+            data = content_of(item.node)
+            if data is None:
                 raise TiledSyncError(
-                    f"{item.name} on Tiled is {len(buffers)} files, not one: "
-                    f"nothing of it was copied. {_before(written)}"
+                    f"{item.name} on Tiled is not one file: nothing of it was "
+                    f"copied. {_before(written)}"
                 )
-            (data,) = buffers.values()
             # Made new, under a name no one could have planted: written
             # through nothing, then renamed over the target whole.
             handle, name = tempfile.mkstemp(dir=folder, prefix=".nrw-pull-")
             partial = Path(name)
             with os.fdopen(handle, "wb") as out:
-                out.write(data.getvalue())
+                out.write(data)
             umask = os.umask(0)
             os.umask(umask)
             partial.chmod(0o666 & ~umask)

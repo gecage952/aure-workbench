@@ -4448,11 +4448,12 @@ once, and five things it rests on are not in the code's shape:
   folder holds is left, and nrw's default data folder is refused as a pull's
   target.
 
-### 2026-10-27: `nrw tiled` against tiled.ornl.gov, read-only
+### 2026-10-27: `nrw tiled` against tiled.ornl.gov
 
 The first live check: `nrw tiled login`, `status` on IPTS-37740, and `push
---dry-run` from a scratch project with a stand-in catalog. Nothing was
-written.
+--dry-run` from a scratch project with a stand-in catalog, which wrote
+nothing; then, on the person's go-ahead, a first push from their own project,
+and a pull of the whole experiment into a scratch folder.
 
 - **The server offers two logins, `globus` and `password`,** so the client
   asks at the terminal which to use, with `input()`, before it prints Globus's
@@ -4466,4 +4467,18 @@ written.
   go-ahead from their own project, made `context/`, `runs/` and `samples/`
   and 88 records (10 samples, 78 runs) in 7 seconds, every one tagged
   `isaac`, and `status` then found all 88 as the project has them.
-- Each command took under a second once logged in.
+- **The client's `raw_export` logs a failed download instead of raising
+  it.** `_download_url` in `tiled/client/download.py` catches every
+  exception, prints `ERROR ...` through rich, and returns, so a refused or
+  broken download reaches the caller as a node of no files; and it draws a
+  progress bar for every file. A pull fetches each file itself instead, by the
+  route `raw_export` takes: the node's `links.self` with `/metadata` made
+  `/asset/bytes`, and `?id=` its one asset. Its copies of run 234277 were byte
+  for byte `raw_export`'s.
+- **A pull of IPTS-37740 copied 247 files in 16 seconds,** every angle
+  segment of 89 runs, with what backs each node asked for in the one listing
+  (`include_data_sources`), and nrw then read the folder as those 89 runs. The
+  89 nodes it skipped are each run's `REFL_<run>_combined_autoreduction.dat`,
+  a name nrw does not know. A pulled run counts as complete once its files
+  have settled, as any new file does.
+- Each command took under a second once logged in, but the pull.

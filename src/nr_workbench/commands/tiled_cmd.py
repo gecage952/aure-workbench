@@ -307,7 +307,7 @@ def run_pull(
     ipts = _ipts(project)
     folder = Path(into).resolve() if into else _data_folder(project, ipts)
     with _asking(project):
-        experiment = experiment_node(connect(project), ipts)
+        experiment = experiment_node(connect(project, data_sources=True), ipts)
         where = f"{EXPERIMENT_PATH.format(ipts=ipts)}/{AUTOREDUCTION}"
         try:
             autoreduction = (

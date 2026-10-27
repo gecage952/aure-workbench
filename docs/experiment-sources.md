@@ -236,11 +236,15 @@ again. Each lands under a hidden name of its own first and is renamed whole;
 the folder watcher does the rest. Only names the reduction writes are copied.
 It copies into the data folder `nrw.toml` names, or `--into DIR`, and never
 into nrw's default, the facility's own reduction folder, which the reduction
-writes for the whole experiment. `--run` narrows it to some runs.
+writes for the whole experiment. `--run` narrows it to some runs. A pulled
+run counts as complete once its files have settled, as any new file does
+(five minutes by default).
 
 A push and a status run against a real Tiled 0.2.18, started with uvx apart
 from nrw's environment, in `pytest -m tiled_server`. A Globus login, the tags
-and `pull --data` are tested against a fake of the client alone.
+and `pull --data` are tested against a fake of the client alone, and were
+each checked once against tiled.ornl.gov (`docs/ground_truths.md`,
+2026-10-27).
 
 ## tNR, later
 
