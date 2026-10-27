@@ -221,6 +221,17 @@ added once is offered from then on. A run whose type was never set is steady.
 In the bar above the table the type starts at *unchanged*, so assigning runs
 leaves the type each one already has.
 
+**The experiment**, the panel above the samples, is what every sample here
+is part of: a **Summary** of what the proposal sets out to learn, the
+**Hypotheses** the measurements should confirm or rule out, and **Notes** for
+anything else every measurement needs. It opens by itself until something is
+written in it, and then folds away, showing its first line. It is kept in the
+catalog and written to no file, so this panel is the one place to change it;
+`nrw experiment status --json` shows it. A heading line, `<!--` or `-->`, and
+an unclosed code block are refused in it, as in a sample's context: it is
+quoted into the instructions a language model is given, where each would
+change how they read. A table of runs is allowed.
+
 Click a sample to fill in its context. Each box becomes the section of
 `sample.md` it is named after:
 

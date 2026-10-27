@@ -229,6 +229,12 @@ def update_sample(sample_id: str) -> Any:
     return jsonify(data().update_sample(sample_id, _body()))
 
 
+@experiment_api.put("/context")
+def update_experiment() -> Any:
+    """Record the experiment's own context: ``{"base_rev", "fields"}``."""
+    return jsonify(data().update_experiment(_body()))
+
+
 @experiment_api.post("/apply")
 def apply() -> Any:
     """Carry out a reviewed plan: ``{"plan_id", "samples", "confirmed"}``."""

@@ -67,8 +67,9 @@ def _echo_problems(problems: Any) -> None:
 
 def run_status(*, root: str | None = None, as_json: bool = False) -> None:
     """Report what the source holds, what the catalog says, and what is pending."""
+    from nr_workbench.experiment.model import EXPERIMENT_FIELDS
     from nr_workbench.experiment.store import CatalogError
-    from nr_workbench.experiment.views import run_row, sample_card
+    from nr_workbench.experiment.views import experiment_card, run_row, sample_card
 
     workspace = _workspace(root)
     snapshot, _, _ = _observed(workspace)
@@ -77,6 +78,7 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
         *snapshot.inventory.problems,
         *snapshot.feed.problems,
     ]
+    readable = True
     try:
         catalog, recovered = workspace.store.load_report()
         problems.extend(recovered)
@@ -84,7 +86,10 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
         from nr_workbench.experiment.model import Catalog
         from nr_workbench.problems import Problem
 
+        # Empty for the report, and said to be unreadable: an assistant
+        # reading --json must not take an unreadable catalog for an unwritten one.
         catalog = Catalog()
+        readable = False
         problems.append(Problem("catalog", str(exc)))
 
     runs = [
@@ -98,15 +103,18 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
         "source": workspace.source.describe(),
         "reachable": snapshot.inventory.reachable,
         "feed": workspace.feed.describe(),
-        "catalog": workspace.store.describe(),
+        "catalog": {**workspace.store.describe(), "readable": readable},
         "runs": runs,
         "samples": [
             sample_card(workspace.root, catalog, sample_id)
             for sample_id in catalog.sample_ids()
         ],
+        "experiment": experiment_card(catalog.experiment),
         "problems": [p.as_dict() for p in problems],
     }
     if as_json:
+        # ASCII only, the default: an assistant reads this, and every invisible
+        # character in a committed record then arrives as a visible escape.
         click.echo(json.dumps(payload, indent=2))
         return
 
@@ -126,6 +134,14 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
             else "none yet"
         )
     )
+    written = [name for name in EXPERIMENT_FIELDS if payload["experiment"][name]]
+    if not readable:
+        context = "cannot be read; see below"
+    elif written:
+        context = f'{", ".join(written)}; --json shows them under "experiment"'
+    else:
+        context = "none yet; it is written on the Experiment page"
+    click.echo(f"  context  {context}")
 
     counts: dict[str, int] = {}
     for row in runs:

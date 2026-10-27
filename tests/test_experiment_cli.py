@@ -51,6 +51,51 @@ def test_status_lists_every_run_with_its_state(expt: Path) -> None:
     assert payload["samples"] == []
 
 
+def test_status_reports_the_experiments_own_context(expt: Path) -> None:
+    """A diff of the catalog's parquet shows nothing, and an assistant reads
+    the experiment from here: status says what the page does."""
+    from nr_workbench.experiment.model import ExperimentChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    before = nrw("experiment", "status", "--root", str(expt))
+    ParquetCatalogStore.for_project(expt).update(
+        experiment=ExperimentChange(0, {"summary": "Li plating.", "notes": "Cu/Pt."})
+    )
+    after = nrw("experiment", "status", "--root", str(expt))
+
+    listed = 'context  summary, notes; --json shows them under "experiment"'
+    assert "context  none yet" in before.output
+    assert listed in after.output
+    payload = status(expt)
+    assert payload["experiment"] == {
+        "summary": "Li plating.",
+        "hypotheses": "",
+        "notes": "Cu/Pt.",
+        "rev": 1,
+    }
+    assert payload["catalog"]["readable"] is True
+
+
+def test_status_says_when_the_catalog_cannot_be_read(expt: Path) -> None:
+    """An unreadable catalog is not an unwritten one: the page says
+    `readable`, and so must the command line an assistant reads."""
+    from nr_workbench.experiment.model import ExperimentChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    ParquetCatalogStore.for_project(expt).update(
+        experiment=ExperimentChange(0, {"summary": "Li plating."})
+    )
+    (expt / "experiment" / "runs.parquet").write_bytes(b"not parquet")
+
+    shown = nrw("experiment", "status", "--root", str(expt))
+    payload = status(expt)
+
+    assert "context  cannot be read; see below" in shown.output
+    assert payload["catalog"]["readable"] is False
+    assert payload["experiment"]["rev"] == 0
+    assert any(p["scope"] == "catalog" for p in payload["problems"])
+
+
 def test_assign_records_the_runs_and_their_titles(expt: Path) -> None:
     result = nrw(
         "experiment",
