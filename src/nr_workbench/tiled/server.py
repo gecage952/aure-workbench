@@ -9,9 +9,11 @@ where it keeps its tokens, whether to log them -- so each one nrw's own
 ``.env`` loading put in the environment is taken out before it starts.
 
 Only ``nrw tiled login`` starts a login: Tiled's device-code flow, which
-prints Globus's address and a code, and waits. The client keeps the login in
-its own token cache, and renews it; every other command uses what it kept,
-and says to log in when there is nothing.
+asks at the terminal which login when the server offers several
+(tiled.ornl.gov offers ``globus`` and ``password``), prints Globus's address
+and a code, and waits. The client keeps the login in its own token cache, and
+renews it; every other command uses what it kept, and says to log in when
+there is nothing.
 """
 
 from __future__ import annotations

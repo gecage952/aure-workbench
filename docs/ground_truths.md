@@ -4447,3 +4447,20 @@ once, and five things it rests on are not in the code's shape:
   `new_reduction/` would stand in for the reduction's own file: so a file the
   folder holds is left, and nrw's default data folder is refused as a pull's
   target.
+
+### 2026-10-27: `nrw tiled` against tiled.ornl.gov, read-only
+
+The first live check: `nrw tiled login`, `status` on IPTS-37740, and `push
+--dry-run` from a scratch project with a stand-in catalog. Nothing was
+written.
+
+- **The server offers two logins, `globus` and `password`,** so the client
+  asks at the terminal which to use, with `input()`, before it prints Globus's
+  address and code. Without a terminal, `nrw tiled login` reads the end of its
+  input and click aborts it, sending nothing. A person types `1`. The scope
+  asked of Globus includes the server's own `lakehouse` scope.
+- **`projects/isaac/IPTS-37740` is there, tagged `isaac`, with no `context/`
+  yet.** A first push would make it, and give what it makes the tag `isaac`.
+  Whether a member may make a node with that tag is the server's policy, which
+  only a real push will answer.
+- Each command took under a second once logged in.

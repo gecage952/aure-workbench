@@ -202,7 +202,7 @@ own command line, to an agent.
 
 | Command | What it does |
 |---|---|
-| `nrw tiled login`, `logout` | Tiled's device-code login through Globus; the client keeps the login, and renews it, in its own token cache |
+| `nrw tiled login`, `logout` | Tiled's device-code login through Globus (tiled.ornl.gov first asks which login: choose `globus`); the client keeps the login, and renews it, in its own token cache |
 | `nrw tiled status` | whose the login is, whether the experiment is on Tiled, and each record there against this project's |
 | `nrw tiled push` | writes the project's catalog to the experiment's `context/` |
 | `nrw tiled pull --data` | copies the experiment's reduced files into the data folder |
