@@ -4482,3 +4482,36 @@ and a pull of the whole experiment into a scratch folder.
   a name nrw does not know. A pulled run counts as complete once its files
   have settled, as any new file does.
 - Each command took under a second once logged in, but the pull.
+
+### 2026-10-27: the experiment's context is a third table an older nrw survives
+
+The experiment's own context (summary, hypotheses, notes) is one record in
+`experiment/experiment.parquet`, beside the runs and samples tables, added
+without raising the catalog's schema version. That holds because of what an
+older nrw does with a table it does not know:
+
+- **It reads past it.** It checks the schema version and the `runs` and
+  `samples` entries of `catalog.json` against their files, and reads those two
+  tables: a third entry, and a third file, are never looked at.
+- **It saves around it.** It writes `catalog.json` without the third entry,
+  and never deletes a file it does not know, so `experiment.parquet` stays.
+
+So the table is read whenever it is there, and checked against the manifest
+only when the manifest lists it: read only when listed, the record would
+vanish after an older nrw's save, and the next save would erase it. It is
+written only once the record has been, so a project that never says anything
+about its experiment keeps exactly the files, and manifest, it had. A change
+an older nrw would misread, and not just pass over, still needs the version
+raised.
+
+Recovery from an interrupted save follows from the same two facts. An
+older nrw keeps no copy of the experiment's table under
+`.nrw/cache/experiment/` either, so the kept copy can be older than the
+table, and recovering it would have the next save write it back over the
+newer text. The table in `experiment/` is used instead whenever the kept
+copy does not match the kept manifest, and is checked against that manifest
+when it lists one. Two reviews and one wrong fix found this: a copy kept
+exactly, file for file, looks safer, and loses data once an older nrw has
+saved. The one cost: a save that writes the experiment for the first time
+together with runs or samples, cut short, is recovered with the experiment
+as it was being saved, so an experiment edit is sent alone.

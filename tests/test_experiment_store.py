@@ -8,6 +8,7 @@ overwriting each other, or an older nrw dropping columns it does not know.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -19,12 +20,15 @@ import pytest
 
 from nr_workbench.experiment import store as store_module
 from nr_workbench.experiment.model import (
+    ExperimentChange,
+    ExperimentContext,
     RecordConflict,
     RunChange,
     RunKey,
     SampleChange,
 )
 from nr_workbench.experiment.store import (
+    EXPERIMENT_FILE,
     MANIFEST_FILE,
     RUNS_FILE,
     SAMPLES_FILE,
@@ -300,6 +304,194 @@ def test_columns_this_version_does_not_know_survive_a_save(store) -> None:
     reread = pq.read_table(path).to_pylist()
     assert reread[0]["control_mode"] == "galvanostatic"
     assert reread[0]["condition"] == "-0.5 mA/cm2"
+
+
+# --------------------------------------------------------------------------
+# The experiment's own context: a third table, as an addition
+# --------------------------------------------------------------------------
+
+
+def describe(store: ParquetCatalogStore, base_rev: int = 0, **changes):
+    return store.update(experiment=ExperimentChange(base_rev, changes), now=NOW)
+
+
+def manifest_of(store: ParquetCatalogStore) -> dict:
+    return json.loads((store.directory / MANIFEST_FILE).read_text())
+
+
+def test_the_experiments_context_survives_a_save_and_a_reload(store) -> None:
+    populated(store)
+    describe(store, summary="How Li plates on Cu.", hypotheses="It thickens.")
+
+    catalog = ParquetCatalogStore(store.directory, store.cache_dir).load()
+
+    assert (catalog.experiment.summary, catalog.experiment.hypotheses) == (
+        "How Li plates on Cu.",
+        "It thickens.",
+    )
+    assert (catalog.experiment.rev, catalog.experiment.updated_at) == (1, NOW)
+    assert catalog.samples["Sample6"].title == "Cu/Pt", "and the rest as it was"
+    assert manifest_of(store)["tables"]["experiment"]["file"] == EXPERIMENT_FILE
+
+
+def test_a_project_that_says_nothing_of_its_experiment_keeps_its_files(store) -> None:
+    populated(store)
+
+    assert not (store.directory / EXPERIMENT_FILE).exists()
+    assert set(manifest_of(store)["tables"]) == {"runs", "samples"}
+
+
+def test_an_older_nrw_reads_past_the_experiment(store) -> None:
+    """What an older nrw checks before it reads -- the schema version, and
+    the runs and samples tables against their entries -- still passes."""
+    populated(store)
+    describe(store, summary="How Li plates on Cu.")
+
+    manifest = manifest_of(store)
+
+    assert manifest["schema_version"] == 1
+    for name, file in (("runs", RUNS_FILE), ("samples", SAMPLES_FILE)):
+        written = hashlib.sha256((store.directory / file).read_bytes()).hexdigest()
+        assert manifest["tables"][name]["sha256"] == written
+
+
+def test_a_save_by_an_older_nrw_leaves_the_experiment_and_it_is_still_read(
+    store,
+) -> None:
+    """An older nrw writes its manifest without the experiment, and leaves the
+    file: read anyway, or the record would vanish and the next save erase it."""
+    populated(store)
+    describe(store, summary="How Li plates on Cu.")
+    manifest = manifest_of(store)
+    del manifest["tables"]["experiment"]
+    (store.directory / MANIFEST_FILE).write_text(json.dumps(manifest))
+
+    catalog, problems = store.load_report()
+    assign(store, 218393, sample_id="Sample6")
+
+    assert catalog.experiment.summary == "How Li plates on Cu." and problems == ()
+    assert store.load().experiment.summary == "How Li plates on Cu."
+    assert "experiment" in manifest_of(store)["tables"], "and listed again"
+
+
+def test_a_crash_before_the_manifest_recovers_the_experiment_too(
+    store, monkeypatch
+) -> None:
+    populated(store)
+    describe(store, summary="first")
+    _crash_on_write_number(monkeypatch, 4)  # every table replaced, not the manifest
+
+    with pytest.raises(OSError, match="simulated crash"):
+        describe(store, 1, summary="second")
+    monkeypatch.undo()
+
+    catalog, problems = store.load_report()
+
+    assert catalog.experiment.summary == "first"
+    assert any("interrupted" in p.message for p in problems)
+
+
+def _kept_as_an_older_nrw_keeps_it(store: ParquetCatalogStore) -> None:
+    """An older nrw's copy for recovery: the runs, the samples, the manifest."""
+    previous = store.cache_dir / "previous"
+    for name in (RUNS_FILE, SAMPLES_FILE, MANIFEST_FILE):
+        shutil.copy2(store.directory / name, previous / name)
+
+
+def test_a_crash_while_an_older_nrw_saves_recovers_the_experiment_it_left(
+    store,
+) -> None:
+    """An older nrw keeps no copy of the experiment for recovery, so the copy
+    nrw kept can be older than the table; recovered, the next save would write
+    it back over the newer."""
+    populated(store)
+    describe(store, summary="first")
+    describe(store, 1, summary="second")  # the kept copy now says "first"
+    _kept_as_an_older_nrw_keeps_it(store)
+    manifest = manifest_of(store)
+    del manifest["tables"]["experiment"]
+    (store.directory / MANIFEST_FILE).write_text(json.dumps(manifest))  # its save
+    _kept_as_an_older_nrw_keeps_it(store)
+    (store.directory / RUNS_FILE).write_bytes(b"PAR1 torn")  # its next, cut short
+
+    catalog, problems = store.load_report()
+
+    assert catalog.experiment.summary == "second"
+    assert any("interrupted" in p.message for p in problems)
+
+
+def test_a_crash_while_an_older_nrw_saves_a_listed_experiment_recovers_it(
+    store,
+) -> None:
+    """The kept manifest lists the experiment, but an older nrw kept no copy
+    of its table: the one in experiment/, which it never writes, is the one."""
+    populated(store)
+    describe(store, summary="first")  # listed, and no copy of it kept yet
+    _kept_as_an_older_nrw_keeps_it(store)
+    (store.directory / RUNS_FILE).write_bytes(b"PAR1 torn")  # its save, cut short
+
+    catalog, problems = store.load_report()
+
+    assert catalog.experiment.summary == "first"
+    assert catalog.samples["Sample6"].title == "Cu/Pt"
+    assert any("interrupted" in p.message for p in problems)
+
+
+def test_a_listed_experiment_table_that_is_gone_is_refused(store) -> None:
+    populated(store)
+    describe(store, summary="first")
+    (store.directory / EXPERIMENT_FILE).unlink()
+
+    with pytest.raises(CatalogCorruptError, match="does not match its own manifest"):
+        store.load()
+
+
+def test_a_crash_during_the_experiments_first_save_keeps_what_it_was_saving(
+    store, monkeypatch
+) -> None:
+    """The one case the table in experiment/ is newer than the last complete
+    set: it holds the edit being saved. Kept, nothing is lost; the runs are
+    the last complete ones, and the person is told the save was cut short."""
+    populated(store)
+    _crash_on_write_number(monkeypatch, 4)  # every table replaced, not the manifest
+
+    with pytest.raises(OSError, match="simulated crash"):
+        store.update(
+            runs=[RunChange(RunKey(218386), 1, {"condition": "CA"})],
+            experiment=ExperimentChange(0, {"summary": "being saved"}),
+            now=NOW,
+        )
+    monkeypatch.undo()
+
+    catalog, problems = store.load_report()
+
+    assert catalog.runs[RunKey(218386)].condition == "OCV"
+    assert catalog.experiment.summary == "being saved"
+    assert any("interrupted" in p.message for p in problems)
+
+
+def test_an_experiment_table_of_more_than_one_row_is_refused(store) -> None:
+    populated(store)
+    rows = [
+        store_module._experiment_row(ExperimentContext(summary=text, rev=1))
+        for text in ("one", "two")
+    ]
+    (store.directory / EXPERIMENT_FILE).write_bytes(
+        store_module._table_bytes("experiment", store_module._EXPERIMENT_COLUMNS, rows)
+    )
+
+    with pytest.raises(CatalogCorruptError, match="holds 2 rows"):
+        store.load()
+
+
+def test_an_edit_on_a_stale_experiment_is_refused_and_writes_nothing(store) -> None:
+    describe(store, summary="first")
+    before = (store.directory / EXPERIMENT_FILE).read_bytes()
+
+    with pytest.raises(RecordConflict):
+        describe(store, 0, summary="second")
+
+    assert (store.directory / EXPERIMENT_FILE).read_bytes() == before
 
 
 # --------------------------------------------------------------------------
