@@ -97,50 +97,37 @@ def header(ipts: str) -> dict[str, Any]:
 def records_of(catalog: Catalog) -> list[Record]:
     """The catalog's records as a push writes them: samples, then runs, so a
     reader never meets a run whose sample is not there yet."""
-    from nr_workbench.experiment.store import run_row, sample_row
+    from nr_workbench.experiment.store import run_fields, sample_fields
 
+    # nrw's own fields alone: a column a newer nrw wrote is that nrw's to
+    # send, and its type is not known to be JSON's.
     samples = [
-        Record(SAMPLES, sample_id, _known(sample_row(entry), entry.extra), SAMPLE_SPEC)
+        Record(SAMPLES, sample_id, sample_fields(entry), SAMPLE_SPEC)
         for sample_id, entry in sorted(catalog.samples.items())
     ]
     runs = [
-        Record(RUNS, run_key(key), _known(run_row(entry), entry.extra), RUN_SPEC)
+        Record(RUNS, run_key(key), run_fields(entry), RUN_SPEC)
         for key, entry in sorted(catalog.runs.items())
     ]
     return samples + runs
 
 
-def _known(row: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any]:
-    """*row*'s fields nrw keeps: a column a newer nrw wrote is that nrw's to
-    send, and its type is not known to be JSON's."""
-    return {name: value for name, value in row.items() if name not in extra}
-
-
 def read_remote(experiment: Any) -> Remote:
-    """``context/`` in the experiment's node *experiment*, read once.
-
-    Raises:
-        TiledSyncError: It could not be read.
-    """
-    import httpx
-
+    """``context/`` in the experiment's node *experiment*, read once."""
     try:
+        context = experiment[CONTEXT]
+    except KeyError:
+        return Remote()
+    remote = Remote(context=context)
+    for name in (RUNS, SAMPLES):
         try:
-            context = experiment[CONTEXT]
+            container = context[name]
         except KeyError:
-            return Remote()
-        remote = Remote(context=context)
-        for name in (RUNS, SAMPLES):
-            try:
-                container = context[name]
-            except KeyError:
-                continue
-            remote.containers[name] = container
-            for key, child in container.items():
-                remote.records[(name, key)] = dict(child.metadata)
-        remote.others = sorted(k for k in context if k not in (RUNS, SAMPLES))
-    except httpx.HTTPError as exc:
-        raise TiledSyncError(f"context/ could not be read: {said(exc)}") from None
+            continue
+        remote.containers[name] = container
+        for key, child in container.items():
+            remote.records[(name, key)] = dict(child.metadata)
+    remote.others = sorted(k for k in context if k not in (RUNS, SAMPLES))
     return remote
 
 
@@ -223,10 +210,9 @@ def push(
             else:
                 there = node[record.key]
                 # Fields another program keeps on it stay; nrw's are written
-                # over theirs. The tags are left as they are.
+                # over theirs. Its specs and its tags are left as they are.
                 there.replace_metadata(
-                    metadata={**dict(there.metadata), **record.fields},
-                    specs=[Spec(*record.spec)],
+                    metadata={**dict(there.metadata), **record.fields}
                 )
             written.append(item)
     except httpx.HTTPError as exc:

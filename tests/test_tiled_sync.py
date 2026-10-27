@@ -131,12 +131,21 @@ class FakeSpec(NamedTuple):
     version: str | None = None
 
 
+class CannotRefresh(Exception):
+    """The client's ``CannotRefreshAuthentication``: the login ran out."""
+
+
 class FakeContext:
     """What the client's ``Context`` is asked by nrw."""
 
     def __init__(self, *, providers: tuple[str, ...] = ("globus",), kept=False):
         self.server_info = SimpleNamespace(
-            authentication=SimpleNamespace(providers=list(providers))
+            authentication=SimpleNamespace(
+                providers=list(providers),
+                # A server with logins names its routes; one with keys alone,
+                # none.
+                links={"whoami": "/api/v1/auth/whoami"} if providers else None,
+            )
         )
         self.kept = kept
         self.logins: list[bool] = []
@@ -184,7 +193,7 @@ class FakeTiled:
             fake.root.context = context
             return fake.root
 
-        return server_module.Library(Context, from_context, FakeSpec)
+        return server_module.Library(Context, from_context, FakeSpec, CannotRefresh)
 
 
 @pytest.fixture
@@ -258,10 +267,21 @@ def test_an_address_nrw_sends_no_login_to_is_refused_without_repeating_it(
     assert url not in str(refused.value) and "SECRET" not in str(refused.value)
 
 
-def test_a_server_on_this_machine_may_be_plain_http(project: Path) -> None:
+def test_plain_http_is_for_the_contract_tests_server_alone(
+    project: Path, monkeypatch
+) -> None:
+    """Another account on the machine could answer on a loopback port."""
     own_settings("TILED_URL=http://127.0.0.1:8000\n")
 
+    with pytest.raises(TiledSyncError, match="not an https:// address"):
+        server(project)
+
+    monkeypatch.setattr(server_module, "ALLOW_PLAIN_HTTP", True)
+
     assert server(project).url == "http://127.0.0.1:8000"
+    own_settings("TILED_URL=http://tiled.ornl.gov\n")
+    with pytest.raises(TiledSyncError, match="not an https:// address"):
+        server(project)
 
 
 def test_what_nrws_env_loading_set_of_tileds_is_taken_out_and_the_shells_kept(
@@ -291,7 +311,7 @@ def test_a_client_not_installed_says_how_to_install_it(project: Path, monkeypatc
 
     monkeypatch.setitem(sys.modules, "tiled.client.constructors", None)
 
-    with pytest.raises(TiledSyncError, match=r"nr-workbench\[tiled\]"):
+    with pytest.raises(TiledSyncError, match="NRW_EXTRAS=tiled"):
         connect(project)
 
 
@@ -323,22 +343,54 @@ def test_with_the_persons_key_no_login_is_looked_for(
     assert tiled.context.logins == []
 
 
-def test_a_server_that_does_not_answer_is_said_as_its_own(
-    project: Path, monkeypatch
+@pytest.mark.parametrize(
+    ("failure", "said"),
+    [
+        ("no-answer", "https://tiled.ornl.gov did not answer as asked: refused"),
+        ("the-clients-own", "https://tiled.ornl.gov: a key and a login both"),
+    ],
+)
+def test_the_clients_failures_on_connecting_are_said_as_nrws(
+    project: Path, monkeypatch, failure: str, said: str
 ) -> None:
     import httpx
 
     class Context:
         @staticmethod
         def from_any_uri(url: str, *, api_key=None):
-            raise httpx.ConnectError("connection refused")
+            if failure == "no-answer":
+                raise httpx.ConnectError("refused")
+            raise RuntimeError("a key and a login both")
 
     monkeypatch.setattr(
-        server_module, "library", lambda: server_module.Library(Context, None, None)
+        server_module,
+        "library",
+        lambda: server_module.Library(Context, None, None, CannotRefresh),
     )
 
-    with pytest.raises(TiledSyncError, match="tiled.ornl.gov did not answer"):
+    with pytest.raises(TiledSyncError) as raised:
         connect(project)
+
+    assert str(raised.value) == said
+
+
+def test_a_login_that_has_run_out_says_to_log_in_again(
+    project: Path, tiled: FakeTiled, monkeypatch
+) -> None:
+    tiled.context.kept = True
+    parts = tiled.library()
+
+    def run_out(*args: Any, **kwargs: Any) -> None:
+        raise CannotRefresh("Server rejected attempt to refresh token.")
+
+    monkeypatch.setattr(
+        server_module, "library", lambda: parts._replace(from_context=run_out)
+    )
+
+    shown = nrw("status", "--root", str(project))
+
+    assert shown.exit_code == 1
+    assert "The login for https://tiled.ornl.gov has run out" in shown.output
 
 
 def test_whose_login_it_is_shows_nothing_a_terminal_would_act_on(
@@ -370,23 +422,6 @@ def test_with_a_key_there_is_no_login_to_end(project: Path, tiled: FakeTiled) ->
     assert "no login to end" in said and tiled.asked == []
 
 
-def test_a_kept_login_is_found_by_its_files_alone(tmp_path: Path, monkeypatch) -> None:
-    import urllib.parse
-
-    pytest.importorskip("platformdirs")
-    cache = tmp_path / "cache"
-    monkeypatch.setenv("TILED_CACHE_DIR", str(cache))
-    url = "https://tiled.ornl.gov"
-    tokens = cache / "tokens" / urllib.parse.quote_plus(f"{url}/api/v1/")
-
-    assert not server_module.kept_login(url)
-
-    tokens.mkdir(parents=True)
-    (tokens / "refresh_token").write_text("t", encoding="utf-8")
-
-    assert server_module.kept_login(url)
-
-
 # --------------------------------------------------------------------------
 # `nrw tiled login`, `logout` and `status`
 # --------------------------------------------------------------------------
@@ -411,6 +446,25 @@ def test_status_says_whose_the_login_is_and_what_the_experiment_holds(
     assert "not made yet" in shown.output
     assert found["experiment"] == "projects/isaac/IPTS-00001"
     assert (found["experiment_found"], found["context_found"]) == (True, False)
+
+
+def test_status_prints_nothing_of_the_servers_a_terminal_would_act_on(
+    project: Path, tiled: FakeTiled
+) -> None:
+    """Anyone who writes on the experiment chooses its tags and names."""
+    escape = f"x{chr(27)}]0;owned{chr(7)}"
+    tiled.context.kept = True
+    catalogued(project)
+    experiment = on_tiled(tiled, tags=("isaac", escape))
+    pushed(project)
+    experiment["context/samples"].create_container(escape, metadata={})
+    experiment["context"].create_container(escape)
+
+    shown = nrw("status", "--root", str(project))
+
+    assert shown.exit_code == 0, shown.output
+    assert chr(27) not in shown.output and chr(7) not in shown.output
+    assert shown.output.count("owned") == 3, "each said, escaped"
 
 
 def test_status_of_an_experiment_not_on_tiled_says_so(
@@ -496,17 +550,16 @@ def test_the_hook_lets_the_word_alone_through(command: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("installed", "settings", "kept", "said"),
+    ("installed", "settings", "said"),
     [
-        (False, "", False, "client is not installed"),
-        (True, f"TILED_API_KEY={KEY}\n", False, "TILED_API_KEY is sent"),
-        (True, "", True, "logged in"),
-        (True, "", False, "not logged in (nrw tiled login)"),
+        (False, "", "client is not installed"),
+        (True, f"TILED_API_KEY={KEY}\n", "TILED_API_KEY is sent"),
+        (True, "", "the Tiled client's login"),
     ],
-    ids=["not-installed", "a-key", "a-kept-login", "nothing"],
+    ids=["not-installed", "a-key", "the-clients-login"],
 )
 def test_doctor_says_where_tiled_commands_would_go_and_with_what(
-    monkeypatch, installed: bool, settings: str, kept: bool, said: str
+    monkeypatch, installed: bool, settings: str, said: str
 ) -> None:
     import importlib.util
 
@@ -521,12 +574,21 @@ def test_doctor_says_where_tiled_commands_would_go_and_with_what(
             (object() if installed else None) if name == "tiled" else real(name, *a)
         ),
     )
-    monkeypatch.setattr(server_module, "kept_login", lambda url: kept)
 
     (check,) = doctor._tiled_checks()
 
     assert said in check.detail and KEY not in check.detail
     assert check.detail.startswith("https://tiled.ornl.gov (nrw's default)")
+
+
+def test_doctor_warns_of_an_address_no_command_would_use() -> None:
+    from nr_workbench.commands import doctor
+
+    own_settings("TILED_URL=http://tiled.ornl.gov\n")
+
+    (check,) = doctor._tiled_checks()
+
+    assert check.status == "warn" and "not an https:// address" in check.detail
 
 
 # --------------------------------------------------------------------------
@@ -610,6 +672,7 @@ def test_the_last_writer_wins_and_another_programs_fields_stay(
     sample = ready["context/samples/S1"]
     sample.metadata["title"] = "Changed on Tiled"
     sample.metadata["beamline_note"] = "kept by another program"
+    sample.specs.append(FakeSpec("beamline-note", "2"))
     from nr_workbench.experiment.model import SampleChange
     from nr_workbench.experiment.store import ParquetCatalogStore
 
@@ -623,6 +686,10 @@ def test_the_last_writer_wins_and_another_programs_fields_stay(
     assert "0 new, 1 changed, 2 the same" in shown.output
     assert sample.metadata["title"] == "Cu/Pt, annealed"
     assert sample.metadata["beamline_note"] == "kept by another program"
+    assert sample.specs == [
+        FakeSpec("context-sample", "1"),
+        FakeSpec("beamline-note", "2"),
+    ]
     assert sample.tags == ["isaac", "ipts-1"]
 
 
@@ -643,6 +710,32 @@ def test_a_record_tiled_alone_holds_is_left_and_said(
         "runs/234280-steady",
         "samples/S1",
     ]
+
+
+def test_a_record_made_in_a_container_on_tiled_takes_that_containers_tags(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    """Its parent's, as read, not the experiment's: a container someone has
+    shared more narrowly keeps what is made in it as narrow."""
+    from nr_workbench.experiment.model import RunChange, RunKey
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    pushed(project)
+    ready["context/runs"].tags = ["isaac", "ipts-1", "runs-only"]
+    ParquetCatalogStore.for_project(project).update(
+        runs=[RunChange(RunKey(234281), 0, {"sample_id": "S1"})], now=NOW
+    )
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert tiled.root.log[-1] == (
+        "create",
+        "234281-steady",
+        "ipts-1",
+        "isaac",
+        "runs-only",
+    )
 
 
 def test_nothing_is_made_where_there_are_no_tags_to_give(
@@ -682,6 +775,7 @@ def test_a_push_not_confirmed_writes_nothing(
 
     assert shown.exit_code == 1
     assert "for everyone on the experiment" in shown.output
+    assert "Aborted!" in shown.output and "Error" not in shown.output
     assert tiled.root.log == []
 
 
@@ -797,16 +891,36 @@ def test_a_pull_copies_what_the_folder_lacks_and_leaves_the_rest(
     assert [p.name for p in away.iterdir() if p.name.startswith(".")] == []
 
 
-def test_a_file_reduced_again_since_is_copied_again(
+def test_a_file_the_folder_holds_already_is_left_as_it_is(
     project: Path, tiled: FakeTiled, away: Path
 ) -> None:
+    """Neither a size nor a time tells a file reduced again from the same
+    one: deleting it is how it is copied again."""
     reduced(tiled, {SEGMENT: b"reduced again, longer"})
     (away / SEGMENT).write_bytes(b"first")
 
     shown = pulled(project, away)
 
-    assert "1 of them reduced again since" in shown.output
-    assert (away / SEGMENT).read_bytes() == b"reduced again, longer"
+    assert shown.exit_code == 0, shown.output
+    assert "0 file(s) to copy, 1 held already" in shown.output
+    assert (away / SEGMENT).read_bytes() == b"first"
+
+
+def test_a_link_planted_in_the_folder_is_not_written_through(
+    project: Path, tiled: FakeTiled, away: Path, tmp_path: Path
+) -> None:
+    """At a file's own name, a link to nothing is not a file the folder
+    holds: the copy takes its place, and what it named is not written."""
+    elsewhere = tmp_path / "elsewhere.txt"
+    (away / SEGMENT).symlink_to(elsewhere)
+    reduced(tiled, {SEGMENT: b"q"})
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 0, shown.output
+    assert not elsewhere.exists()
+    assert not (away / SEGMENT).is_symlink()
+    assert (away / SEGMENT).read_bytes() == b"q"
 
 
 def test_only_names_the_reduction_writes_are_copied(
@@ -878,6 +992,69 @@ def test_a_download_that_fails_names_what_was_copied_before_it(
     assert [p.name for p in away.iterdir()] == [SEGMENT]
 
 
+def test_a_node_that_is_several_files_is_not_copied_in_part(
+    project: Path, tiled: FakeTiled, away: Path, monkeypatch
+) -> None:
+    import io
+
+    reduced(tiled, {SEGMENT: b"q"})
+
+    def two_files(self, destination):
+        destination.update(a=io.BytesIO(b"1"), b=io.BytesIO(b"2"))
+
+    monkeypatch.setattr(FakeNode, "raw_export", two_files)
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 1
+    assert f"{SEGMENT} on Tiled is 2 files, not one" in shown.output
+    assert list(away.iterdir()) == []
+
+
+def test_a_copy_that_cannot_be_written_leaves_nothing_half_written(
+    project: Path, tiled: FakeTiled, away: Path, monkeypatch
+) -> None:
+    """The watcher would read a partial file as a run's."""
+    import os
+
+    reduced(tiled, {SEGMENT: b"q"})
+    real = os.replace
+
+    def disk_full(source, target, *args, **kwargs):
+        if Path(target).parent == away:
+            raise OSError(28, "No space left on device")
+        return real(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", disk_full)
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 1
+    assert "No space left on device" in shown.output
+    assert "0 file(s) were copied before it" in shown.output
+    assert list(away.iterdir()) == []
+
+
+def test_a_copied_file_has_the_mode_any_file_written_there_would(
+    project: Path, tiled: FakeTiled, away: Path
+) -> None:
+    """Not the owner-only mode of a temporary file: `nrw experiment apply`
+    copies a file with its mode, and a sample's data others cannot read
+    is a project no one else can open."""
+    import os
+    import stat
+
+    reduced(tiled, {SEGMENT: b"q"})
+    before = os.umask(0o022)
+    try:
+        shown = pulled(project, away)
+    finally:
+        os.umask(before)
+
+    assert shown.exit_code == 0, shown.output
+    assert stat.S_IMODE((away / SEGMENT).stat().st_mode) == 0o644
+
+
 def test_an_experiment_with_no_reduced_data_on_tiled_says_so(
     project: Path, tiled: FakeTiled, away: Path
 ) -> None:
@@ -892,6 +1069,21 @@ def test_a_pull_says_what_to_pull(project: Path, tiled: FakeTiled) -> None:
     shown = nrw("pull", "--root", str(project))
 
     assert shown.exit_code == 1 and "--data" in shown.output
+
+
+def test_a_pull_into_the_facilitys_own_reduction_folder_is_refused(
+    project: Path, tiled: FakeTiled
+) -> None:
+    """The reduction writes there, for the whole experiment: nrw's default
+    data folder, when nrw.toml names none."""
+    tiled.context.kept = True
+    reduced(tiled, {SEGMENT: b"q"})
+
+    shown = nrw("pull", "--data", "--root", str(project))
+
+    assert shown.exit_code == 1
+    assert "is the facility's own reduction folder" in shown.output
+    assert tiled.asked == []
 
 
 def test_a_pull_copies_into_the_configured_data_folder(

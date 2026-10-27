@@ -197,9 +197,10 @@ addopts = [
   "--dist",
   "loadscope",
   # Real fits only when asked: `pytest -m fit`. Every other test's fit is
-  # replayed from a recording; see tests/fit_replay.py.
+  # replayed from a recording; see tests/fit_replay.py. A real Tiled server
+  # only when asked too: `pytest -m tiled_server`.
   "-m",
-  "not fit",
+  "not fit and not tiled_server",
   "--cov=src/nr_workbench",
   "--cov-report=term-missing",
 ]
@@ -207,6 +208,7 @@ markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "integration: marks tests as integration tests",
   "fit: runs a real refl1d/bumps fit; left out by default, run with `pytest -m fit`",
+  "tiled_server: runs against a real Tiled server; left out by default, run with `pytest -m tiled_server`",
   "unit: marks tests as unit tests",
   "needs_aure: requires the optional aure extra to be installed",
 ]

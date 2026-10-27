@@ -4414,3 +4414,36 @@ read-only:
   storage the server was started on.
 - `api_version` is 0: nothing about the API is promised between releases. A
   local server's API key must be alphanumeric.
+
+### 2026-10-27: what holds the thin Tiled sync
+
+`nrw tiled` (`src/nr_workbench/tiled/`, on the official client) was reviewed
+once, and five things it rests on are not in the code's shape:
+
+- **An agent's Tiled login is taken away, not matched.** The guard refuses
+  `nrw tiled` and `tiled` by the words an agent types; a line of Python using
+  the client, or a token read from its cache, contains neither. What holds is
+  `nrw agent run` starting each session with no `TILED_API_KEY` and
+  `TILED_CACHE_DIR` pointed at an empty folder of the session's own. Claude
+  Code's `Read(...)` deny lines cover its own file tools, not `cat` through
+  Bash, and a session the person starts keeps their login: Claude Code's
+  sandbox, denying reads of the token cache, `~/.nrw` and `~/.aure`, would
+  close that, and is the person's to choose.
+- **The client logs in by itself.** `from_context`, on a server with login
+  providers and no kept tokens, starts the device-code flow and waits for
+  someone at the terminal. nrw asks `context.use_cached_tokens()` first, and
+  only `nrw tiled login` calls `authenticate`.
+- **`click.Abort` is a `RuntimeError`.** The client raises `RuntimeError` for
+  its own refusals on connecting (a key and a login both, say). Caught around
+  a whole command, that turned a declined confirm into an error; it is caught
+  in `connect` alone.
+- **Both metadata writes are EXPERIMENTAL in 0.2.18.** `replace_metadata` and
+  `update_metadata` are "subject to change or removal without notice". A push
+  replaces with Tiled's fields under nrw's, and passes no specs, so another
+  program's fields and specs stay. The `<0.3` pin and `pytest -m
+  tiled_server` hold it.
+- **A pull adds, and never replaces.** Neither a size nor a time tells a file
+  reduced again from the same one, and a copy over the facility's
+  `new_reduction/` would stand in for the reduction's own file: so a file the
+  folder holds is left, and nrw's default data folder is refused as a pull's
+  target.

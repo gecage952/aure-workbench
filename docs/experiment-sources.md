@@ -6,7 +6,7 @@ replaced without touching the others or the page:
 
 | Question | Interface | Built | Planned |
 |---|---|---|---|
-| Where does the reduced data come from? | `DataSource` (`experiment/sources/`) | a local folder | Tiled |
+| Where does the reduced data come from? | `DataSource` (`experiment/sources/`) | a local folder | none: `nrw tiled pull --data` copies Tiled's files into it |
 | How do we learn that a run exists? | `RunFeed` (`experiment/feeds/`) | files appearing in that folder | the SNS web monitor, Tiled |
 | Where is the organization kept? | `CatalogStore` (`experiment/store.py`) | parquet in the project | a metadata service |
 
@@ -82,31 +82,17 @@ Rules a source must keep:
   (`experiment.workspace.check_source`), so it reads the place that would be
   watched and no other.
 
-**Where Tiled keeps an experiment.** On the facility server an experiment is a
-container at `projects/isaac/IPTS-<n>/`. It can be browsed at
-`https://tiled.ornl.gov/ui/browse/projects/isaac/IPTS-<n>/`; the matching API,
-under `/api/v1/`, needs ORNL authentication. How runs and their reduced files
-are laid out *inside* that container has not been checked yet (it needs a
-logged-in look), and it decides the mapping below. The configuration this
-points to:
-
-```toml
-[experiment.source]
-kind = "tiled"                        # planned: refused by name today
-location = "https://tiled.ornl.gov/projects/isaac/{ipts}"
-```
-
-**A Tiled source**:
-
-- `inventory()` searches the experiment's container (by IPTS) for reduced
-  runs, maps each to a `SourceRun`, and takes the version from Tiled's own
-  revision or etag.
-- `read_bytes()` fetches the file as it was written, not a re-serialized array.
-- `probe()` looks at the container's newest few runs, for **Check folder**.
+**Where Tiled keeps an experiment.** On the facility server an experiment is
+the container `projects/isaac/IPTS-<n>/`, which another process makes. Its
+`autoreduction/` holds the reduced files as flat `bytes` nodes, named as the
+files in `new_reduction/`, which carry no metadata. A Tiled *source* is not
+planned: the folder stays the source, and away from the mount `nrw tiled pull
+--data` copies those files into it ([Tiled](#tiled-pushed-and-pulled-by-a-person),
+below). The Settings page still lists a Tiled source and a Tiled feed as
+coming.
 
 The in-memory source in `tests/experiment_fixtures.py` is the second
 implementation that keeps this interface from quietly becoming folder-shaped.
-Add the Tiled one beside it, and run the apply tests against both.
 
 ## `RunFeed`: "run N exists"
 
@@ -205,6 +191,57 @@ The parquet store's schema follows data-assembler's lakehouse split: run rows
 carry a nullable `sample_id`, and samples are their own table. Columns a store
 does not know must survive a save. A newer schema version must be refused, not
 read partially.
+
+## Tiled: pushed and pulled, by a person
+
+Tiled is reached only by `nrw tiled` commands a person runs, through the
+official client: the installer's `NRW_EXTRAS=tiled` adds it
+([install.md](install.md)). Nothing `nrw serve`, the poller or an agent runs
+talks to Tiled, and the guard refuses every `nrw tiled` command, and Tiled's
+own command line, to an agent.
+
+| Command | What it does |
+|---|---|
+| `nrw tiled login`, `logout` | Tiled's device-code login through Globus; the client keeps the login, and renews it, in its own token cache |
+| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, and each record there against this project's |
+| `nrw tiled push` | writes the project's catalog to the experiment's `context/` |
+| `nrw tiled pull --data` | copies the experiment's reduced files into the data folder |
+
+The server is `TILED_URL` (tiled.ornl.gov by default), and `TILED_API_KEY`
+is sent instead of a login when set: both from the shell, `~/.nrw` or
+`~/.aure`, never a project's `.env`, which anyone who commits writes.
+
+**What a push writes.** In the experiment's node, `context/` holds `runs/`
+and `samples/`, with one container per record: nrw's fields are its metadata,
+and one spec names it (`context-run` or `context-sample`, version 1).
+`context/` itself carries a header (`ipts`, `written_by`) and the spec
+`context-experiment`. Samples are written before their runs. Other programs
+may read and write there too.
+
+**The last writer wins.** A push writes each record that differs over
+Tiled's copy, keeping the fields another program keeps on it, and leaves the
+rest alone, so a push of what Tiled holds writes nothing. A record only Tiled
+holds is left, and `status` names it. Nothing comes back from Tiled into the
+catalog: `context/` is a published copy, as of the last push. `--dry-run`
+says what would be written, and Tiled keeps each version a write replaced.
+
+**Nothing untagged.** Whatever a push makes takes its parent's access tags,
+and a parent with none is refused: under Tiled's tag policy, a node made
+without them is its maker's alone, invisible to everyone else on the
+experiment.
+
+**Pulling data.** `pull --data` copies each reduced file the data folder
+lacks, and leaves alone every one it holds: neither a size nor a time tells a
+file reduced again from the same one, so deleting a file is how it is copied
+again. Each lands under a hidden name of its own first and is renamed whole;
+the folder watcher does the rest. Only names the reduction writes are copied.
+It copies into the data folder `nrw.toml` names, or `--into DIR`, and never
+into nrw's default, the facility's own reduction folder, which the reduction
+writes for the whole experiment. `--run` narrows it to some runs.
+
+A push and a status run against a real Tiled 0.2.18, started with uvx apart
+from nrw's environment, in `pytest -m tiled_server`. A Globus login, the tags
+and `pull --data` are tested against a fake of the client alone.
 
 ## tNR, later
 

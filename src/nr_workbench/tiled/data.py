@@ -3,18 +3,21 @@
 The experiment's ``autoreduction/`` on Tiled holds the files the reduction
 wrote into ``new_reduction/``, one ``bytes`` node per file, named as the file
 (another process registers them). A pull copies each one the data folder
-lacks, or holds at another size, into that folder; the folder watcher does
-the rest, as for any file that appears there.
+lacks into that folder, and nothing else: a file the folder holds already is
+left as it is, since a size or a time would not tell a re-reduction from the
+same file. The folder watcher does the rest, as for any file that appears.
 
 Only names the reduction writes are copied, so nothing a node is called can
-become a path here; each lands under a hidden name first and is renamed
-whole, so the watcher never reads half a file. Nothing is written on Tiled.
+become a path here. Each lands in a file of a random name, made new, and is
+renamed whole: the watcher never reads half of one, and nothing planted in
+the folder is written through. Nothing is written on Tiled.
 """
 
 from __future__ import annotations
 
 import io
 import os
+import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,18 +31,10 @@ AUTOREDUCTION = "autoreduction"
 
 @dataclass(frozen=True)
 class Missing:
-    """A file on Tiled the folder lacks, or holds at another size.
-
-    Attributes:
-        name: Its name, there and here.
-        node: Its node on Tiled.
-        again: Whether the folder holds it already, at another size: reduced
-            again since it was copied.
-    """
+    """A file on Tiled the folder lacks: its name, there and here, and node."""
 
     name: str
     node: Any
-    again: bool = False
 
 
 def run_of(name: str) -> int | None:
@@ -55,7 +50,7 @@ def run_of(name: str) -> int | None:
 
 def plan_pull(
     autoreduction: Any, folder: Path, *, runs: Iterable[int] = ()
-) -> list[Missing]:
+) -> tuple[list[Missing], int]:
     """What a pull would copy from *autoreduction* into *folder*.
 
     Args:
@@ -63,42 +58,20 @@ def plan_pull(
         folder: The data folder.
         runs: Only these runs; all of them when empty.
 
-    Raises:
-        TiledSyncError: It could not be listed.
+    Returns:
+        The files to copy, by name; and how many the folder holds already.
     """
-    import httpx
-
     wanted = set(runs)
-    missing = []
-    try:
-        for name, node in autoreduction.items():
-            run = run_of(name)
-            if run is None or (wanted and run not in wanted):
-                continue
-            here = folder / name
-            if not here.is_file():
-                missing.append(Missing(name, node))
-                continue
-            size = _size(node)
-            if size is not None and size != here.stat().st_size:
-                missing.append(Missing(name, node, again=True))
-    except httpx.HTTPError as exc:
-        raise TiledSyncError(
-            f"autoreduction/ could not be listed: {said(exc)}"
-        ) from None
-    return sorted(missing, key=lambda m: m.name)
-
-
-def _size(node: Any) -> int | None:
-    """A file node's size as Tiled registered it; ``None`` when it says none."""
-    try:
-        sources = node.item["attributes"].get("data_sources") or []
-        sizes = [asset.get("size") for s in sources for asset in s.get("assets", [])]
-    except (AttributeError, KeyError, TypeError):
-        return None
-    if len(sizes) == 1 and isinstance(sizes[0], int):
-        return sizes[0]
-    return None
+    missing, held = [], 0
+    for name, node in autoreduction.items():
+        run = run_of(name)
+        if run is None or (wanted and run not in wanted):
+            continue
+        if (folder / name).exists():
+            held += 1
+        else:
+            missing.append(Missing(name, node))
+    return sorted(missing, key=lambda m: m.name), held
 
 
 def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
@@ -122,7 +95,7 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
     written: list[Path] = []
     for item in missing:
         target = folder / item.name
-        partial = folder / f".nrw-pull-{item.name}"
+        partial: Path | None = None
         try:
             buffers: dict[str, io.BytesIO] = {}
             item.node.raw_export(destination=buffers)
@@ -132,18 +105,27 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
                     f"nothing of it was copied. {_before(written)}"
                 )
             (data,) = buffers.values()
-            partial.write_bytes(data.getvalue())
+            # Made new, under a name no one could have planted: written
+            # through nothing, then renamed over the target whole.
+            handle, name = tempfile.mkstemp(dir=folder, prefix=".nrw-pull-")
+            partial = Path(name)
+            with os.fdopen(handle, "wb") as out:
+                out.write(data.getvalue())
+            umask = os.umask(0)
+            os.umask(umask)
+            partial.chmod(0o666 & ~umask)
             os.replace(partial, target)
         except httpx.HTTPError as exc:
-            partial.unlink(missing_ok=True)
             raise TiledSyncError(
                 f"{item.name} could not be downloaded: {said(exc)}. {_before(written)}"
             ) from None
         except OSError as exc:
-            partial.unlink(missing_ok=True)
             raise TiledSyncError(
                 f"{target} could not be written: {exc}. {_before(written)}"
             ) from None
+        finally:
+            if partial is not None:
+                partial.unlink(missing_ok=True)
         written.append(target)
     return written
 

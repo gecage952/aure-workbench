@@ -380,12 +380,12 @@ class ParquetCatalogStore:
         runs_bytes = _table_bytes(
             "runs",
             _RUN_COLUMNS,
-            [run_row(entry) for key, entry in sorted(catalog.runs.items())],
+            [_run_row(entry) for key, entry in sorted(catalog.runs.items())],
         )
         samples_bytes = _table_bytes(
             "samples",
             _SAMPLE_COLUMNS,
-            [sample_row(catalog.samples[k]) for k in sorted(catalog.samples)],
+            [_sample_row(catalog.samples[k]) for k in sorted(catalog.samples)],
         )
         manifest = {
             "schema": SCHEMA_ID,
@@ -523,45 +523,45 @@ def _same(before: Catalog, after: Catalog) -> bool:
     }
 
 
-def run_row(entry: RunEntry) -> dict[str, Any]:
-    """A run's record as a row: nrw's fields, over the ones it does not know.
-    The parquet table's, and what a push to Tiled writes."""
-    row = dict(entry.extra)
-    row.update(
-        {
-            "run": entry.key.run,
-            "kind": entry.key.kind,
-            "sample_id": entry.sample_id,
-            "measurement": entry.measurement,
-            "condition": entry.condition,
-            "include": entry.include,
-            "note": entry.note,
-            "title": entry.title,
-            "start_time": entry.start_time,
-            "rev": entry.rev,
-            "updated_at": entry.updated_at,
-        }
-    )
-    return row
+def _run_row(entry: RunEntry) -> dict[str, Any]:
+    return {**entry.extra, **run_fields(entry)}
 
 
-def sample_row(entry: SampleContext) -> dict[str, Any]:
-    """A sample's record as a row, as :func:`run_row` is a run's."""
-    row = dict(entry.extra)
-    row.update(
-        {
-            "sample_id": entry.sample_id,
-            "title": entry.title,
-            "description": entry.description,
-            "details": entry.details,
-            "mounting": entry.mounting,
-            "measurement_conditions": entry.measurement_conditions,
-            "fits_to_perform": entry.fits_to_perform,
-            "rev": entry.rev,
-            "updated_at": entry.updated_at,
-        }
-    )
-    return row
+def run_fields(entry: RunEntry) -> dict[str, Any]:
+    """A run's fields nrw keeps, without those it does not know: what a push
+    to Tiled writes."""
+    return {
+        "run": entry.key.run,
+        "kind": entry.key.kind,
+        "sample_id": entry.sample_id,
+        "measurement": entry.measurement,
+        "condition": entry.condition,
+        "include": entry.include,
+        "note": entry.note,
+        "title": entry.title,
+        "start_time": entry.start_time,
+        "rev": entry.rev,
+        "updated_at": entry.updated_at,
+    }
+
+
+def _sample_row(entry: SampleContext) -> dict[str, Any]:
+    return {**entry.extra, **sample_fields(entry)}
+
+
+def sample_fields(entry: SampleContext) -> dict[str, Any]:
+    """A sample's fields nrw keeps, as :func:`run_fields` a run's."""
+    return {
+        "sample_id": entry.sample_id,
+        "title": entry.title,
+        "description": entry.description,
+        "details": entry.details,
+        "mounting": entry.mounting,
+        "measurement_conditions": entry.measurement_conditions,
+        "fits_to_perform": entry.fits_to_perform,
+        "rev": entry.rev,
+        "updated_at": entry.updated_at,
+    }
 
 
 def _run_from_row(row: dict[str, Any]) -> RunEntry:

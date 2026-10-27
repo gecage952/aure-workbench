@@ -995,7 +995,7 @@ def isaac_push_command(
 def tiled_group() -> None:
     """Tiled: push the experiment's catalog, say what is there, fetch data.
 
-    Needs `pip install 'nr-workbench[tiled]'`. The server is TILED_URL, from
+    Needs the installer's NRW_EXTRAS=tiled. The server is TILED_URL, from
     your shell or ~/.nrw (tiled.ornl.gov by default), never a project's files.
     Each command acts with your login, so an agent is refused them all.
     """

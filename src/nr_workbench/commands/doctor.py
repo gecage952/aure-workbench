@@ -527,7 +527,7 @@ def _tiled_checks() -> list[Check]:
     """Where ``nrw tiled`` would go, and with what: read from files, never sent."""
     import importlib.util
 
-    from nr_workbench.tiled.server import TiledSyncError, kept_login, server
+    from nr_workbench.tiled.server import INSTALL, TiledSyncError, server
 
     try:
         chosen = server()
@@ -539,16 +539,15 @@ def _tiled_checks() -> list[Check]:
             Check(
                 "tiled",
                 _MISSING,
-                f"{detail}; the client is not installed "
-                "(pip install 'nr-workbench[tiled]')",
+                f"{detail}; the client is not installed ({INSTALL})",
             )
         ]
     if chosen.key is not None:
         said = f"{detail}; TILED_API_KEY is sent, set in {chosen.key_source}"
         return [Check("tiled", _OK, said)]
-    if kept_login(chosen.url):
-        return [Check("tiled", _OK, f"{detail}; logged in, as the client keeps it")]
-    return [Check("tiled", _MISSING, f"{detail}; not logged in (nrw tiled login)")]
+    # Whether the client keeps a login is its own to say: doctor asks no server.
+    said = f"{detail}; the Tiled client's login (`nrw tiled status` says whose)"
+    return [Check("tiled", _OK, said)]
 
 
 def _project_checks() -> list[Check]:

@@ -18,7 +18,9 @@
     "retractable.",
     "--force: every forcing flag here exists because a check said no.",
     "Tiled: every command acts with the person's login, which the Tiled",
-    "client keeps in its own cache; that cache is not read either.",
+    "client keeps in its own cache. Claude's file tools may not read that",
+    "cache, and `nrw agent run` gives each session no login at all: no",
+    "TILED_API_KEY, and an empty cache of the session's own.",
     "",
     "Edit this file if you want an assistant to have more room. It is yours."
   ],

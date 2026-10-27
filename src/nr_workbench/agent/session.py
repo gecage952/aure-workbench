@@ -30,6 +30,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1163,21 +1164,28 @@ def run(
     # no shell, and the hook alone is one misconfigured file away from nothing.
     environment = dict(os.environ)
     environment[AGENT_ENV] = "1"
+    # The person's Tiled login is theirs alone. A session is given no key and
+    # a token cache of its own, empty, so a Tiled client it starts -- `nrw
+    # tiled`, Tiled's own command, or a line of Python -- finds no login to
+    # act with: taken away, rather than matched in what the agent types.
+    environment.pop("TILED_API_KEY", None)
 
     invocation = harness_invocation(
         prompt_file, turns=turns, model=model, harness=harness
     )
-    returncode, timed_out = _stream(
-        invocation.argv,
-        root=Path(root),
-        environment=environment,
-        transcript=transcript,
-        timeout=timeout,
-        on_progress=on_progress,
-        sample=sample,
-        harness=entry.name,
-        stdin_text=session.prompt if invocation.prompt_on_stdin else None,
-    )
+    with tempfile.TemporaryDirectory(prefix="nrw-agent-tiled-") as no_login:
+        environment["TILED_CACHE_DIR"] = no_login
+        returncode, timed_out = _stream(
+            invocation.argv,
+            root=Path(root),
+            environment=environment,
+            transcript=transcript,
+            timeout=timeout,
+            on_progress=on_progress,
+            sample=sample,
+            harness=entry.name,
+            stdin_text=session.prompt if invocation.prompt_on_stdin else None,
+        )
     if timed_out:
         raise SessionError(
             f"The session for {sample} passed {timeout}s and was stopped. "

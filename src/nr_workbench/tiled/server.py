@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -28,6 +30,13 @@ DEFAULT_URL = "https://tiled.ornl.gov"
 #: Where an experiment's own node is on it, by the experiment's IPTS. Another
 #: process makes the node, and its ``autoreduction/``.
 EXPERIMENT_PATH = "projects/isaac/{ipts}"
+
+#: How the client is installed. Not ``pip install 'nr-workbench[tiled]'``:
+#: nr-workbench is not on PyPI, so that installs nothing, or someone else's.
+INSTALL = (
+    "re-run the nr-workbench installer with NRW_EXTRAS=tiled (docs/install.md), "
+    "or `pip install -e '.[tiled]'` in a clone"
+)
 
 
 class TiledSyncError(Exception):
@@ -82,11 +91,18 @@ def server(root: Path | None = None) -> Server:
 
 
 def _url_problem(url: str) -> str | None:
-    """Why *url* is no server nrw sends a login to; ``None`` when it is one."""
+    """Why *url* is no server nrw sends a login to; ``None`` when it is one.
+
+    A user name, a query or a fragment is refused rather than printed back: a
+    key pasted into the address would be. A path is refused because the
+    client would take it for the place everything else is under.
+    """
     parts = urllib.parse.urlsplit(url)
     local = parts.hostname in ("localhost", "127.0.0.1", "::1")
-    if parts.scheme != "https" and not (parts.scheme == "http" and local):
-        return "is not an https:// address: plain http only to this machine."
+    if parts.scheme != "https" and not (
+        parts.scheme == "http" and local and ALLOW_PLAIN_HTTP
+    ):
+        return "is not an https:// address."
     if not parts.hostname:
         return "names no server."
     if parts.username or parts.password or parts.query or parts.fragment:
@@ -96,14 +112,32 @@ def _url_problem(url: str) -> str | None:
     return None
 
 
+#: Plain http, to a server on this machine: for the contract tests' own
+#: server alone. Another account on the machine could answer on that port.
+ALLOW_PLAIN_HTTP = False
+
+#: What else the client, or the network under it, reads from the environment:
+#: where to send the requests, which certificates to trust, where to write
+#: the TLS keys.
+_NETWORK = (
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "SSLKEYLOGFILE",
+)
+
+
 def _scrub_environment() -> None:
-    """Take out every ``TILED_*`` variable nrw's ``.env`` loading put in the
-    environment: the client reads several itself, and those files are not the
-    person's alone. What the person's shell set stays."""
+    """Take out what nrw's ``.env`` loading put in the environment that the
+    client reads itself: every ``TILED_*`` variable, and the network's. Those
+    files are not the person's alone; what the person's shell set stays."""
     from nr_workbench.env import loaded_from_files
 
     for name in loaded_from_files():
-        if name.startswith("TILED_"):
+        if name.startswith("TILED_") or name.upper() in _NETWORK:
             os.environ.pop(name, None)
 
 
@@ -113,65 +147,78 @@ class Library(NamedTuple):
     Context: Any
     from_context: Any
     Spec: Any
+    CannotRefresh: type[Exception]
 
 
 def library() -> Library:
-    """The official client's parts, imported now.
+    """The official client's parts, imported now, once the environment holds
+    nothing of a project's for it: it reads some of it as it is imported.
 
     Raises:
         TiledSyncError: It is not installed.
     """
+    _scrub_environment()
     try:
+        from tiled.client.auth import CannotRefreshAuthentication
         from tiled.client.constructors import from_context
         from tiled.client.context import Context
         from tiled.structures.core import Spec
     except ImportError as exc:
         raise TiledSyncError(
-            "The Tiled client is not installed here: pip install 'nr-workbench[tiled]'."
+            f"The Tiled client is not installed here: {INSTALL}."
         ) from exc
-    return Library(Context, from_context, Spec)
+    return Library(Context, from_context, Spec, CannotRefreshAuthentication)
 
 
-def connect(
-    root: Path | None = None, *, login: bool = False, include_data_sources: bool = False
-) -> Any:
+@contextmanager
+def talking(url: str, tiled: Library) -> Iterator[None]:
+    """Every way the client, *tiled*, fails while it talks to *url*, said as
+    nrw's: the one place they are caught, for every command.
+
+    Raises:
+        TiledSyncError: Instead of the client's own error.
+    """
+    import httpx
+
+    try:
+        yield
+    except TiledSyncError:
+        raise
+    except httpx.HTTPError as exc:
+        raise TiledSyncError(f"{url} did not answer as asked: {said(exc)}") from None
+    except tiled.CannotRefresh:
+        raise TiledSyncError(
+            f"The login for {url} has run out: run `nrw tiled login`."
+        ) from None
+
+
+def connect(root: Path | None = None, *, login: bool = False) -> Any:
     """A client of the person's server, at its root, acting as the person.
 
     With the key when one is set; otherwise with the login the client keeps.
-    A login is started only with *login*. With *include_data_sources*, each
-    node read says what files it is, and their sizes.
+    A login is started only with *login*.
 
     Raises:
         TiledSyncError: Not logged in, the server refused or did not answer,
             or the client is not installed.
     """
-    import httpx
-
     chosen = server(root)
     tiled = library()
-    _scrub_environment()
-    try:
-        context, path = tiled.Context.from_any_uri(chosen.url, api_key=chosen.key)
-        providers = context.server_info.authentication.providers
-        if chosen.key is None and providers and not context.use_cached_tokens():
-            if not login:
-                raise TiledSyncError(
-                    f"Not logged in to {chosen.url}: run `nrw tiled login`."
-                )
-            context.authenticate(remember_me=True)
-        return tiled.from_context(
-            context, node_path_parts=path, include_data_sources=include_data_sources
-        )
-    except TiledSyncError:
-        raise
-    except RuntimeError as exc:
-        # The client's own: a server that takes keys alone, or a key and a
-        # login both.
-        raise TiledSyncError(f"{chosen.url}: {said(exc)}") from None
-    except httpx.HTTPError as exc:
-        raise TiledSyncError(
-            f"{chosen.url} did not answer as asked: {said(exc)}"
-        ) from None
+    with talking(chosen.url, tiled):
+        try:
+            context, path = tiled.Context.from_any_uri(chosen.url, api_key=chosen.key)
+            providers = context.server_info.authentication.providers
+            if chosen.key is None and providers and not context.use_cached_tokens():
+                if not login:
+                    raise TiledSyncError(
+                        f"Not logged in to {chosen.url}: run `nrw tiled login`."
+                    )
+                context.authenticate(remember_me=True)
+            return tiled.from_context(context, node_path_parts=path)
+        except RuntimeError as exc:
+            # The client's own, on connecting: a server that takes keys
+            # alone, or a key and a login both.
+            raise TiledSyncError(f"{chosen.url}: {said(exc)}") from None
 
 
 def logout(root: Path | None = None) -> str:
@@ -183,8 +230,6 @@ def logout(root: Path | None = None) -> str:
     Raises:
         TiledSyncError: The server could not be asked.
     """
-    import httpx
-
     chosen = server(root)
     if chosen.key is not None:
         return (
@@ -192,39 +237,23 @@ def logout(root: Path | None = None) -> str:
             f"{chosen.url}: there is no login to end. Remove the key to stop."
         )
     tiled = library()
-    _scrub_environment()
-    try:
+    with talking(chosen.url, tiled):
         context, _ = tiled.Context.from_any_uri(chosen.url)
         if not context.use_cached_tokens():
             return f"Not logged in to {chosen.url}: nothing to end."
         context.logout()
-    except httpx.HTTPError as exc:
-        raise TiledSyncError(
-            f"{chosen.url} did not answer as asked: {said(exc)}"
-        ) from None
     return (
         f"Logged out of {chosen.url}: the session is ended there, and forgotten here."
     )
 
 
-def kept_login(url: str) -> bool:
-    """Whether the Tiled client keeps a login for the server at *url*, by its
-    files alone: nothing is sent. Where the client itself looks for it."""
-    try:
-        import platformdirs
-    except ImportError:  # it comes with the client
-        return False
-    _scrub_environment()
-    cache = Path(
-        os.environ.get("TILED_CACHE_DIR") or platformdirs.user_cache_dir("tiled")
-    )
-    api = urllib.parse.quote_plus(f"{url}/api/v1/")
-    return (cache / "tokens" / api / "refresh_token").is_file()
-
-
 def whoami(client: Any) -> str:
     """Whose the server takes the login to be, as ``id (provider)``."""
-    principal = client.context.whoami() or {}
+    context = client.context
+    if not context.server_info.authentication.links:
+        # A server with only a key, as a test's is, names no one.
+        return "no one named: the server takes keys alone"
+    principal = context.whoami() or {}
     identities = [
         f"{identity.get('id')} ({identity.get('provider')})"
         for identity in principal.get("identities") or ()

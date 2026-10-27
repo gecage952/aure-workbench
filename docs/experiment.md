@@ -592,6 +592,14 @@ Parquet is binary, which has two consequences:
 A catalog file that exists but cannot be read is never treated as empty. The
 page shows it read-only, and nothing is saved over it until it is restored.
 
+**Sharing it on Tiled.** `nrw tiled push` writes the catalog to the
+experiment's `context/` on tiled.ornl.gov, where everyone on the experiment,
+and other programs, can read it; `nrw tiled status` says what is there, and
+`nrw tiled pull --data` copies the reduced files in when the data mount is out
+of reach. The catalog stays here: Tiled holds a copy, as of the last push,
+and the last writer wins. See [experiment-sources.md](experiment-sources.md),
+"Tiled".
+
 ## Unattended agents
 
 An assistant can read the experiment, with `nrw experiment status --json` and
