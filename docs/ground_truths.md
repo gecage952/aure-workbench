@@ -4527,3 +4527,28 @@ sample its wider context in `sample.md`. So the record is changed on the
 Experiment page alone, and read on the page and through
 `nrw experiment status`. Its refusals name no file either: "in
 experiment.md" would send the person looking for one.
+
+### 2026-10-27: what the experiment's readers are given, and what no rule stops
+
+The agent's prompt, model authoring's request and `nrw tiled push` all take
+the experiment's context through `experiment/quoted.py`, which holds each
+field to the page's own rule again as it is read. A catalog is committed and
+pulled, and a parquet change shows nothing in a git diff, so a record loaded
+from it may never have passed through the page. A field that fails is left
+out by name and never quoted or pushed; Tiled's copy of it is left as it is.
+
+The rules refuse characters a reader cannot see, `#` headings, comment
+markers and unclosed fences. Two security reviews mapped what they do not
+refuse: setext headings (a line underlined with `---`), headings spaced with
+U+00A0 or written with a fullwidth `#`, the authoring request's own `=====`
+banners, two CommonMark cases where a fence counted as closed stays open, and
+some invisible characters outside the format category. These rules predate
+the experiment's context and are shared with `sample.md`; closing them was
+left for its own decision. No character rule stops plain instructions in
+plain words, and the unattended agent runs with its permission prompts
+bypassed, so the boundary that matters is who can write the catalog.
+
+On Tiled the context sits under one `experiment` key in `context/`'s own
+metadata, apart from what other programs write there. The push reads
+`context/` again just before it merges, as it reads each record again: the
+copy it planned from is as old as the question the person was asked.

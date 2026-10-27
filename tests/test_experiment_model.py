@@ -454,6 +454,49 @@ def test_a_lone_surrogate_is_refused_before_the_parquet_would(check) -> None:
         check("summary", "fine " + chr(0xD800))
 
 
+@pytest.mark.parametrize(
+    "hidden",
+    [0x200B, 0x2060, 0x2062, 0xFEFF, 0x200E, 0x061C, 0x00AD],
+    ids=["zwsp", "word-joiner", "invisible-times", "bom", "lrm", "alm", "shy"],
+)
+def test_an_invisible_formatting_character_is_refused(hidden: int) -> None:
+    """Nothing a reader sees, and a way to hide what only a program finds."""
+    with pytest.raises(CatalogValidationError, match="invisible formatting character"):
+        clean_prose("summary", "Li" + chr(hidden) + " plating")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "family " + chr(0x1F468) + chr(0x200D) + chr(0x1F469),
+        "smile " + chr(0x263A) + chr(0xFE0F),
+        "word " + chr(0x0645) + chr(0x200C) + chr(0x06CC),
+    ],
+    ids=["zwj-emoji", "one-selector", "zwnj"],
+)
+def test_what_emoji_and_scripts_are_spelled_with_is_kept(text: str) -> None:
+    assert clean_prose("notes", text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["a" + chr(0xFE0F) + chr(0xFE0F), "b" + chr(0xE0100)],
+    ids=["a-run", "the-supplement"],
+)
+def test_a_hidden_variation_selector_is_refused(text: str) -> None:
+    """One picks how an emoji looks; a run, or one from the supplement,
+    spells bytes nobody can see."""
+    with pytest.raises(CatalogValidationError, match="hidden variation selector"):
+        clean_prose("notes", text)
+
+
+@pytest.mark.parametrize("code", [0xE0080, 0xE01F0, 0xE0FFF])
+def test_the_rest_of_the_tags_block_is_refused(code: int) -> None:
+    """Unassigned, and shown as nothing: they carry bytes as tags do."""
+    with pytest.raises(CatalogValidationError, match="an invisible character"):
+        clean_prose("notes", "plain" + chr(code))
+
+
 def test_the_experiment_has_no_other_fields() -> None:
     with pytest.raises(CatalogValidationError, match="the experiment has no field"):
         describe(Catalog(), title="x")

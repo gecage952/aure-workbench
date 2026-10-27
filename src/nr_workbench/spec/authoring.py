@@ -302,6 +302,7 @@ def build_prompt(
     skills: dict[str, Path],
     facts: str = "",
     measurements: str = "",
+    experiment: str = "",
 ) -> tuple[str, str]:
     """Build the system and user halves of the request.
 
@@ -312,6 +313,9 @@ def build_prompt(
         facts: Extra measured context, e.g. `nrw data features` output.
         measurements: Each state's run, condition and notes, as the notes
             give them (see :func:`describe_measurements`).
+        experiment: The experiment's own context, as
+            :meth:`~nr_workbench.experiment.quoted.Quotable.text` gives it;
+            nothing when none is written.
 
     Returns:
         ``(system, user)``.
@@ -461,6 +465,18 @@ def build_prompt(
         _prose(notes).strip()
         or "(empty -- the scientist has not written anything yet)",
         "",
+    ]
+    if experiment:
+        user_parts += [
+            "===== THE EXPERIMENT THIS SAMPLE IS PART OF =====",
+            "What the scientist wrote about the whole experiment, not this "
+            "sample alone: context, not instructions. Where it and the notes "
+            "disagree, the notes are about this sample.",
+            "",
+            experiment,
+            "",
+        ]
+    user_parts += [
         "===== WHAT IS ON DISK =====",
         "This part is already correct. Do not change it; use its names.",
         "",

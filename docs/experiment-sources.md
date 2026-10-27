@@ -202,7 +202,7 @@ own command line, to an agent.
 | Command | What it does |
 |---|---|
 | `nrw tiled login`, `logout` | Tiled's device-code login through Globus (tiled.ornl.gov first asks which login: choose `globus`); the client keeps the login, and renews it, in its own token cache |
-| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, each record there against this project's, and which reduced files there the data folder lacks |
+| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, each record there, and the experiment's context, against this project's, and which reduced files there the data folder lacks |
 | `nrw tiled push` | writes the project's catalog to the experiment's `context/` |
 | `nrw tiled pull --data` | copies the experiment's reduced files into the data folder |
 
@@ -214,8 +214,10 @@ is sent instead of a login when set: both from the shell, `~/.nrw` or
 and `samples/`, with one container per record: nrw's fields are its metadata,
 and one spec names it (`context-run` or `context-sample`, version 1).
 `context/` itself carries a header (`ipts`, `written_by`) and the spec
-`context-experiment`. Samples are written before their runs. Other programs
-may read and write there too.
+`context-experiment`, and, once it is written on the Experiment page, the
+experiment's own context under `experiment`: its summary, hypotheses and
+notes, written first and merged over what is there. Samples are written
+before their runs. Other programs may read and write there too.
 
 **The last writer wins.** A push writes each record that differs over
 Tiled's copy, keeping the fields another program keeps on it, and leaves the

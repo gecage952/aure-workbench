@@ -111,7 +111,7 @@ def status(project: Path) -> dict[str, Any]:
         TiledSyncError: Not logged in, or the client failed (said as nrw's
             only inside :func:`_asking`).
     """
-    from nr_workbench.tiled.context import plan_push, read_remote
+    from nr_workbench.tiled.context import plan_experiment, plan_push, read_remote
     from nr_workbench.tiled.server import (
         EXPERIMENT_PATH,
         connect,
@@ -129,6 +129,7 @@ def status(project: Path) -> dict[str, Any]:
     node = experiment_node(client, ipts)
     remote = read_remote(node) if node is not None else None
     planned = plan_push(catalog, remote) if remote is not None else []
+    context_plan = plan_experiment(catalog, remote) if remote is not None else None
     ours = {(p.record.container, p.record.key) for p in planned}
     theirs = remote.records if remote is not None else {}
     return {
@@ -157,6 +158,17 @@ def status(project: Path) -> dict[str, Any]:
             if (container, key) not in ours
         ),
         "others": [said(key) for key in remote.others] if remote is not None else [],
+        # The experiment's own context against Tiled's copy, in context/'s
+        # own metadata.
+        "experiment_context": (
+            {
+                "state": context_plan.action,
+                "changed": list(context_plan.changed),
+                "left_out": list(context_plan.left_out),
+            }
+            if context_plan is not None
+            else None
+        ),
         # The reduced files there against the data folder: what a pull copies.
         "data": _data_status(node, project, ipts) if node is not None else None,
     }
@@ -217,6 +229,17 @@ def _echo_context(found: dict[str, Any]) -> None:
         f"{len(records['replace'])} different, {len(records['create'])} not "
         f"there yet, {len(found['only_on_tiled'])} on Tiled alone"
     )
+    context = found["experiment_context"]
+    shown = {
+        "same": "as this project has it"
+        + (", but for what is left out" if context and context["left_out"] else ""),
+        "replace": f"different: {', '.join(context['changed'])}" if context else "",
+        "create": "not there yet",
+    }
+    if context and context["state"] in shown:
+        click.echo(f"            the experiment's context {shown[context['state']]}")
+    if context and context["left_out"]:
+        click.echo(_left_out(context["left_out"]))
     for path in records["replace"]:
         click.echo(f"  ~ {path}")
     for path in records["create"]:
@@ -225,6 +248,14 @@ def _echo_context(found: dict[str, Any]) -> None:
         click.echo(f"  = {path}  (Tiled's alone: a push leaves it)")
     if found["others"]:
         click.echo(f"  others: {', '.join(found['others'])}  (not nrw's)")
+
+
+def _left_out(names: Any) -> str:
+    """The experiment's fields a push leaves out, and why."""
+    return (
+        f"  ! the experiment's {', '.join(names)}: text the Experiment page "
+        "would refuse, so a push leaves Tiled's copy as it is"
+    )
 
 
 def _echo_data(data: dict[str, Any]) -> None:
@@ -274,7 +305,13 @@ def run_push(
     copy, keeping the fields other programs keep on it; one that matches is
     left alone. ``--dry-run`` says what would be written, and writes nothing.
     """
-    from nr_workbench.tiled.context import CONTEXT, plan_push, push, read_remote
+    from nr_workbench.tiled.context import (
+        CONTEXT,
+        plan_experiment,
+        plan_push,
+        push,
+        read_remote,
+    )
     from nr_workbench.tiled.server import (
         EXPERIMENT_PATH,
         TiledSyncError,
@@ -285,7 +322,7 @@ def run_push(
     project = _project(root)
     ipts = _ipts(project)
     catalog = _catalog(project)
-    if not catalog.runs and not catalog.samples:
+    if not catalog.runs and not catalog.samples and not catalog.experiment.rev:
         click.echo("The catalog holds no records yet: nothing to push.")
         return
     with _asking(project) as (chosen, _):
@@ -297,6 +334,7 @@ def run_push(
             )
         remote = read_remote(experiment)
         planned = plan_push(catalog, remote)
+        context_plan = plan_experiment(catalog, remote)
         changes = [p for p in planned if p.action != "same"]
         place = f"{chosen.url}/{EXPERIMENT_PATH.format(ipts=ipts)}/{CONTEXT}"
         click.echo(
@@ -304,11 +342,18 @@ def run_push(
             f"{sum(p.action == 'replace' for p in changes)} changed, "
             f"{len(planned) - len(changes)} the same"
         )
+        if context_plan.writes:
+            mark = "+" if context_plan.action == "create" else "~"
+            click.echo(
+                f"  {mark} the experiment's context: {', '.join(context_plan.changed)}"
+            )
+        if context_plan.left_out:
+            click.echo(_left_out(context_plan.left_out))
         for item in changes:
             click.echo(
                 f"  {'+' if item.action == 'create' else '~'} {item.record.path}"
             )
-        if not changes:
+        if not changes and not context_plan.writes:
             click.echo("Tiled already holds this catalog.")
             return
         if dry_run:
@@ -319,8 +364,11 @@ def run_push(
                 "Write these over Tiled's copy, for everyone on the experiment?",
                 abort=True,
             )
-        written = push(experiment, remote, planned, ipts=ipts)
-    click.echo(f"Pushed {len(written)} record(s).")
+        written = push(
+            experiment, remote, planned, ipts=ipts, context_plan=context_plan
+        )
+    also = " and the experiment's context" if context_plan.writes else ""
+    click.echo(f"Pushed {len(written)} record(s){also}.")
 
 
 def _folder_of(project: Path, ipts: str) -> tuple[Path | None, bool]:

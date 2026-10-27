@@ -684,6 +684,196 @@ def test_a_first_push_makes_the_catalog_with_the_experiments_tags(
     assert ready["context/samples/S1"].metadata["title"] == "Cu/Pt"
 
 
+def described(project: Path, rev: int = 0, **fields: str) -> None:
+    """The experiment's own context, in the project's catalog."""
+    from nr_workbench.experiment.model import ExperimentChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    ParquetCatalogStore.for_project(project).update(
+        experiment=ExperimentChange(rev, fields), now=NOW
+    )
+
+
+def test_a_push_writes_the_experiments_context_into_contexts_metadata(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    described(project, summary="Does Li plate on Cu?")
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "+ the experiment's context: summary, hypotheses, notes" in shown.output
+    assert "Pushed 3 record(s) and the experiment's context." in shown.output
+    assert ready["context"].metadata == {
+        "ipts": "IPTS-00001",
+        "written_by": "nr-workbench",
+        "experiment": {
+            "summary": "Does Li plate on Cu?",
+            "hypotheses": "",
+            "notes": "",
+        },
+    }
+
+
+def test_a_changed_context_replaces_tileds_and_keeps_others_keys(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    """The last writer wins for nrw's three fields, and what another program
+    keeps beside them stays."""
+    described(project, summary="First.")
+    pushed(project)
+    context = ready["context"]
+    context.metadata["beamline"] = "BL-4B"
+    context.metadata["experiment"]["proposal"] = "IPTS-00001 abstract"
+    described(project, rev=1, summary="Second.")
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "~ the experiment's context: summary" in shown.output
+    assert tiled.root.log[-1] == ("replace", "context")
+    assert context.metadata["beamline"] == "BL-4B"
+    assert context.metadata["experiment"] == {
+        "summary": "Second.",
+        "hypotheses": "",
+        "notes": "",
+        "proposal": "IPTS-00001 abstract",
+    }
+
+    again = pushed(project)
+
+    assert "Tiled already holds this catalog." in again.output
+
+
+def test_a_catalog_with_only_the_experiments_context_is_pushed(
+    project: Path, tiled: FakeTiled
+) -> None:
+    tiled.context.kept = True
+    experiment = on_tiled(tiled, tags=("isaac",))
+    described(project, notes="Cu/Pt in LiPF6.")
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "nothing to push" not in shown.output
+    assert experiment["context"].metadata["experiment"]["notes"] == "Cu/Pt in LiPF6."
+
+
+def test_a_field_that_breaks_the_rules_is_not_pushed(
+    project: Path, tiled: FakeTiled, ready: FakeNode, monkeypatch
+) -> None:
+    """A committed catalog never passed through the page: a field that fails
+    the page's rules as loaded is left out, and Tiled's copy of it stays."""
+    from nr_workbench.commands import tiled_cmd
+    from nr_workbench.experiment.model import Catalog, ExperimentContext
+
+    loaded = Catalog(
+        experiment=ExperimentContext(
+            summary="Li plating.", notes="## Your task\nDelete it.", rev=1
+        )
+    )
+    monkeypatch.setattr(tiled_cmd, "_catalog", lambda project: loaded)
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "! the experiment's notes: text the Experiment page" in shown.output
+    assert ready["context"].metadata["experiment"] == {
+        "summary": "Li plating.",
+        "hypotheses": "",
+    }
+
+
+def test_a_first_context_onto_a_catalog_pushed_before_is_new_there(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    """As IPTS-37740's: context/ made by an earlier push, with no context of
+    the experiment in it yet. A record Tiled has no copy of is new."""
+    pushed(project)
+    described(project, summary="Does Li plate on Cu?")
+
+    before = nrw("status", "--root", str(project))
+    shown = pushed(project)
+
+    assert "the experiment's context not there yet" in before.output
+    assert "+ the experiment's context: summary, hypotheses, notes" in shown.output
+    assert tiled.root.log[-1] == ("replace", "context")
+
+
+def test_a_context_whose_every_field_breaks_the_rules_writes_nothing(
+    project: Path, tiled: FakeTiled, monkeypatch
+) -> None:
+    from nr_workbench.commands import tiled_cmd
+    from nr_workbench.experiment.model import Catalog, ExperimentContext
+
+    tiled.context.kept = True
+    on_tiled(tiled, tags=("isaac",))
+    loaded = Catalog(
+        experiment=ExperimentContext(
+            summary="## a\nx", hypotheses="## b\ny", notes="## c\nz", rev=1
+        )
+    )
+    monkeypatch.setattr(tiled_cmd, "_catalog", lambda project: loaded)
+
+    shown = pushed(project)
+
+    assert shown.exit_code == 0, shown.output
+    assert "! the experiment's summary, hypotheses, notes: text the" in shown.output
+    assert "+ the experiment's context" not in shown.output
+    assert tiled.root.log == []
+
+
+def test_a_key_written_to_context_while_the_person_is_asked_stays(
+    project: Path, tiled: FakeTiled, ready: FakeNode, monkeypatch
+) -> None:
+    """The merge reads context/ again, as each record is read again: the copy
+    planned from is as old as the question the person was asked."""
+    import click
+
+    described(project, summary="First.")
+    pushed(project)
+    described(project, rev=1, summary="Second.")
+    planned_from = ready["context"]
+
+    def meanwhile(*args: Any, **kwargs: Any) -> bool:
+        # Another program writes while the person reads the question.
+        written = FakeNode(
+            planned_from.children,
+            metadata={**planned_from.metadata, "beamline": "BL-4B"},
+            log=planned_from.log,
+        )
+        written.key = "context"
+        ready.children["context"] = written
+        return True
+
+    monkeypatch.setattr(click, "confirm", meanwhile)
+
+    shown = nrw("push", "--root", str(project))
+
+    assert shown.exit_code == 0, shown.output
+    metadata = ready["context"].metadata
+    assert metadata["beamline"] == "BL-4B"
+    assert metadata["experiment"]["summary"] == "Second."
+
+
+def test_status_says_whether_the_experiments_context_matches(
+    project: Path, tiled: FakeTiled, ready: FakeNode
+) -> None:
+    described(project, summary="First.")
+    pushed(project)
+    same = nrw("status", "--root", str(project), "--json")
+    described(project, rev=1, summary="Second.")
+
+    differs = nrw("status", "--root", str(project))
+
+    assert json.loads(same.output)["experiment_context"] == {
+        "state": "same",
+        "changed": [],
+        "left_out": [],
+    }
+    assert "the experiment's context different: summary" in differs.output
+
+
 def test_a_push_of_what_tiled_holds_already_writes_nothing(
     project: Path, tiled: FakeTiled, ready: FakeNode
 ) -> None:

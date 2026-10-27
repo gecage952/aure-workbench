@@ -146,6 +146,29 @@ def test_a_push_writes_the_records_and_reads_them_back(
     assert len(status["records"]["same"]) == 3 and status["only_on_tiled"] == []
 
 
+def test_the_experiments_context_is_written_into_contexts_own_metadata(
+    project: Path, on_local_tiled
+) -> None:
+    """Made with context/, then merged over it: the one replace of context/'s
+    own metadata a push makes."""
+    from nr_workbench.experiment.model import ExperimentChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    store = ParquetCatalogStore.for_project(project)
+    store.update(experiment=ExperimentChange(0, {"summary": "First."}))
+    nrw(project, "push", "--yes")
+    store.update(experiment=ExperimentChange(1, {"summary": "Second."}))
+
+    shown = nrw(project, "push", "--yes")
+    status = json.loads(nrw(project, "status", "--json").output)
+
+    assert shown.exit_code == 0, shown.output
+    metadata = on_local_tiled["context"].metadata
+    assert metadata["experiment"]["summary"] == "Second."
+    assert metadata["written_by"] == "nr-workbench"
+    assert status["experiment_context"]["state"] == "same"
+
+
 def test_a_second_push_writes_only_what_changed_and_keeps_others_fields(
     project: Path, on_local_tiled
 ) -> None:

@@ -230,7 +230,11 @@ catalog and written to no file, so this panel is the one place to change it;
 `nrw experiment status --json` shows it. A heading line, `<!--` or `-->`, and
 an unclosed code block are refused in it, as in a sample's context: it is
 quoted into the instructions a language model is given, where each would
-change how they read. A table of runs is allowed.
+change how they read. A table of runs is allowed. The unattended agent's
+instructions quote it ahead of each sample's task, **New model** sends it
+beside the sample's notes, and `nrw tiled push` writes it to the experiment's
+`context/` on Tiled. Each checks it again as it reads it: a part that a
+committed catalog brought in breaking these rules is left out, and said to be.
 
 Click a sample to fill in its context. Each box becomes the section of
 `sample.md` it is named after:
@@ -258,6 +262,9 @@ Some text is refused, with the reason, because a reader of `sample.md` would
 misread it. A run's notes are held to the same rules, since they are written
 there too:
 
+- **Characters nobody sees.** Zero-width spaces and other invisible
+  formatting marks, hidden variation selectors, tag characters: a language
+  model reads them all the same.
 - **A heading line inside a box.** A `## Fits to perform` typed into the
   Description would become the agent's task.
 - **`<!--` or `-->`.** These hide text from readers that strip comments.

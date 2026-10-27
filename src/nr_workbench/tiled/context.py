@@ -2,7 +2,8 @@
 
 ``context/`` is a container in the experiment's own node. It holds ``runs/``
 and ``samples/``, with one container per record: nrw's fields are its
-metadata, and one spec names what it is. Its own metadata is a small header.
+metadata, and one spec names what it is. Its own metadata is a small header,
+and the experiment's own context under ``experiment``.
 
 A push writes the project's catalog there, the last writer winning (the
 person's choice, 2026-10-27): a record whose fields differ is replaced, one
@@ -27,6 +28,11 @@ from nr_workbench.tiled.server import TiledSyncError, said, tags_of
 CONTEXT = "context"
 RUNS = "runs"
 SAMPLES = "samples"
+
+#: Where in ``context/``'s own metadata the experiment's context is kept:
+#: one key, so nrw's three fields sit apart from what other programs write
+#: there.
+EXPERIMENT = "experiment"
 
 #: What each node says it is: a spec's name, and its fields' version.
 CONTEXT_SPEC = ("context-experiment", "1")
@@ -94,6 +100,61 @@ def header(ipts: str) -> dict[str, Any]:
     return {"ipts": ipts, "written_by": "nr-workbench"}
 
 
+@dataclass(frozen=True)
+class ExperimentPlan:
+    """What a push does with the experiment's own context.
+
+    Attributes:
+        action: ``create`` when Tiled has no copy of it, ``replace``,
+            ``same``, or ``none`` when there is nothing of it to write.
+        fields: The fields a push writes, each held to the page's rules again.
+        changed: Those that differ from Tiled's copy.
+        left_out: Those that break the rules as saved now: never written, and
+            Tiled's copy of them is left as it is.
+    """
+
+    action: str
+    fields: Mapping[str, str] = field(default_factory=dict)
+    changed: tuple[str, ...] = ()
+    left_out: tuple[str, ...] = ()
+
+    @property
+    def writes(self) -> bool:
+        """Whether a push writes anything for it."""
+        return self.action in ("create", "replace")
+
+
+def plan_experiment(catalog: Catalog, remote: Remote) -> ExperimentPlan:
+    """What a push of *catalog*'s experiment context over *remote* would do."""
+    from nr_workbench.experiment.model import EXPERIMENT_FIELDS
+    from nr_workbench.experiment.quoted import quotable_record
+
+    if not catalog.experiment.rev:
+        return ExperimentPlan("none")
+    quoted = quotable_record(catalog.experiment)
+    # A field cleared on the page is written as cleared; one left out is not
+    # written at all.
+    fields = {
+        name: quoted.fields.get(name, "")
+        for name in EXPERIMENT_FIELDS
+        if name not in quoted.left_out
+    }
+    if not fields:
+        # Every field written breaks the rules: there is nothing to write.
+        return ExperimentPlan("none", left_out=quoted.left_out)
+    there = (
+        dict(remote.context.metadata).get(EXPERIMENT)
+        if remote.context is not None
+        else None
+    )
+    if not isinstance(there, Mapping):
+        return ExperimentPlan("create", fields, tuple(fields), quoted.left_out)
+    changed = tuple(name for name, value in fields.items() if there.get(name) != value)
+    return ExperimentPlan(
+        "replace" if changed else "same", fields, changed, quoted.left_out
+    )
+
+
 def records_of(catalog: Catalog) -> list[Record]:
     """The catalog's records as a push writes them: samples, then runs, so a
     reader never meets a run whose sample is not there yet."""
@@ -150,15 +211,26 @@ _ABSENT = object()
 
 
 def push(
-    experiment: Any, remote: Remote, planned: list[Planned], *, ipts: str
+    experiment: Any,
+    remote: Remote,
+    planned: list[Planned],
+    *,
+    ipts: str,
+    context_plan: ExperimentPlan | None = None,
 ) -> list[Planned]:
     """Write what *planned* changes, in its order; make what it is written in.
+
+    The experiment's own context is written first, into ``context/``'s own
+    metadata: with the header when ``context/`` is made, or merged over what
+    is there, so another program's keys stay.
 
     Args:
         experiment: The experiment's own node.
         remote: ``context/`` as it was read for *planned*.
         planned: From :func:`plan_push`.
         ipts: The experiment's IPTS, for ``context/``'s header.
+        context_plan: From :func:`plan_experiment`; nothing is written for the
+            experiment's context without one.
 
     Returns:
         What was written, in order.
@@ -174,14 +246,28 @@ def push(
     written: list[Planned] = []
     where = "context/"
     try:
+        writes = context_plan is not None and context_plan.writes
+        own = dict(context_plan.fields) if writes else None
         context, context_tags = remote.context, None
         if context is None:
             context_tags = _given(experiment, "The experiment's own node")
             context = experiment.create_container(
                 CONTEXT,
-                metadata=header(ipts),
+                metadata={**header(ipts), **({EXPERIMENT: own} if writes else {})},
                 specs=[Spec(*CONTEXT_SPEC)],
                 access_tags=context_tags,
+            )
+        elif writes:
+            # Read again, as each record is: the copy planned from is as old
+            # as the question the person was asked, and a key another
+            # program wrote since would be lost.
+            context = experiment[CONTEXT]
+            metadata = dict(context.metadata)
+            there = metadata.get(EXPERIMENT)
+            there = dict(there) if isinstance(there, Mapping) else {}
+            # nrw's fields over Tiled's; a field left out keeps Tiled's copy.
+            context.replace_metadata(
+                metadata={**metadata, EXPERIMENT: {**there, **own}}
             )
         containers: dict[str, tuple[Any, list[str] | None]] = {}
         for name in (RUNS, SAMPLES):

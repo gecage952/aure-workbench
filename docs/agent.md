@@ -113,6 +113,7 @@ nrw agent run Sample4 --dry-run
 ```
 
 This composes the session and prints it without running anything. You get the
+experiment's context (when one is written on the Experiment page), the
 declared task, the offline observations, the skills it will read, and the
 limits — the whole of what the harness will see. Reading it once is worth more
 than any amount of configuration. [agent-run-llm.svg](agent-run-llm.svg) shows
