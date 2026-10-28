@@ -959,7 +959,7 @@ def isaac_push_command(fit_id: str, validate_only: bool, yes: bool) -> None:
 
 @main.group("tiled")
 def tiled_group() -> None:
-    """Tiled: push the experiment's catalog, say what is there, fetch data.
+    """Tiled: push the catalog and the fits, say what is there, pull them back.
 
     Needs the installer's NRW_EXTRAS=tiled. The server is TILED_URL
     (tiled.ornl.gov by default), read as nrw's other settings are. Each
@@ -998,11 +998,17 @@ def tiled_status_command(**kwargs: object) -> None:
 @tiled_group.command("push")
 @click.option("--root", type=click.Path(file_okay=False), help="Project root.")
 @click.option(
+    "--only",
+    type=click.Choice(["context", "fits"]),
+    default=None,
+    help="Push only the catalog (context/) or only the fits (analysis/).",
+)
+@click.option(
     "--dry-run", is_flag=True, help="Say what would be written; write nothing."
 )
 @click.option("--yes", is_flag=True, help="Skip the confirmation.")
 def tiled_push_command(**kwargs: object) -> None:
-    """Write this project's catalog to its experiment's context/ on Tiled.
+    """Write the catalog to context/, and the starred and final fits to analysis/.
 
     The last writer wins: a record that differs is written over Tiled's copy,
     keeping fields other programs keep on it. Records Tiled alone holds stay.
@@ -1013,7 +1019,11 @@ def tiled_push_command(**kwargs: object) -> None:
 
 
 @tiled_group.command("pull")
+@click.option(
+    "--context", is_flag=True, help="The catalog's runs, samples and context."
+)
 @click.option("--data", is_flag=True, help="The experiment's reduced files.")
+@click.option("--fits", is_flag=True, help="Each fit's model files, to run again.")
 @click.option(
     "--run", "runs", type=int, multiple=True, help="Only this run; repeat for more."
 )
@@ -1022,13 +1032,18 @@ def tiled_push_command(**kwargs: object) -> None:
     type=click.Path(file_okay=False),
     help="Copy into this folder [default: the configured data folder].",
 )
-@click.option("--dry-run", is_flag=True, help="Say what would be copied; copy nothing.")
+@click.option(
+    "--dry-run", is_flag=True, help="Say what would be pulled; write nothing."
+)
+@click.option("--yes", is_flag=True, help="Skip the confirmation.")
 @click.option("--root", type=click.Path(file_okay=False), help="Project root.")
 def tiled_pull_command(**kwargs: object) -> None:
-    """Copy the experiment's reduced files from Tiled into the data folder.
+    """Bring back the catalog, the reduced files and the fits from Tiled.
 
-    For when the data mount is out of reach. Each file the folder lacks, or
-    holds at another size, is copied whole; the folder watcher does the rest.
+    --context writes Tiled's records into the catalog, Tiled's copy winning.
+    --data copies each reduced file the data folder lacks; the folder watcher
+    does the rest. --fits writes each fit's spec, script and model.md into its
+    sample's models/, and prints the command that runs it again.
     """
     from nr_workbench.commands.tiled_cmd import run_pull
 

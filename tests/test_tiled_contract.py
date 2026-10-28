@@ -188,3 +188,48 @@ def test_a_second_push_writes_only_what_changed_and_keeps_others_fields(
     assert changed.exit_code == 0, changed.output
     kept = on_local_tiled["context/samples/S1"].metadata
     assert (kept["title"], kept["beamline_note"]) == ("Cu/Pt, annealed", "theirs")
+
+
+def test_a_starred_fit_pushed_is_pulled_into_a_colleagues_project_whole(
+    project: Path, on_local_tiled, tmp_path_factory, context
+) -> None:
+    """The hand-over: a fit's record kept by the server as it was written,
+    and pulled back as the files that ran."""
+    import hashlib
+
+    from nr_workbench.commands.init_cmd import plan_project_files
+    from nr_workbench.experiment.store import ParquetCatalogStore
+    from nr_workbench.project.config import load_config
+    from nr_workbench.project.scaffold import apply_scaffold
+
+    from .test_tiled_analysis import SCRIPT, SPEC, A, fitted, starred
+
+    catalogued(project)
+    fitted(project)
+    starred(project)
+    pushed = nrw(project, "push", "--yes")
+    colleague = tmp_path_factory.mktemp("colleague")
+    apply_scaffold(colleague, plan_project_files(context))
+    toml = colleague / "nrw.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace(
+            "IPTS-00001", load_config(project).ipts
+        ),
+        encoding="utf-8",
+    )
+
+    shown = nrw(colleague, "pull", "--context", "--fits", "--yes")
+
+    assert pushed.exit_code == 0, pushed.output
+    assert shown.exit_code == 0, shown.output
+    record = on_local_tiled[f"analysis/S1/{A}"].metadata
+    assert record["files"]["model.py"]["sha256"] == hashlib.sha256(SCRIPT).hexdigest()
+    models = colleague / "samples" / "S1" / "models"
+    assert (models / "film.py").read_bytes() == SCRIPT
+    assert (models / "film.yaml").read_text() == SPEC
+    ours, theirs = (
+        ParquetCatalogStore.for_project(root).load() for root in (project, colleague)
+    )
+    assert {k: e.content() for k, e in theirs.runs.items()} == {
+        k: e.content() for k, e in ours.runs.items()
+    }

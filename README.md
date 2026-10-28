@@ -91,11 +91,12 @@ nrw experiment apply --write
 The organization is kept in `experiment/*.parquet`.
 **[docs/experiment.md](docs/experiment.md)** walks through it.
 
-To share it with everyone on the experiment, `nrw tiled push` writes it to the
-experiment's node on tiled.ornl.gov, `nrw tiled status` says what is there, and
-`nrw tiled pull --data` copies the reduced files in when the data mount is out
-of reach. Each acts with your own Tiled login (`nrw tiled login`), and needs
-the installer's `NRW_EXTRAS=tiled`.
+To share it with everyone on the experiment, `nrw tiled push` writes it, and
+the starred and final fits, to the experiment's node on tiled.ornl.gov, and
+`nrw tiled status` says what is there. A colleague starting fresh runs `nrw
+tiled pull --context --data --fits` to bring back the catalog, the reduced
+files, and each fit's model to run again. Each acts with your own Tiled login
+(`nrw tiled login`), and needs the installer's `NRW_EXTRAS=tiled`.
 
 ### Choosing an assistant
 

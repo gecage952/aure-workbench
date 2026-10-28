@@ -160,7 +160,8 @@ Otherwise two people editing one experiment overwrite each other.
 
 The catalog is kept in the project, and committed with it. It is shared the
 way the project is, through git, and with everyone on the experiment and other
-programs by `nrw tiled push`, which publishes a copy (see
+programs by `nrw tiled push`, which publishes a copy that `nrw tiled pull
+--context` brings into a colleague's project (see
 [Tiled](#tiled-pushed-and-pulled-by-a-person), below). No other kind of store
 is planned: one that every member's project read and wrote as it went was
 built and withdrawn twice, on 2026-09-28 and 2026-10-27.
@@ -200,9 +201,11 @@ own command line, to an agent.
 | Command | What it does |
 |---|---|
 | `nrw tiled login`, `logout` | Tiled's device-code login through Globus (tiled.ornl.gov first asks which login: choose `globus`); the client keeps the login, and renews it, in its own token cache |
-| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, each record there, and the experiment's context, against this project's, and which reduced files there the data folder lacks |
-| `nrw tiled push` | writes the project's catalog to the experiment's `context/` |
+| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, each record there, the experiment's context and each fit, against this project's, whether each fit's model is here, and which reduced files there the data folder lacks |
+| `nrw tiled push` | writes the project's catalog to the experiment's `context/`, and its starred and final fits to `analysis/`; `--only context` or `--only fits` writes one |
+| `nrw tiled pull --context` | writes Tiled's runs, samples and experiment context into the catalog |
 | `nrw tiled pull --data` | copies the experiment's reduced files into the data folder |
+| `nrw tiled pull --fits` | writes each fit's spec, script and `model.md` into its sample's `models/`, and prints the command that runs it again |
 
 The server is `TILED_URL` (tiled.ornl.gov by default), and `TILED_API_KEY`
 is sent instead of a login when set: both read as nrw's other settings are,
@@ -217,12 +220,24 @@ experiment's own context under `experiment`: its summary, hypotheses and
 notes, written first and merged over what is there. Samples are written
 before their runs. Other programs may read and write there too.
 
+**Fits.** `analysis/` holds a container per sample, and one per fit in it:
+`analysis/<sample>/<fit_id>/`, for each starred fit and each sample's final
+one. Tiled 0.2.18 takes no file from a project member, so a fit's record is
+its metadata (spec `analysis-fit`, version 1): the index's fields, its
+curation, its `manifest.json`, `inputs.json` and `env/versions.json` whole,
+its parameters with DREAM's statistics, its assessment, and its `model.py`,
+`spec.yaml`, `model.md` and `NOTES.md` as text, each with its sha256. The
+chains, curves and figures are left out: running the fit again makes them. A
+fit unstarred, discarded or deleted here keeps its record on Tiled, and the
+next push writes its curation over Tiled's copy. Nothing is removed there.
+
 **The last writer wins.** A push writes each record that differs over
 Tiled's copy, keeping the fields another program keeps on it, and leaves the
 rest alone, so a push of what Tiled holds writes nothing. A record only Tiled
-holds is left, and `status` names it. Nothing comes back from Tiled into the
-catalog: `context/` is a published copy, as of the last push. `--dry-run`
-says what would be written, and Tiled keeps each version a write replaced.
+holds is left, and `status` names it. A record's revision and the time of its
+last edit are this project's own, and are left out when it is compared: a
+record pulled from Tiled matches Tiled's copy. `--dry-run` says what would be
+written, and Tiled keeps each version a write replaced.
 
 **Nothing untagged.** Whatever a push makes takes its parent's access tags,
 and a parent with none is refused: under Tiled's tag policy, a node made
@@ -240,8 +255,41 @@ names the reduction writes are copied. It copies into the data folder
 pulled run counts as complete once its files have settled, as any new file
 does (five minutes by default).
 
+**Pulling the catalog.** `pull --context` writes Tiled's runs, samples and
+experiment context into this project's catalog: a record the catalog lacks is
+added, and one that says something else in it is replaced by Tiled's, after
+one question (`--yes` skips it). A record only the catalog holds is left.
+Each edit is held to the catalog's own rules, and a record they refuse is
+named and nothing is written; a save made on the Experiment page meanwhile is
+not written over either: pull again.
+
+**Pulling fits.** `pull --fits` writes each fit's `spec.yaml`, `model.py` and
+`model.md` into its sample's `models/`, as `<model>.yaml`, `.py` and `.md`. A
+model of that name holding the same files is here already, and is left; one
+holding other files is kept, and the fit's are written as `<model>-2`, as are
+a second fit's of the same model, the final one taking the plain name. A fit
+discarded or deleted is listed, and not pulled. For each fit
+the pull prints the `nrw fit run` line that runs it again, with the fitter,
+settings and seed it ran with, and a note naming the fit on Tiled. The run is
+this project's own fit, with results of its own, to look at before going on,
+finalizing it or exporting it to ISAAC.
+
+**Starting from Tiled.** A colleague who joins an experiment starts a project
+of their own:
+
+1. `nrw init DIR --ipts IPTS-37740`, with the IPTS written in full:
+   `nrw tiled` looks the experiment up as written.
+2. A data folder of their own: `nrw experiment settings --location DIR
+   --write`.
+3. `nrw tiled login`.
+4. `nrw tiled pull --context --data --fits`, which pulls in that order.
+5. `nrw experiment apply --write`, once the pulled files have settled: it
+   writes each sample's `sample.md` and copies its data.
+6. Each fit's printed `nrw fit run` line.
+
 A push and a status run against a real Tiled 0.2.18, started with uvx apart
-from nrw's environment, in `pytest -m tiled_server`. A Globus login, the tags
+from nrw's environment, in `pytest -m tiled_server`, and so do a fit pushed
+and a colleague's pull of the catalog and the fit. A Globus login, the tags
 and `pull --data` are tested against a fake of the client alone, and were
 each checked once against tiled.ornl.gov (2026-10-27).
 

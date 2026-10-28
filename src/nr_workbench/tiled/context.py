@@ -1,17 +1,17 @@
-"""The experiment's ``context/`` on Tiled: what a push writes there, and reads.
+"""The trees nrw writes in the experiment's node on Tiled, and the push.
 
-``context/`` is a container in the experiment's own node. It holds ``runs/``
-and ``samples/``, with one container per record: nrw's fields are its
-metadata, and one spec names what it is. Its own metadata is a small header,
-and the experiment's own context under ``experiment``.
+``context/`` holds the catalog: ``runs/`` and ``samples/``, with one container
+per record, whose metadata is nrw's fields and whose one spec names what it
+is. Its own metadata is a small header, and the experiment's own context under
+``experiment``. ``analysis/`` holds the fits, one container per sample with a
+container per fit in it (:mod:`nr_workbench.tiled.analysis`).
 
-A push writes the project's catalog there, the last writer winning (the
-person's choice, 2026-10-27): a record whose fields differ is replaced, one
-that matches is left alone, and fields another program keeps on a record
-stay. Nothing else is touched: a record only Tiled holds, another program's
-node, anything outside ``context/``. Whatever is made takes its parent's
-access tags, because a node made without them is its maker's alone, unseen
-by everyone else on the experiment; a parent with none is refused.
+A push writes a tree's records, the last writer winning: a record whose fields
+differ is replaced, one that matches is left alone, and fields another program
+keeps on a record stay. Nothing else is touched: a record only Tiled holds,
+another program's node, anything outside the tree. Whatever is made takes its
+parent's access tags, because a node made without them is its maker's alone,
+unseen by everyone else on the experiment; a parent with none is refused.
 """
 
 from __future__ import annotations
@@ -41,12 +41,46 @@ SAMPLE_SPEC = ("context-sample", "1")
 
 
 @dataclass(frozen=True)
+class Tree:
+    """One tree a push writes in the experiment's node.
+
+    Attributes:
+        name: Its container there.
+        spec: What its container says it is.
+        fixed: The containers made in it by any push that finds them missing.
+            Any other a record is in is made with that record, and takes the
+            spec ``part_spec`` and the metadata ``{part_key: its name}``.
+        part_spec: What such a container says it is. A container in the tree
+            that says otherwise is another program's, and is left alone.
+        part_key: The metadata field that names such a container.
+        ignore: The fields left out when a record is compared with Tiled's
+            copy: who wrote it, and when, rather than what it says.
+    """
+
+    name: str
+    spec: tuple[str, str]
+    fixed: tuple[str, ...] = ()
+    part_spec: tuple[str, str] | None = None
+    part_key: str | None = None
+    ignore: tuple[str, ...] = ()
+
+
+#: ``context/``: the catalog's runs and samples. A record's revision is this
+#: project's own count of its edits, so a record pulled from Tiled matches it
+#: when what it says does.
+CONTEXT_TREE = Tree(
+    CONTEXT, CONTEXT_SPEC, fixed=(RUNS, SAMPLES), ignore=("rev", "updated_at")
+)
+
+
+@dataclass(frozen=True)
 class Record:
     """One record, as a push writes it.
 
     Attributes:
-        container: ``runs`` or ``samples``.
-        key: Its name there: ``234277-steady``, or the sample's id.
+        container: The container it is in: ``runs``, ``samples``, or a
+            sample's in ``analysis/``.
+        key: Its name there: ``234277-steady``, a sample's id, a fit's id.
         fields: nrw's fields of it, which are its metadata.
         spec: What it says it is.
     """
@@ -64,28 +98,32 @@ class Record:
 
 @dataclass(frozen=True)
 class Planned:
-    """What a push does with one record: ``create``, ``replace`` or ``same``."""
+    """What a push does with one record: ``create``, ``replace`` or ``same``.
+
+    Attributes:
+        action: What it does.
+        record: The record.
+        changed: For ``replace``, the fields that differ from Tiled's copy.
+    """
 
     action: str
     record: Record
+    changed: tuple[str, ...] = ()
 
 
 @dataclass
 class Remote:
-    """``context/`` as one read found it.
+    """A tree as one read found it.
 
     Attributes:
-        context: Its node; ``None`` when it is not made yet.
-        containers: ``runs/`` and ``samples/``, each ``None`` when not made.
+        node: Its container; ``None`` when it is not made yet.
+        containers: The containers in it, by name.
         records: Each record's metadata there, by container and key.
-        others: What else ``context/`` holds, which nrw neither reads nor
-            writes.
+        others: What else the tree holds, which nrw neither reads nor writes.
     """
 
-    context: Any = None
-    containers: dict[str, Any] = field(
-        default_factory=lambda: {RUNS: None, SAMPLES: None}
-    )
+    node: Any = None
+    containers: dict[str, Any] = field(default_factory=dict)
     records: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
     others: list[str] = field(default_factory=list)
 
@@ -96,7 +134,7 @@ def run_key(key: RunKey) -> str:
 
 
 def header(ipts: str) -> dict[str, Any]:
-    """``context/``'s own metadata: whose it is, and who writes it."""
+    """A tree's own metadata: whose it is, and who writes it."""
     return {"ipts": ipts, "written_by": "nr-workbench"}
 
 
@@ -130,9 +168,7 @@ def plan_experiment(catalog: Catalog, remote: Remote) -> ExperimentPlan:
     # A field cleared on the page is written as cleared.
     fields = {name: getattr(catalog.experiment, name) for name in EXPERIMENT_FIELDS}
     there = (
-        dict(remote.context.metadata).get(EXPERIMENT)
-        if remote.context is not None
-        else None
+        dict(remote.node.metadata).get(EXPERIMENT) if remote.node is not None else None
     )
     if not isinstance(there, Mapping):
         return ExperimentPlan("create", fields, tuple(fields))
@@ -158,37 +194,42 @@ def records_of(catalog: Catalog) -> list[Record]:
     return samples + runs
 
 
-def read_remote(experiment: Any) -> Remote:
-    """``context/`` in the experiment's node *experiment*, read once."""
+def read_remote(experiment: Any, tree: Tree = CONTEXT_TREE) -> Remote:
+    """*tree* in the experiment's node *experiment*, read once."""
     try:
-        context = experiment[CONTEXT]
+        node = experiment[tree.name]
     except KeyError:
         return Remote()
-    remote = Remote(context=context)
-    for name in (RUNS, SAMPLES):
-        try:
-            container = context[name]
-        except KeyError:
+    remote = Remote(node=node)
+    for name, container in node.items():
+        if (tree.fixed and name not in tree.fixed) or (
+            tree.part_spec and not _says(container, tree.part_spec)
+        ):
+            remote.others.append(name)
             continue
         remote.containers[name] = container
         for key, child in container.items():
             remote.records[(name, key)] = dict(child.metadata)
-    remote.others = sorted(k for k in context if k not in (RUNS, SAMPLES))
+    remote.others.sort()
     return remote
 
 
-def plan_push(catalog: Catalog, remote: Remote) -> list[Planned]:
-    """What a push of *catalog* over *remote* would do, record by record."""
+def plan_push(
+    records: list[Record], remote: Remote, tree: Tree = CONTEXT_TREE
+) -> list[Planned]:
+    """What a push of *records* over *remote* would do, record by record."""
     planned = []
-    for record in records_of(catalog):
+    for record in records:
         there = remote.records.get((record.container, record.key))
         if there is None:
-            action = "create"
-        elif all(there.get(k, _ABSENT) == v for k, v in record.fields.items()):
-            action = "same"
-        else:
-            action = "replace"
-        planned.append(Planned(action, record))
+            planned.append(Planned("create", record))
+            continue
+        changed = tuple(
+            name
+            for name, value in record.fields.items()
+            if name not in tree.ignore and there.get(name, _ABSENT) != value
+        )
+        planned.append(Planned("replace" if changed else "same", record, changed))
     return planned
 
 
@@ -201,6 +242,7 @@ def push(
     planned: list[Planned],
     *,
     ipts: str,
+    tree: Tree = CONTEXT_TREE,
     context_plan: ExperimentPlan | None = None,
 ) -> list[Planned]:
     """Write what *planned* changes, in its order; make what it is written in.
@@ -211,11 +253,12 @@ def push(
 
     Args:
         experiment: The experiment's own node.
-        remote: ``context/`` as it was read for *planned*.
+        remote: *tree* as it was read for *planned*.
         planned: From :func:`plan_push`.
-        ipts: The experiment's IPTS, for ``context/``'s header.
-        context_plan: From :func:`plan_experiment`; nothing is written for the
-            experiment's context without one.
+        ipts: The experiment's IPTS, for the tree's header.
+        tree: The tree written.
+        context_plan: From :func:`plan_experiment`, for ``context/`` alone;
+            nothing is written for the experiment's context without one.
 
     Returns:
         What was written, in order.
@@ -229,53 +272,62 @@ def push(
 
     Spec = server_module.library().Spec  # noqa: N806 - the client's class
     written: list[Planned] = []
-    where = "context/"
+    where = f"{tree.name}/"
     try:
         writes = context_plan is not None and context_plan.writes
         own = dict(context_plan.fields) if writes else None
-        context, context_tags = remote.context, None
-        if context is None:
-            context_tags = _given(experiment, "The experiment's own node")
-            context = experiment.create_container(
-                CONTEXT,
+        node, node_tags = remote.node, None
+        if node is None:
+            node_tags = _given(experiment, "The experiment's own node")
+            node = experiment.create_container(
+                tree.name,
                 metadata={**header(ipts), **({EXPERIMENT: own} if writes else {})},
-                specs=[Spec(*CONTEXT_SPEC)],
-                access_tags=context_tags,
+                specs=[Spec(*tree.spec)],
+                access_tags=node_tags,
             )
         elif writes:
-            metadata = dict(context.metadata)
+            metadata = dict(node.metadata)
             there = metadata.get(EXPERIMENT)
             there = dict(there) if isinstance(there, Mapping) else {}
             # nrw's fields over Tiled's; a key another program keeps there stays.
-            context.replace_metadata(
-                metadata={**metadata, EXPERIMENT: {**there, **own}}
-            )
-        containers: dict[str, tuple[Any, list[str] | None]] = {}
-        for name in (RUNS, SAMPLES):
-            node = remote.containers.get(name)
-            if node is None:
-                # Made with context/'s tags, as given or as read.
-                tags = context_tags or _given(context, "context/")
-                where = f"{name}/"
-                node = context.create_container(name, access_tags=tags)
-                containers[name] = (node, tags)
-            else:
-                containers[name] = (node, None)
+            node.replace_metadata(metadata={**metadata, EXPERIMENT: {**there, **own}})
+        containers: dict[str, tuple[Any, list[str] | None]] = {
+            name: (container, None) for name, container in remote.containers.items()
+        }
+
+        def container(name: str) -> tuple[Any, list[str] | None]:
+            nonlocal where
+            if name not in containers:
+                # Made with the tree's tags, as given or as read.
+                tags = node_tags or _given(node, f"{tree.name}/")
+                where = f"{tree.name}/{name}/"
+                part = name not in tree.fixed and tree.part_spec is not None
+                made = node.create_container(
+                    name,
+                    metadata={tree.part_key: name} if part and tree.part_key else None,
+                    specs=[Spec(*tree.part_spec)] if part and tree.part_spec else None,
+                    access_tags=tags,
+                )
+                containers[name] = (made, tags)
+            return containers[name]
+
+        for name in tree.fixed:
+            container(name)
         for item in planned:
             if item.action == "same":
                 continue
             record = item.record
+            parent, tags = container(record.container)
             where = record.path
-            node, tags = containers[record.container]
             if item.action == "create":
-                node.create_container(
+                parent.create_container(
                     record.key,
                     metadata=dict(record.fields),
                     specs=[Spec(*record.spec)],
-                    access_tags=tags or _given(node, f"{record.container}/"),
+                    access_tags=tags or _given(parent, f"{record.container}/"),
                 )
             else:
-                there = node[record.key]
+                there = parent[record.key]
                 # Fields another program keeps on it stay; nrw's are written
                 # over theirs. Its specs and its tags are left as they are.
                 there.replace_metadata(
@@ -288,6 +340,14 @@ def push(
             "were written before it; push again to write the rest."
         ) from None
     return written
+
+
+def _says(node: Any, spec: tuple[str, str]) -> bool:
+    """Whether *node*'s specs name *spec*."""
+    return any(
+        (getattr(own, "name", None), getattr(own, "version", None)) == spec
+        for own in getattr(node, "specs", None) or ()
+    )
 
 
 def _given(node: Any, what: str) -> list[str]:
