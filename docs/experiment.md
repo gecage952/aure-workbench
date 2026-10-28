@@ -578,10 +578,14 @@ page shows it read-only, and nothing is saved over it until it is restored.
 **Sharing it on Tiled.** `nrw tiled push` writes the catalog to the
 experiment's `context/` on tiled.ornl.gov, and the starred and final fits to
 its `analysis/`, where everyone on the experiment, and other programs, can
-read them; `nrw tiled status` says what is there. A colleague starting fresh
-runs `nrw tiled pull --context --data --fits`: the catalog, the reduced files,
-and each fit's model with the command that runs it again. The last writer
-wins, each way. See [experiment-sources.md](experiment-sources.md), "Tiled".
+read them; `nrw tiled status` says what is there. Each fit goes as analysed
+data: its model with its parameters and the data it was fitted to, in the
+file refl1d loads, with its curves and its provenance. A colleague starting
+fresh runs `nrw tiled pull --context --data --fits`: the catalog, the reduced
+files, and each fit as it was recorded, on the Fits page.
+`nrw fit run --from <fit_id>` runs one again from its own problem file. The
+last writer wins, each way. See [experiment-sources.md](experiment-sources.md),
+"Tiled".
 
 ## Unattended agents
 

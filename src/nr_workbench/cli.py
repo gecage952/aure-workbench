@@ -514,11 +514,20 @@ def fit_group() -> None:
 
 
 @fit_group.command("run")
-@click.argument("script", type=click.Path(exists=True, dir_okay=False))
+@click.argument("script", required=False, type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--from",
+    "from_fit",
+    metavar="FIT_ID",
+    default=None,
+    help="Run this fit again from its own problem file, instead of a script, "
+    "with its fitter and settings but for those given.",
+)
 @click.option(
     "--sample",
     default=None,
-    help="Sample to record under [default: inferred from the path].",
+    help="Sample to record under [default: inferred from the path; with "
+    "--from, the fit's].",
 )
 @click.option(
     "--method",
@@ -591,14 +600,19 @@ def fit_group() -> None:
 )
 @click.option("--note", default=None, help="Free-text note stored in the record.")
 @click.option(
-    "--name", "model_name", default=None, help="Model name [default: the script stem]."
+    "--name",
+    "model_name",
+    default=None,
+    help="Model name [default: the script stem; with --from, the fit's].",
 )
 @click.option("--dry-run", is_flag=True, help="Report what would run; write nothing.")
 def fit_run_command(**kwargs: object) -> None:
-    """Run SCRIPT and write an immutable record of the fit.
+    """Run SCRIPT, or the fit named by --from again, and record the fit.
 
     Works on hand-written refl1d scripts as they are: no migration, no schema.
-    The script must define a module-level `problem = FitProblem(...)`.
+    The script must define a module-level `problem = FitProblem(...)`. With
+    --from, the fit's own problem file runs: its model, its parameters at the
+    fit's values, and its data, as bumps saved them.
     """
     from nr_workbench.commands.fit import run_fit_command
 
@@ -1023,7 +1037,7 @@ def tiled_push_command(**kwargs: object) -> None:
     "--context", is_flag=True, help="The catalog's runs, samples and context."
 )
 @click.option("--data", is_flag=True, help="The experiment's reduced files.")
-@click.option("--fits", is_flag=True, help="Each fit's model files, to run again.")
+@click.option("--fits", is_flag=True, help="The fits, as they were recorded.")
 @click.option(
     "--run", "runs", type=int, multiple=True, help="Only this run; repeat for more."
 )
@@ -1042,8 +1056,9 @@ def tiled_pull_command(**kwargs: object) -> None:
 
     --context writes Tiled's records into the catalog, Tiled's copy winning.
     --data copies each reduced file the data folder lacks; the folder watcher
-    does the rest. --fits writes each fit's spec, script and model.md into its
-    sample's models/, and prints the command that runs it again.
+    does the rest. --fits rebuilds each fit as it was recorded, with the
+    reduced files it read, and writes its spec and script into its sample's
+    models/; `nrw fit run --from` runs it again.
     """
     from nr_workbench.commands.tiled_cmd import run_pull
 

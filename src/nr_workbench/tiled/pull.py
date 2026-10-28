@@ -6,15 +6,18 @@ lacks is added; one that says something else in the catalog is replaced by
 Tiled's; one only the catalog holds is left. The edits are held to the
 catalog's own rules, and a record they refuse writes nothing at all.
 
-``--fits`` writes each fit's model files -- its spec, its script and its
-``model.md`` -- into its sample's ``models/``, and says how to run it again.
-The run is this project's own fit, with results of its own, to look at
-before going on, finalizing it or exporting it to ISAAC. A fit discarded or
-deleted is listed, and not pulled.
+``--fits`` rebuilds each fit here as Tiled records it: its directory, the
+reduced files it read, where it read them, its index line and its curation.
+It is on the Fits page as it was, with its curves and its parameters;
+``nrw fit run --from`` runs it again from its own problem file, for a
+posterior of this project's own. Its model's spec, script and ``model.md`` go
+into its sample's ``models/``, to go on from. A fit discarded or deleted is
+listed, and not pulled.
 """
 
 from __future__ import annotations
 
+import json
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -204,9 +207,16 @@ class PulledFit:
         label: How it stands there: ``final``, ``starred`` …
         method: The fitter it ran with.
         chisq: Its chi-squared.
-        script: Its script here, relative to the project root; ``None`` when
-            it is not pulled.
-        written: The files written for it; empty when they are here already.
+        here: Whether the index here holds it already, so it is left.
+        written: What is written for it, relative to the project root: its
+            directory, the reduced files it read, then its model's files in
+            ``models/``.
+        held: The reduced files it read whose paths here hold another file,
+            which is left: the fit's own copy is in its directory.
+        script: Its model's script in ``models/``; ``None`` when it is not
+            pulled, or its record holds none.
+        kept: Each label it holds on Tiled that another fit holds here, and
+            keeps, with that fit's id.
         command: The command that runs it again.
         why_not: Why it is not pulled, when it is not.
     """
@@ -216,8 +226,11 @@ class PulledFit:
     label: str
     method: str
     chisq: Any
-    script: str | None = None
+    here: bool = False
     written: tuple[str, ...] = ()
+    held: tuple[str, ...] = ()
+    script: str | None = None
+    kept: tuple[tuple[str, str], ...] = ()
     command: str = ""
     why_not: str = ""
 
@@ -226,7 +239,7 @@ def fits_of(remote: Remote) -> list[tuple[str, str, Mapping[str, Any]]]:
     """Each fit on Tiled: its sample, its id and its record.
 
     By sample; in each, the final fit first, so that it takes its model's own
-    name, and then the others, oldest first.
+    name and its label, and then the others, oldest first.
     """
     from nr_workbench.tiled.analysis import label_of
 
@@ -250,12 +263,22 @@ def pull_fits(
     *,
     write: bool = True,
 ) -> list[PulledFit]:
-    """Write each fit's model files into its sample's ``models/``.
+    """Rebuild each fit here as Tiled records it.
 
-    A model of the same name holding the same files is here already, and is
-    left. One holding other files keeps them: the fit's are written as
-    ``<model>-2``, ``<model>-3`` … instead, and so are a second fit's of the
-    same model in this pull.
+    A fit becomes ``samples/<sample>/results/<fit_id>/``, its files as they
+    were recorded, with its own copy of each reduced file it read (see
+    :func:`nr_workbench.tiled.analysis.data_copy`). Each of those files is
+    also written where the fit read it, when nothing is there, so the fit's
+    inputs are this project's. Then its index line is appended, then its star
+    and its labels (:func:`nr_workbench.provenance.curation.adopt`). Nothing
+    is overwritten: a file there already is left, and a fit the index holds
+    already is left whole.
+
+    Its model's spec, script and ``model.md`` go into the sample's
+    ``models/``, to go on from. A model of the same name holding the same
+    files is here already, and is left. One holding other files keeps them:
+    the fit's are written as ``<model>-2``, ``<model>-3`` … instead, and so
+    are a second fit's of the same model in this pull.
 
     Args:
         root: Project root.
@@ -265,10 +288,17 @@ def pull_fits(
     Returns:
         Each fit, as it is left here.
     """
-    from nr_workbench.tiled.analysis import label_of
+    from nr_workbench.fsutil import atomic_write_bytes
+    from nr_workbench.provenance.curation import adopt, label_holders
+    from nr_workbench.provenance.index import FitIndex
+    from nr_workbench.tiled.analysis import INDEX_FIELDS, label_of
 
     layout = ProjectLayout(root=Path(root))
+    index = FitIndex(layout.index_file)
+    known = {str(entry.get("fit_id")) for entry in index.fits()}
+    holders = label_holders(index)
     given: dict[Path, dict[str, str]] = {}
+    placed: dict[str, bytes] = {}
     pulled = []
     for sample, fit_id, there in fits:
         label = label_of(dict(there))
@@ -279,36 +309,157 @@ def pull_fits(
             "method": str(there.get("method") or ""),
             "chisq": there.get("chisq"),
         }
-        files = model_files(there)
         if label in SET_ASIDE:
             pulled.append(PulledFit(**common, why_not="not pulled"))
             continue
-        if "model.py" not in files:
-            pulled.append(PulledFit(**common, why_not="no script on Tiled"))
+        if fit_id in known:
+            pulled.append(
+                PulledFit(**common, here=True, command=_command(fit_id, there, None))
+            )
             continue
-        models = layout.sample(sample) / "models"
-        name, here = _model_name(models, _model_of(there, fit_id), files, given)
-        given[models / name] = files
-        written: list[str] = []
-        if not here:
-            for source, suffix in MODEL_FILES.items():
-                if source not in files:
-                    continue
-                target = models / f"{name}{suffix}"
-                written.append(target.relative_to(layout.root).as_posix())
-                if write:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(files[source].encode("utf-8"))
-        script = (models / f"{name}.py").relative_to(layout.root).as_posix()
+        directory = layout.sample(sample) / "results" / fit_id
+        if write:
+            for relative, data in directory_files(there).items():
+                if not (directory / relative).exists():
+                    atomic_write_bytes(directory / relative, data)
+        data, held = _place_data(layout, there, placed, write=write)
+        script, models = _pull_model(layout, sample, fit_id, there, given, write=write)
+        entry = dict(there.get("index") or {k: there.get(k) for k in INDEX_FIELDS})
+        if write:
+            index.append(entry)
+        curation = there.get("curation") or {}
+        kept = adopt(
+            index,
+            entry,
+            starred_by=(
+                {"who": there.get("pushed_by"), "at": there.get("pushed_at")}
+                if curation.get("starred")
+                else None
+            ),
+            promotions=dict(curation.get("promotions") or {}),
+            holders=holders,
+            write=write,
+        )
+        known.add(fit_id)
         pulled.append(
             PulledFit(
                 **common,
+                written=(
+                    f"{directory.relative_to(layout.root).as_posix()}/",
+                    *data,
+                    *models,
+                ),
+                held=tuple(held),
                 script=script,
-                written=tuple(written),
-                command=rerun_command(script, there, fit_id),
+                kept=tuple(kept),
+                command=_command(fit_id, there, script),
             )
         )
     return pulled
+
+
+def _place_data(
+    layout: ProjectLayout,
+    there: Mapping[str, Any],
+    placed: dict[str, bytes],
+    *,
+    write: bool,
+) -> tuple[list[str], list[str]]:
+    """Write each reduced file a fit read where it read it, when nothing is
+    there: the paths written, and the paths holding another file, left.
+
+    *placed* holds what this pull wrote, by path, so that a dry run says what
+    a pull would.
+    """
+    from nr_workbench.fsutil import atomic_write_bytes
+
+    written, held = [], []
+    for recorded, entry in (there.get("data") or {}).items():
+        if "text" not in entry:
+            continue
+        data = _bytes(entry)
+        target = layout.root / recorded
+        here = placed.get(recorded)
+        if here is None and target.exists():
+            here = target.read_bytes() if target.is_file() else b""
+        if here is not None:
+            if here != data:
+                held.append(recorded)
+            continue
+        placed[recorded] = data
+        written.append(recorded)
+        if write:
+            atomic_write_bytes(target, data)
+    return written, held
+
+
+def _command(fit_id: str, there: Mapping[str, Any], script: str | None) -> str:
+    """The command that runs a pulled fit again: from its problem file, else
+    its model's script in ``models/``; ``""`` when it has neither."""
+    if there.get("problem"):
+        return rerun_command(fit_id)
+    return f"nrw fit run {shlex.quote(script)}" if script else ""
+
+
+def directory_files(there: Mapping[str, Any]) -> dict[str, bytes]:
+    """A fit's directory as its record holds it: each file's path in it, and
+    its bytes."""
+    from nr_workbench.tiled.analysis import CURVES, FILES, JSON_FILES, data_copy
+
+    found: dict[str, bytes] = {}
+    for part, name in JSON_FILES.items():
+        if there.get(part) is not None:
+            found[name] = (json.dumps(there[part], indent=2) + "\n").encode("utf-8")
+    for name, entry in (there.get("files") or {}).items():
+        if name in FILES:
+            found[name] = _bytes(entry)
+    if there.get("problem"):
+        found[f"fit/{there['problem']['name']}"] = _bytes(there["problem"])
+    for name, entry in (there.get("fit") or {}).items():
+        found[f"fit/{name}"] = _bytes(entry)
+    for segment in there.get("curves") or ():
+        for part in CURVES:
+            if part in segment:
+                found[f"fit/{segment[part]['name']}"] = _bytes(segment[part])
+    for recorded, entry in (there.get("data") or {}).items():
+        if "text" in entry:
+            found[data_copy(recorded)] = _bytes(entry)
+    return found
+
+
+def _bytes(entry: Mapping[str, Any]) -> bytes:
+    """A file a record carries, as the bytes it was read from."""
+    return str(entry.get("text", "")).encode("utf-8")
+
+
+def _pull_model(
+    layout: ProjectLayout,
+    sample: str,
+    fit_id: str,
+    there: Mapping[str, Any],
+    given: dict[Path, dict[str, str]],
+    *,
+    write: bool,
+) -> tuple[str | None, list[str]]:
+    """Write a fit's model files into its sample's ``models/``: its script
+    there, and the files written, relative to the project root."""
+    files = model_files(there)
+    if "model.py" not in files:
+        return None, []
+    models = layout.sample(sample) / "models"
+    name, here = _model_name(models, _model_of(there, fit_id), files, given)
+    given[models / name] = files
+    written: list[str] = []
+    if not here:
+        for source, suffix in MODEL_FILES.items():
+            if source not in files:
+                continue
+            target = models / f"{name}{suffix}"
+            written.append(target.relative_to(layout.root).as_posix())
+            if write:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(files[source].encode("utf-8"))
+    return (models / f"{name}.py").relative_to(layout.root).as_posix(), written
 
 
 def model_files(there: Mapping[str, Any]) -> dict[str, str]:
@@ -318,21 +469,6 @@ def model_files(there: Mapping[str, Any]) -> dict[str, str]:
         for name, entry in (there.get("files") or {}).items()
         if name in MODEL_FILES and isinstance(entry, Mapping)
     }
-
-
-def model_state(root: Path, sample: str, fit_id: str, there: Mapping[str, Any]) -> str:
-    """Whether a fit's model is here: ``pulled``; ``differs``, when another
-    model of its name is, and a pull would write it beside that one; or
-    ``absent``."""
-    files = model_files(there)
-    if "model.py" not in files:
-        return "absent"
-    model = _model_of(there, fit_id)
-    models = ProjectLayout(root=Path(root)).sample(sample) / "models"
-    name, here = _model_name(models, model, files, {})
-    if here:
-        return "pulled"
-    return "absent" if name == model else "differs"
 
 
 def _model_of(there: Mapping[str, Any], fit_id: str) -> str:
@@ -372,24 +508,10 @@ def _model_name(
         n += 1
 
 
-def rerun_command(script: str, there: Mapping[str, Any], fit_id: str) -> str:
-    """``nrw fit run`` for *script*, with the settings the fit ran with.
-
-    The fitter's own settings and the seed, as the fit's manifest records
-    them; how many CPUs is this machine's to say.
-    """
-    from nr_workbench.fitting.settings import METHOD_SETTINGS
-
-    params = (there.get("manifest") or {}).get("params") or {}
-    method = str(params.get("method") or there.get("method") or "")
-    words = ["nrw", "fit", "run", script]
-    if method:
-        words += ["--method", method]
-    for name in (*METHOD_SETTINGS.get(method, ()), "seed"):
-        if params.get(name) is not None:
-            words += [f"--{name}", str(params[name])]
-    words += ["--note", f"regenerated from {fit_id}, pulled from Tiled"]
-    return " ".join(shlex.quote(word) for word in words)
+def rerun_command(fit_id: str) -> str:
+    """``nrw fit run --from``, which runs the fit again from its own problem
+    file, with its own fitter and settings."""
+    return f"nrw fit run --from {shlex.quote(fit_id)}"
 
 
 def data_applied(root: Path, sample: str) -> bool:

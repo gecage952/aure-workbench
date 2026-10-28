@@ -187,13 +187,17 @@ def _compared(
 
 def _analysis_status(experiment: Any, project: Path) -> dict[str, Any]:
     """``analysis/`` on Tiled against this project's fits."""
+    from nr_workbench.project.layout import ProjectLayout
+    from nr_workbench.provenance.index import FitIndex
     from nr_workbench.tiled.analysis import ANALYSIS_TREE, fit_records, label_of
     from nr_workbench.tiled.context import plan_push, read_remote
-    from nr_workbench.tiled.pull import fits_of, model_state
+    from nr_workbench.tiled.pull import fits_of
 
     remote = read_remote(experiment, ANALYSIS_TREE)
     fits, left = fit_records(project, remote)
     records, only_on_tiled = _compared(plan_push(fits, remote, ANALYSIS_TREE), remote)
+    index = FitIndex(ProjectLayout(root=project).index_file)
+    known = {str(entry.get("fit_id")) for entry in index.fits()}
     return {
         "found": remote.node is not None,
         "records": records,
@@ -207,7 +211,7 @@ def _analysis_status(experiment: Any, project: Path) -> dict[str, Any]:
                 "method": there.get("method"),
                 "chisq": there.get("chisq"),
                 "curation": label_of(dict(there)),
-                "here": model_state(project, sample, fit_id, there),
+                "here": fit_id in known,
             }
             for sample, fit_id, there in fits_of(remote)
         ],
@@ -308,17 +312,15 @@ def _echo_analysis(analysis: dict[str, Any]) -> None:
     for fit in analysis["left"]:
         click.echo(f"  left: {fit['fit_id']}, {fit['why']}")
     alone = set(analysis["only_on_tiled"])
-    shown = {
-        "pulled": "its model is here",
-        "differs": "another model of its name is here",
-        "absent": "`nrw tiled pull --fits` writes its model here",
-    }
     for fit in analysis["fits"]:
         path = f"{fit['sample']}/{fit['fit_id']}"
         if path in alone:
+            where = (
+                "here" if fit["here"] else "not here; `nrw tiled pull --fits` brings it"
+            )
             click.echo(
                 f"  = {path}  {fit['curation']}, {fit['method']}, chisq "
-                f"{fit['chisq']}: {shown[fit['here']]}"
+                f"{fit['chisq']}: {where}"
             )
 
 
@@ -529,13 +531,12 @@ def run_pull(
     yes: bool = False,
 ) -> None:
     """Bring back from Tiled what a colleague needs: the catalog, the reduced
-    files, and the fits' models, in that order.
+    files, and the fits, in that order.
 
     ``--context`` writes Tiled's records into the catalog, Tiled's copy
     winning, after one confirmation. ``--data`` copies each reduced file the
-    data folder lacks. ``--fits`` writes each fit's spec, script and
-    ``model.md`` into its sample's ``models/``, and says how to run it again.
-    Nothing is written on Tiled.
+    data folder lacks. ``--fits`` rebuilds each fit as it was recorded
+    (:func:`nr_workbench.tiled.pull.pull_fits`). Nothing is written on Tiled.
     """
     from nr_workbench.tiled.server import EXPERIMENT_PATH, connect, experiment_node
 
@@ -657,7 +658,7 @@ def _pull_data(
 
 
 def _pull_fits(project: Path, experiment: Any, place: str, *, dry_run: bool) -> None:
-    """Each fit's model files, into its sample's ``models/``."""
+    """Each fit, rebuilt here as Tiled records it."""
     from nr_workbench.tiled.analysis import ANALYSIS, ANALYSIS_TREE
     from nr_workbench.tiled.context import read_remote
     from nr_workbench.tiled.pull import data_applied, fits_of, pull_fits
@@ -669,28 +670,35 @@ def _pull_fits(project: Path, experiment: Any, place: str, *, dry_run: bool) -> 
     pulled = pull_fits(project, found, write=not dry_run)
     for fit in pulled:
         said = f"{fit.label}, {fit.method or 'fitter unknown'}, chisq {fit.chisq}"
-        if fit.script is None:
-            click.echo(f"  - {fit.sample}/{fit.fit_id}  {said}: {fit.why_not}")
+        path = f"{fit.sample}/{fit.fit_id}"
+        if fit.why_not:
+            click.echo(f"  - {path}  {said}: {fit.why_not}")
             continue
-        if fit.written:
-            click.echo(
-                f"  + {fit.sample}/{fit.fit_id}  {said}: {', '.join(fit.written)}"
-            )
+        if fit.here:
+            click.echo(f"  = {path}  {said}: here already")
         else:
+            click.echo(f"  + {path}  {said}: {', '.join(fit.written)}")
+        for held in fit.held:
             click.echo(
-                f"  = {fit.sample}/{fit.fit_id}  {said}: {fit.script} is here already"
+                f"      {held} holds another file here, left: the fit's own copy "
+                "is in its data/"
             )
-        click.echo(f"      {fit.command}")
-    for sample in sorted({fit.sample for fit in pulled if fit.script}):
+        for label, holder in fit.kept:
+            click.echo(f"      {label}: {holder} holds it here, and keeps it")
+        if fit.command:
+            click.echo(f"      {fit.command}")
+    for sample in sorted({fit.sample for fit in pulled if fit.script and not fit.here}):
         if not data_applied(project, sample):
             click.echo(
-                f"  {sample}: its data is not applied yet. `nrw experiment apply "
-                "--write`, once the pulled files have settled, copies it in."
+                f"  {sample}: its data is not applied yet, for its models to read. "
+                "`nrw experiment apply --write`, once the pulled files have "
+                "settled, copies it in."
             )
     if dry_run:
         click.echo("Nothing written (--dry-run).")
         return
     click.echo(
-        "Each command runs that fit again here: its results are this project's "
+        "Each fit is here as it was recorded, on the Fits page. Its command runs "
+        "it again from its own problem file: the results are this project's "
         "own, to look at before going on, finalizing it or exporting it."
     )

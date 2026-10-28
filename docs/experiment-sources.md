@@ -201,11 +201,11 @@ own command line, to an agent.
 | Command | What it does |
 |---|---|
 | `nrw tiled login`, `logout` | Tiled's device-code login through Globus (tiled.ornl.gov first asks which login: choose `globus`); the client keeps the login, and renews it, in its own token cache |
-| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, each record there, the experiment's context and each fit, against this project's, whether each fit's model is here, and which reduced files there the data folder lacks |
+| `nrw tiled status` | whose the login is, whether the experiment is on Tiled, each record there, the experiment's context and each fit, against this project's, whether each fit there is here, and which reduced files there the data folder lacks |
 | `nrw tiled push` | writes the project's catalog to the experiment's `context/`, and its starred and final fits to `analysis/`; `--only context` or `--only fits` writes one |
 | `nrw tiled pull --context` | writes Tiled's runs, samples and experiment context into the catalog |
 | `nrw tiled pull --data` | copies the experiment's reduced files into the data folder |
-| `nrw tiled pull --fits` | writes each fit's spec, script and `model.md` into its sample's `models/`, and prints the command that runs it again |
+| `nrw tiled pull --fits` | rebuilds each fit here as it was recorded, with the reduced files it read, and writes its spec and script into its sample's `models/` |
 
 The server is `TILED_URL` (tiled.ornl.gov by default), and `TILED_API_KEY`
 is sent instead of a login when set: both read as nrw's other settings are,
@@ -223,13 +223,31 @@ before their runs. Other programs may read and write there too.
 **Fits.** `analysis/` holds a container per sample, and one per fit in it:
 `analysis/<sample>/<fit_id>/`, for each starred fit and each sample's final
 one. Tiled 0.2.18 takes no file from a project member, so a fit's record is
-its metadata (spec `analysis-fit`, version 1): the index's fields, its
-curation, its `manifest.json`, `inputs.json` and `env/versions.json` whole,
-its parameters with DREAM's statistics, its assessment, and its `model.py`,
-`spec.yaml`, `model.md` and `NOTES.md` as text, each with its sha256. The
-chains, curves and figures are left out: running the fit again makes them. A
-fit unstarred, discarded or deleted here keeps its record on Tiled, and the
-next push writes its curation over Tiled's copy. Nothing is removed there.
+its metadata (spec `analysis-fit`, version 2). It is the fit as analysed
+data, in four parts, each file as text with its sha256:
+
+- **The model**: bumps' own file of the fitted problem, `fit/<model>.json`.
+  It holds the stack, every parameter at the fit's value with its bounds,
+  the instrument's settings and the measured data. refl1d loads it as it is
+  (`bumps.serialize.deserialize`), and computes R(q) and the SLD profile from
+  it.
+- **The intent**: `spec.yaml` and `model.py`, with `model.md` and `NOTES.md`.
+- **The result**: each parameter with DREAM's statistics (std, median, 68%
+  and 95% intervals), bumps' `.par` and `-err.json`, the chi-squared, points,
+  free parameters and convergence, the assessment, and each segment's
+  `-refl.dat` (Q, the data and the theory), `-slabs.dat` and SLD profile,
+  thinned to at most 400 points.
+- **The provenance**: the reduced files as the fit read them, with the
+  headers that name their reduction, by their paths in `inputs.json`; the
+  fit's index line, `inputs.json`, `manifest.json` and `env/versions.json`;
+  the fitter, its settings and the seed; the curation, with each promotion's
+  reason, who and when; and who pushed it, when. A reduced file changed since
+  the fit read it is named, with why, and not carried.
+
+A record is about 250 kB for a fit of three segments. The chains and the
+figures stay here: `nrw fit run --from` makes them again. A fit unstarred,
+discarded or deleted here keeps its record on Tiled, and the next push writes
+its curation over Tiled's copy. Nothing is removed there.
 
 **The last writer wins.** A push writes each record that differs over
 Tiled's copy, keeping the fields another program keeps on it, and leaves the
@@ -263,16 +281,45 @@ Each edit is held to the catalog's own rules, and a record they refuse is
 named and nothing is written; a save made on the Experiment page meanwhile is
 not written over either: pull again.
 
-**Pulling fits.** `pull --fits` writes each fit's `spec.yaml`, `model.py` and
-`model.md` into its sample's `models/`, as `<model>.yaml`, `.py` and `.md`. A
-model of that name holding the same files is here already, and is left; one
-holding other files is kept, and the fit's are written as `<model>-2`, as are
-a second fit's of the same model, the final one taking the plain name. A fit
-discarded or deleted is listed, and not pulled. For each fit
-the pull prints the `nrw fit run` line that runs it again, with the fitter,
-settings and seed it ran with, and a note naming the fit on Tiled. The run is
-this project's own fit, with results of its own, to look at before going on,
-finalizing it or exporting it to ISAAC.
+**Pulling fits.** `pull --fits` rebuilds each fit as Tiled records it, in
+`samples/<sample>/results/<fit_id>/`: its files, its curves at the thinned
+profile, and its own copy of each reduced file it read, under its `data/` at
+the path it read it from. Each of those files is also written where the fit
+read it, in the sample's `data/`, when nothing is there: the fit's inputs are
+then this project's, and its model in `models/` reads the data it was fitted
+to. Its index line is then appended, then its star and its labels, each
+promotion with its reason, who and when. It is on the Fits page as it was.
+
+Nothing is overwritten. A reduced file of the same name there already, such
+as the facility's reduction applied first, is left, and the pull names it:
+the fit then reads as stale, its own copy kept in its `data/`. A
+`nrw experiment apply --write` afterwards leaves the pulled files alone too,
+and lists each as a conflict to look at. A label another fit holds here, such
+as the sample's `final`, stays that fit's, and the pull says so. A file in
+the fit's directory there already is left, so a pull stopped partway is
+finished by the next one, and a fit the index holds already is left whole. A
+fit discarded or deleted is listed, and not pulled.
+
+Its `spec.yaml`, `model.py` and `model.md` also go into its sample's
+`models/`, as `<model>.yaml`, `.py` and `.md`, to go on from. A model of that
+name holding the same files is here already, and is left; one holding other
+files is kept, and the fit's are written as `<model>-2`, as are a second
+fit's of the same model, the final one taking the plain name. A push from the
+project afterwards finds each pulled fit as Tiled holds it, and writes
+nothing for it.
+
+**Running a fit again.** `nrw fit run --from <fit_id>`, run in the project,
+runs a recorded fit again from its own problem file, for a posterior of this
+project's own. Its fitter, that fitter's settings and its seed are the fit's
+own, but for those given on the command line; another fitter takes none of
+them, and how many CPUs is this machine's to say. The new fit's inputs are
+that file, with the role `problem`, and the measurements the fit recorded,
+which the file holds: `nrw diff` of the two says the data are the same. Its
+settings name the fit as `regenerated_from`. It is this project's own fit,
+with results of its own, to look at before going on, finalizing it or
+exporting it to ISAAC. The pull prints this command for each fit with a
+problem file, and the `nrw fit run` line of its script in `models/` for one
+without.
 
 **Starting from Tiled.** A colleague who joins an experiment starts a project
 of their own:
@@ -284,12 +331,17 @@ of their own:
 3. `nrw tiled login`.
 4. `nrw tiled pull --context --data --fits`, which pulls in that order.
 5. `nrw experiment apply --write`, once the pulled files have settled: it
-   writes each sample's `sample.md` and copies its data.
-6. Each fit's printed `nrw fit run` line.
+   writes each sample's `sample.md` and copies its data. It leaves the
+   reduced files the fits pull wrote, and lists as a conflict each one the
+   facility's reduction holds otherwise.
+6. Each fit on the Fits page, as it was recorded. `nrw fit run --from
+   <fit_id>`, the line the pull prints for it, runs one again.
 
 A push and a status run against a real Tiled 0.2.18, started with uvx apart
-from nrw's environment, in `pytest -m tiled_server`, and so do a fit pushed
-and a colleague's pull of the catalog and the fit. A Globus login, the tags
+from nrw's environment, in `pytest -m tiled_server`. So do a fit's record of
+a three-segment fit's size, read back as it was written, and a colleague's
+pull of the catalog and the fit, whose problem file bumps loads at the
+chi-squared recorded. A Globus login, the tags
 and `pull --data` are tested against a fake of the client alone, and were
 each checked once against tiled.ornl.gov (2026-10-27).
 

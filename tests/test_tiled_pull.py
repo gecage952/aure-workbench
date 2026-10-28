@@ -21,10 +21,13 @@ from click.testing import CliRunner
 from nr_workbench.cli import main
 from nr_workbench.experiment.model import RunChange, RunKey
 from nr_workbench.experiment.store import ParquetCatalogStore
+from nr_workbench.provenance.whence import Freshness
 
 from .test_tiled_analysis import (  # noqa: F401 - fixtures
+    DATA,
     SCRIPT,
     SPEC,
+    STEADY,
     A,
     B,
     experiment,
@@ -196,47 +199,204 @@ def test_a_record_the_catalogs_rules_refuse_is_named_and_nothing_is_written(
 # --------------------------------------------------------------------------
 
 
-COMMAND = (
-    "nrw fit run samples/S1/models/film.py --method dream --samples 1000 "
-    f"--burn 50 --seed 7 --note 'regenerated from {A}, pulled from Tiled'"
-)
+def check_inputs(directory: Path, root: Path):
+    from nr_workbench.provenance.whence import check_inputs
+
+    return check_inputs(directory, root)
 
 
-def test_a_fits_pull_writes_each_fits_model_and_says_how_to_run_it_again(
+def index_of(root: Path):
+    from nr_workbench.provenance.index import FitIndex
+
+    return FitIndex(root / ".nrw" / "index.jsonl")
+
+
+def curation_of(root: Path, fit_id: str):
+    from nr_workbench.provenance.curation import replay
+
+    return replay(index_of(root).entries()).of(fit_id)
+
+
+def test_a_fits_pull_rebuilds_each_fit_as_it_was_recorded(
     project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
 ) -> None:
-    fitted(project)
+    import json
+
+    ours = fitted(project)
     starred(project)
     pushed(project)
 
     shown = pulled(colleague, "--fits")
 
     assert shown.exit_code == 0, shown.output
+    assert (
+        f"+ S1/{A}  starred, dream, chisq 1.2: samples/S1/results/{A}/, "
+        f"{STEADY}, samples/S1/models/film.yaml, samples/S1/models/film.py"
+    ) in shown.output
+    assert f"nrw fit run --from {A}" in shown.output
+    theirs = colleague / "samples" / "S1" / "results" / A
+    for name in (
+        "model.py",
+        "spec.yaml",
+        "NOTES.md",
+        "fit/film.json",
+        "fit/film.par",
+        "fit/film-err.json",
+        "fit/film-1-refl.dat",
+        "fit/film-1-slabs.dat",
+    ):
+        assert (theirs / name).read_bytes() == (ours / name).read_bytes(), name
+    for name in ("manifest.json", "inputs.json", "env/versions.json"):
+        assert json.loads((theirs / name).read_text()) == json.loads(
+            (ours / name).read_text()
+        ), name
+    profile = (theirs / "fit" / "film-1-profile.dat").read_text().splitlines()
+    assert profile[0].startswith("#") and len(profile) <= 401
+    assert (colleague / STEADY).read_bytes() == DATA
+    assert (theirs / "data" / STEADY).read_bytes() == DATA
+    assert check_inputs(theirs, colleague)[1] is Freshness.FRESH
+    assert not (theirs / "fit" / "film.mc.gz").exists()
+    assert index_of(colleague).find(A)["chisq"] == 1.2
+    assert curation_of(colleague, A).starred
     models = colleague / "samples" / "S1" / "models"
     assert (models / "film.py").read_bytes() == SCRIPT
     assert (models / "film.yaml").read_text() == SPEC
-    assert f"+ S1/{A}  starred, dream, chisq 1.2" in shown.output
-    assert COMMAND in shown.output
-    assert "S1: its data is not applied yet" in shown.output
 
 
-def test_a_model_here_already_is_left_and_another_of_its_name_kept(
+def test_a_final_fit_is_pulled_with_why_it_is_the_answer(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    from nr_workbench.project.layout import ProjectLayout
+    from nr_workbench.provenance import curation
+
+    fitted(project)
+    curation.promote(ProjectLayout(root=project), A, reason="the dry reference")
+    pushed(project)
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
+    (ours,) = [e for e in index_of(project).entries() if e["event"] == "promote"]
+    held = curation_of(colleague, A).promotions["final"]
+    said = ("reason", "who", "at", "forced")
+    assert {k: held[k] for k in said} == {k: ours[k] for k in said}
+
+
+def test_a_label_another_fit_holds_here_stays_that_fits(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    from nr_workbench.project.layout import ProjectLayout
+    from nr_workbench.provenance import curation
+
+    fitted(project)
+    curation.promote(ProjectLayout(root=project), A, reason="theirs")
+    pushed(project)
+    fitted(colleague, B)
+    curation.promote(ProjectLayout(root=colleague), B, reason="mine")
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
+    assert f"final: {B} holds it here, and keeps it" in shown.output
+    assert curation_of(colleague, B).labels == ("final",)
+    assert curation_of(colleague, A).labels == ()
+    assert index_of(colleague).find(A) is not None
+
+
+def test_a_fit_the_index_holds_already_is_left_whole(
     project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
 ) -> None:
     fitted(project)
     starred(project)
     pushed(project)
     pulled(colleague, "--fits")
+    notes = colleague / "samples" / "S1" / "results" / A / "NOTES.md"
+    notes.write_text("# The colleague's own notes\n")
 
     again = pulled(colleague, "--fits")
-    models = colleague / "samples" / "S1" / "models"
-    (models / "film.py").write_text("# the colleague's own film\n")
-    beside = pulled(colleague, "--fits")
 
-    assert "samples/S1/models/film.py is here already" in again.output
+    assert again.exit_code == 0, again.output
+    assert f"= S1/{A}  starred, dream, chisq 1.2: here already" in again.output
+    assert notes.read_text() == "# The colleague's own notes\n"
+    assert [e["fit_id"] for e in index_of(colleague).fits()] == [A]
+
+
+def test_a_file_there_already_is_left_and_the_rest_are_written(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    """A pull stopped partway leaves the files it wrote, and no index line:
+    the next one writes the rest."""
+    ours = fitted(project)
+    starred(project)
+    pushed(project)
+    notes = colleague / "samples" / "S1" / "results" / A / "NOTES.md"
+    notes.parent.mkdir(parents=True)
+    notes.write_text("# Written before\n")
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
+    assert notes.read_text() == "# Written before\n"
+    assert (notes.parent / "model.py").read_bytes() == (ours / "model.py").read_bytes()
+    assert index_of(colleague).find(A) is not None
+
+
+def test_a_reduced_file_here_already_is_left_and_the_fit_keeps_its_own_copy(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    """The facility's reduction, applied here first, under the same name: the
+    fit reads as stale here, and a push still carries the file it read."""
+    fitted(project)
+    starred(project)
+    pushed(project)
+    reduced_again = b"# Reduction 2.11\n0.01 0.9 0.1 0.001\n"
+    (colleague / STEADY).parent.mkdir(parents=True)
+    (colleague / STEADY).write_bytes(reduced_again)
+
+    shown = pulled(colleague, "--fits")
+    push = nrw("push", "--root", str(colleague), "--yes", "--only", "fits")
+
+    assert shown.exit_code == 0, shown.output
+    assert f"{STEADY} holds another file here, left" in shown.output
+    assert (colleague / STEADY).read_bytes() == reduced_again
+    theirs = colleague / "samples" / "S1" / "results" / A
+    assert (theirs / "data" / STEADY).read_bytes() == DATA
+    assert check_inputs(theirs, colleague)[1] is Freshness.STALE
+    assert "0 new, 0 changed, 1 the same" in push.output, push.output
+    carried = experiment[f"analysis/S1/{A}"].metadata["data"][STEADY]
+    assert carried["text"].encode() == DATA
+
+
+def test_a_fit_with_no_problem_file_says_to_run_its_script(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    (fitted(project) / "fit" / "film.json").unlink()
+    starred(project)
+    pushed(project)
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
+    assert "      nrw fit run samples/S1/models/film.py\n" in shown.output
+    assert "--from" not in shown.output
+
+
+def test_a_model_of_the_same_name_here_is_kept_and_the_fits_written_beside_it(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    fitted(project)
+    starred(project)
+    pushed(project)
+    models = colleague / "samples" / "S1" / "models"
+    models.mkdir(parents=True)
+    (models / "film.py").write_text("# the colleague's own film\n")
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
     assert (models / "film.py").read_text() == "# the colleague's own film\n"
     assert (models / "film-2.py").read_bytes() == SCRIPT
-    assert "nrw fit run samples/S1/models/film-2.py" in beside.output
+    assert "samples/S1/models/film-2.py" in shown.output
 
 
 def test_a_script_with_no_spec_is_written_alone(
@@ -264,8 +424,11 @@ def test_a_fits_dry_run_writes_nothing(
 
     shown = pulled(colleague, "--fits", "--dry-run")
 
+    assert f"+ S1/{A}  starred" in shown.output
     assert "Nothing written (--dry-run)." in shown.output
+    assert not (colleague / "samples" / "S1" / "results").exists()
     assert not (colleague / "samples" / "S1" / "models" / "film.py").exists()
+    assert index_of(colleague).fits() == []
 
 
 def test_two_fits_of_one_model_are_named_apart_in_a_dry_run_as_in_a_pull(
@@ -287,9 +450,13 @@ def test_two_fits_of_one_model_are_named_apart_in_a_dry_run_as_in_a_pull(
 
     for shown in (dry, real):
         assert shown.exit_code == 0, shown.output
-        assert f"+ S1/{B}  final" in shown.output
-        assert "nrw fit run samples/S1/models/film.py --method dream" in shown.output
-        assert "nrw fit run samples/S1/models/film-2.py --method dream" in shown.output
+        lines = shown.output.splitlines()
+        (final,) = [line for line in lines if line.startswith(f"  + S1/{B}  final")]
+        (other,) = [line for line in lines if line.startswith(f"  + S1/{A}  starred")]
+        assert final.endswith("samples/S1/models/film.yaml, samples/S1/models/film.py")
+        assert other.endswith(
+            "samples/S1/models/film-2.yaml, samples/S1/models/film-2.py"
+        )
     models = colleague / "samples" / "S1" / "models"
     assert (models / "film.py").read_bytes() == refined
     assert (models / "film-2.py").read_bytes() == SCRIPT
@@ -311,7 +478,28 @@ def test_a_fit_set_aside_is_listed_and_not_pulled(
 
     assert shown.exit_code == 0, shown.output
     assert f"- S1/{A}  discarded, dream, chisq 1.2: not pulled" in shown.output
+    assert not (colleague / "samples" / "S1" / "results" / A).exists()
     assert not (colleague / "samples" / "S1" / "models" / "film.py").exists()
+
+
+def test_a_push_after_a_pull_finds_the_fit_as_tiled_holds_it(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    """The pulled fit is starred here too, so the colleague's push writes it:
+    its record is Tiled's, the reduced files it read still in it."""
+    fitted(project)
+    starred(project)
+    pushed(project)
+    pulled(colleague, "--fits")
+    before = list(tiled.root.log)
+
+    shown = nrw("push", "--root", str(colleague), "--yes", "--only", "fits")
+
+    assert shown.exit_code == 0, shown.output
+    assert "0 new, 0 changed, 1 the same" in shown.output
+    assert tiled.root.log == before
+    data = experiment[f"analysis/S1/{A}"].metadata["data"][STEADY]
+    assert data["text"].encode() == DATA
 
 
 def test_another_programs_node_in_analysis_is_left_alone(
@@ -387,7 +575,7 @@ def test_status_says_what_a_push_writes_in_analysis(
     assert found["analysis"]["records"]["replace"] == [f"S1/{A}"]
 
 
-def test_status_says_whether_a_fit_on_tiled_has_its_model_here(
+def test_status_says_whether_each_fit_on_tiled_is_here(
     project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
 ) -> None:
     import json
@@ -402,8 +590,9 @@ def test_status_says_whether_a_fit_on_tiled_has_its_model_here(
 
     assert "1 on Tiled alone" in before.output
     assert (
-        f"= S1/{A}  starred, dream, chisq 1.2: `nrw tiled pull --fits` writes its "
-        "model here"
+        f"= S1/{A}  starred, dream, chisq 1.2: not here; `nrw tiled pull --fits` "
+        "brings it"
     ) in before.output
     (fit,) = found["analysis"]["fits"]
-    assert (fit["fit_id"], fit["here"]) == (A, "pulled")
+    assert (fit["fit_id"], fit["here"]) == (A, True)
+    assert found["analysis"]["records"]["same"] == [f"S1/{A}"]

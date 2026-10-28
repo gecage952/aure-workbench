@@ -184,6 +184,35 @@ def load_problem(script: Path, *, root: Path | None = None) -> LoadedProblem:
     )
 
 
+def problem_path(fit_dir: Path) -> Path | None:
+    """Bumps' file of a fit's problem, ``fit/<model>.json``: the model, its
+    parameters at the fit's values, and its data. ``None`` when the fit left
+    none."""
+    for path in sorted((Path(fit_dir) / "fit").glob("*.json")):
+        if not path.name.endswith(("-err.json", "-expt.json")):
+            return path
+    return None
+
+
+def load_problem_file(path: Path) -> LoadedProblem:
+    """Load a problem file as bumps' export wrote it (:func:`problem_path`).
+
+    It reads no other file: the data are in it.
+
+    Raises:
+        FitError: Bumps cannot load it.
+    """
+    import json
+
+    from bumps.serialize import deserialize
+
+    try:
+        problem = deserialize(json.loads(Path(path).read_text(encoding="utf-8")))
+    except Exception as exc:  # noqa: BLE001 - whatever bumps raises, it did not load
+        raise FitError(f"{path} could not be loaded: {exc}") from exc
+    return LoadedProblem(problem=problem, opened=[])
+
+
 def _filter_inputs(opened: set[str], *, script: Path, root: Path | None) -> list[Path]:
     """Reduce observed opens to the data files that count as fit inputs.
 

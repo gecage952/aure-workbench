@@ -329,9 +329,17 @@ def push(
             else:
                 there = parent[record.key]
                 # Fields another program keeps on it stay; nrw's are written
-                # over theirs. Its specs and its tags are left as they are.
+                # over theirs. It says what it is now in the record's spec,
+                # which replaces any version of it; another program's specs
+                # and its tags stay.
+                others = [
+                    spec
+                    for spec in getattr(there, "specs", None) or ()
+                    if getattr(spec, "name", None) != record.spec[0]
+                ]
                 there.replace_metadata(
-                    metadata={**dict(there.metadata), **record.fields}
+                    metadata={**dict(there.metadata), **record.fields},
+                    specs=[Spec(*record.spec), *others],
                 )
             written.append(item)
     except httpx.HTTPError as exc:
