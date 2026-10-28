@@ -87,7 +87,7 @@ change has to be fixed.
 
 ```bash
 pytest                        # ~2,900 tests, under two minutes; fits nothing
-pytest -m fit                 # the 33 that run real fits, for fitting code
+pytest -m fit                 # the 32 that run real fits, for fitting code
 pytest -m tiled_server        # nrw tiled against a real Tiled 0.2.18 (uvx)
 pytest --record-fits TESTS    # re-record fits the default run replays
 ruff check src tests          # lint
