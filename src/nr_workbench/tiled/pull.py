@@ -21,7 +21,7 @@ import json
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from nr_workbench.experiment.model import (
@@ -312,6 +312,13 @@ def pull_fits(
         if label in SET_ASIDE:
             pulled.append(PulledFit(**common, why_not="not pulled"))
             continue
+        stray = _stray(sample, fit_id, there)
+        if stray:
+            why = (
+                f"its record names {stray!r}, which would be written outside its place"
+            )
+            pulled.append(PulledFit(**common, why_not=why))
+            continue
         if fit_id in known:
             pulled.append(
                 PulledFit(**common, here=True, command=_command(fit_id, there, None))
@@ -324,7 +331,16 @@ def pull_fits(
                     atomic_write_bytes(directory / relative, data)
         data, held = _place_data(layout, there, placed, write=write)
         script, models = _pull_model(layout, sample, fit_id, there, given, write=write)
-        entry = dict(there.get("index") or {k: there.get(k) for k in INDEX_FIELDS})
+        # A fit line, for the fit where the record sits on Tiled, whatever the
+        # record's own line says.
+        entry = {
+            key: value
+            for key, value in (
+                there.get("index") or {k: there.get(k) for k in INDEX_FIELDS}
+            ).items()
+            if key != "event"
+        }
+        entry.update(fit_id=fit_id, sample=sample)
         if write:
             index.append(entry)
         curation = there.get("curation") or {}
@@ -356,6 +372,54 @@ def pull_fits(
             )
         )
     return pulled
+
+
+def _stray(sample: str, fit_id: str, there: Mapping[str, Any]) -> str:
+    """The first name or path in a fit's record that would put a file outside
+    its place; ``""`` when none would.
+
+    Its sample, its id, its model and each of its files must each be one
+    name; each reduced file it read, a path inside the project.
+    """
+    from nr_workbench.tiled.analysis import CURVES
+
+    names = [sample, fit_id, _model_of(there, fit_id)]
+    if there.get("problem"):
+        names.append(there["problem"].get("name"))
+    names.extend(there.get("fit") or {})
+    for segment in there.get("curves") or ():
+        names.extend(segment[part].get("name") for part in CURVES if part in segment)
+    for name in names:
+        if not _one_name(name):
+            return str(name)
+    for recorded in there.get("data") or {}:
+        if not _in_project(recorded):
+            return str(recorded)
+    return ""
+
+
+def _one_name(name: Any) -> bool:
+    """Whether *name* names one file or folder, on any system nrw runs on."""
+    return (
+        isinstance(name, str)
+        and name not in ("", ".", "..")
+        and "/" not in name
+        and "\\" not in name
+        and not PureWindowsPath(name).drive
+    )
+
+
+def _in_project(recorded: Any) -> bool:
+    """Whether *recorded*, a path as ``inputs.json`` records it, stays inside
+    the project: relative, with no ``..``."""
+    if not isinstance(recorded, str) or not recorded or "\\" in recorded:
+        return False
+    path = PurePosixPath(recorded)
+    return (
+        not path.is_absolute()
+        and ".." not in path.parts
+        and not PureWindowsPath(recorded).drive
+    )
 
 
 def _place_data(

@@ -12,6 +12,7 @@ client of `tests/test_tiled_sync.py`.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import click
@@ -480,6 +481,109 @@ def test_a_fit_set_aside_is_listed_and_not_pulled(
     assert f"- S1/{A}  discarded, dream, chisq 1.2: not pulled" in shown.output
     assert not (colleague / "samples" / "S1" / "results" / A).exists()
     assert not (colleague / "samples" / "S1" / "models" / "film.py").exists()
+
+
+@pytest.mark.parametrize(
+    "field", ["absolute data", "data", "problem", "fit file", "curve", "model"]
+)
+def test_a_record_naming_a_path_outside_its_place_is_refused_whole(
+    project: Path,
+    colleague: Path,
+    tiled: FakeTiled,
+    experiment: FakeNode,
+    tmp_path: Path,
+    field: str,
+) -> None:
+    fitted(project)
+    starred(project)
+    pushed(project)
+    record = experiment[f"analysis/S1/{A}"].metadata
+    outside = tmp_path / "outside.dat"
+    value = {
+        "absolute data": str(outside),
+        "data": os.path.relpath(outside, colleague),
+        "problem": "../film.json",
+        "fit file": "../film.par",
+        "curve": "../../film-1-refl.dat",
+        "model": "../../film",
+    }[field]
+    if field.endswith("data"):
+        record["data"] = {value: record["data"][STEADY]}
+    elif field == "problem":
+        record["problem"] = {**record["problem"], "name": value}
+    elif field == "fit file":
+        record["fit"] = {value: record["fit"]["film.par"]}
+    elif field == "curve":
+        record["curves"][0]["refl"]["name"] = value
+    else:
+        record["model"] = value
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
+    assert (
+        f"- S1/{A}  starred, dream, chisq 1.2: its record names {value!r}, which "
+        "would be written outside its place"
+    ) in shown.output
+    assert not outside.exists()
+    assert not (colleague / "samples" / "S1" / "results").exists()
+    assert index_of(colleague).fits() == []
+
+
+@pytest.mark.parametrize("where", ["sample", "fit"])
+def test_a_sample_or_fit_named_as_a_path_is_refused(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode, where: str
+) -> None:
+    from .test_tiled_sync import FakeSpec
+
+    fitted(project)
+    starred(project)
+    pushed(project)
+    record = dict(experiment[f"analysis/S1/{A}"].metadata)
+    analysis = experiment["analysis"]
+    if where == "sample":
+        sample = analysis.create_container(
+            "..", metadata={"sample_id": ".."}, specs=[FakeSpec("analysis-sample", "1")]
+        )
+        sample.create_container(
+            B, metadata=record, specs=[FakeSpec("analysis-fit", "2")]
+        )
+        named = ".."
+    else:
+        named = "../../x"
+        experiment["analysis/S1"].create_container(
+            named, metadata=record, specs=[FakeSpec("analysis-fit", "2")]
+        )
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
+    assert f"its record names {named!r}" in shown.output
+    assert [e["fit_id"] for e in index_of(colleague).fits()] == [A]
+
+
+def test_a_pulled_fit_line_is_a_plain_fit_line_for_that_fit(
+    project: Path, colleague: Path, tiled: FakeTiled, experiment: FakeNode
+) -> None:
+    """A record's own index line cannot make an event, or speak for another
+    fit: here, the colleague's own."""
+    fitted(project)
+    starred(project)
+    pushed(project)
+    fitted(colleague, B)
+    record = experiment[f"analysis/S1/{A}"].metadata
+    record["index"] = {**record["index"], "event": "delete", "fit_id": B}
+
+    shown = pulled(colleague, "--fits")
+
+    assert shown.exit_code == 0, shown.output
+    lines = [e for e in index_of(colleague).entries() if e["fit_id"] in (A, B)]
+    assert [(e["event"], e["fit_id"]) for e in lines] == [
+        ("fit", B),
+        ("fit", A),
+        ("star", A),
+    ]
+    assert not curation_of(colleague, B).deleted
 
 
 def test_a_push_after_a_pull_finds_the_fit_as_tiled_holds_it(

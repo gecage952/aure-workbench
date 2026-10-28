@@ -287,8 +287,9 @@ profile, and its own copy of each reduced file it read, under its `data/` at
 the path it read it from. Each of those files is also written where the fit
 read it, in the sample's `data/`, when nothing is there: the fit's inputs are
 then this project's, and its model in `models/` reads the data it was fitted
-to. Its index line is then appended, then its star and its labels, each
-promotion with its reason, who and when. It is on the Fits page as it was.
+to. Its index line is then appended, as a fit line for the fit where the
+record sits on Tiled, then its star and its labels, each promotion with its
+reason, who and when. It is on the Fits page as it was.
 
 Nothing is overwritten. A reduced file of the same name there already, such
 as the facility's reduction applied first, is left, and the pull names it:
@@ -298,7 +299,12 @@ and lists each as a conflict to look at. A label another fit holds here, such
 as the sample's `final`, stays that fit's, and the pull says so. A file in
 the fit's directory there already is left, so a pull stopped partway is
 finished by the next one, and a fit the index holds already is left whole. A
-fit discarded or deleted is listed, and not pulled.
+fit discarded or deleted is listed, and not pulled. So is a record that would
+put a file outside its place: its sample, its id, its model and each of its
+files must each be one name, and each reduced file's path must stay inside
+the project, with no `..`. Anyone with write access to the experiment's node
+can write a record there, so the pull holds each one to this before it writes
+any of it.
 
 Its `spec.yaml`, `model.py` and `model.md` also go into its sample's
 `models/`, as `<model>.yaml`, `.py` and `.md`, to go on from. A model of that
@@ -314,7 +320,11 @@ project's own. Its fitter, that fitter's settings and its seed are the fit's
 own, but for those given on the command line; another fitter takes none of
 them, and how many CPUs is this machine's to say. The new fit's inputs are
 that file, with the role `problem`, and the measurements the fit recorded,
-which the file holds: `nrw diff` of the two says the data are the same. Its
+which the file holds: `nrw diff` of the two says the data are the same.
+Bumps builds each class a problem file names and unpickles each function in
+it, so a file that holds a pickled function, or names a class outside
+refl1d's and bumps' own model classes, is refused before it loads; the fit's
+script in `models/` still runs it, as code to read first. Its
 settings name the fit as `regenerated_from`. It is this project's own fit,
 with results of its own, to look at before going on, finalizing it or
 exporting it to ISAAC. The pull prints this command for each fit with a

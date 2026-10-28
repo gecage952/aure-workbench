@@ -183,3 +183,62 @@ def test_a_fit_run_again_records_its_problem_file_and_the_fit_it_came_from(
     assert (entry["settings"]["method"], entry["settings"]["steps"]) == ("amoeba", 12)
     assert (directory / "fit" / "film.json").is_file()
     assert not (directory / "model.py").exists()
+
+
+def test_a_recorded_problem_file_loads_at_its_chisq(project: Path) -> None:
+    from nr_workbench.fitting.runner import load_problem_file
+
+    problem = recorded(project, DREAM)
+
+    loaded = load_problem_file(problem)
+
+    recorded_chisq = FitIndex(project / ".nrw" / "index.jsonl").find(SOURCE)["chisq"]
+    assert loaded.problem.chisq() == pytest.approx(recorded_chisq, rel=1e-12)
+
+
+class _Touch:
+    """A pickle that touches *path* as it is loaded."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def __reduce__(self):
+        return (Path.touch, (self.path,))
+
+
+def _planted(problem: Path, marker: Path, how: str) -> None:
+    """Add to *problem* a node that makes *marker* as bumps loads it: a class
+    bumps calls with the file's arguments, or a pickle it loads."""
+    import pickle
+
+    from bumps.serialize import serialize_bytes
+
+    document = json.loads(problem.read_text())
+    node = (
+        {"__class__": "os.mkdir", "path": str(marker)}
+        if how == "class"
+        else {
+            "__class__": "Callable",
+            "pickler": "dill",
+            "pickle": serialize_bytes(pickle.dumps(_Touch(marker))),
+        }
+    )
+    document["references"]["planted"] = node
+    problem.write_text(json.dumps(document))
+
+
+@pytest.mark.parametrize(
+    ("how", "said"),
+    [("class", "the class 'os.mkdir'"), ("pickle", "a pickled function")],
+)
+def test_a_problem_file_that_would_run_code_is_refused_before_it_loads(
+    project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, how: str, said: str
+) -> None:
+    marker = tmp_path / "ran"
+    _planted(recorded(project, DREAM), marker, how)
+
+    shown = fit_run(project, monkeypatch, "--from", SOURCE)
+
+    assert shown.exit_code != 0
+    assert f"holds {said}, so nrw does not load it" in shown.output
+    assert not marker.exists()
