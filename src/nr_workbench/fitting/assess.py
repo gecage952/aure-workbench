@@ -1194,16 +1194,14 @@ def as_markdown(assessment: Assessment) -> str:
     judgement = assessment.judgement
     if judgement:
         lines += ["### What a language model made of it", ""]
-        # Inert again here, whatever the verdict's reader did: a line that
-        # closed the generated fence would count as the scientist's own note.
         quality = judgement.get("quality_assessment")
         if quality:
-            lines += [f"Quality: **{inert(quality)}**", ""]
+            lines += [f"Quality: **{quality}**", ""]
         for key, heading in VERDICT_LISTS:
             items = judgement.get(key) or []
             if items:
                 lines.append(f"{heading}:")
-                lines += [f"- {inert(item)}" for item in items]
+                lines += [f"- {item}" for item in items]
                 lines.append("")
         lines += [
             "<!-- Written by a language model from the numbers, sample.md and the",

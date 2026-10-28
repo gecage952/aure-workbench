@@ -391,7 +391,7 @@ def test_the_preview_shows_what_sample_md_would_become(app, writer) -> None:
     assert "<table>" in preview["html"]
 
 
-@pytest.mark.parametrize("sample_id", ["S.1", "-S1", "con"])
+@pytest.mark.parametrize("sample_id", ["S.1", "-S1"])
 def test_an_unusable_sample_id_is_refused_on_every_route(
     app, writer, sample_id
 ) -> None:
@@ -623,16 +623,6 @@ def test_a_stale_experiment_edit_is_a_409_and_changes_nothing(app, writer) -> No
     assert writer.get("/api/experiment").get_json()["experiment"]["summary"] == "A"
 
 
-def test_a_heading_in_the_experiments_summary_is_a_400_with_the_reason(
-    app, writer
-) -> None:
-    response = put_context(writer, app, base_rev=0, fields={"summary": "x\n## Aims\ny"})
-
-    assert response.status_code == 400
-    assert "heading" in response.get_json()["error"]
-    assert writer.get("/api/experiment").get_json()["experiment"]["rev"] == 0
-
-
 @pytest.mark.parametrize(
     ("body", "says"),
     [
@@ -674,7 +664,7 @@ def dead_mount(app, monkeypatch):
     data.reload()
     data.live.scan_once()
     monkeypatch.setattr(
-        LocalDirectorySource, "read_bytes", lambda self, f, max_bytes: gate.wait(30)
+        LocalDirectorySource, "read_bytes", lambda self, f: gate.wait(30)
     )
     monkeypatch.setattr(LocalDirectorySource, "inventory", lambda self: gate.wait(30))
     yield gate

@@ -168,7 +168,6 @@
         : "Why is it set aside? Its files are kept, and it can be restored.";
       $("curate-go").textContent = what === "finalize" ? "Finalize" : "Discard";
       $("curate-reason").value = "";
-      $("curate-reason").maxLength = said.max_reason;
       $("curate-reason").focus();
     }
 

@@ -214,14 +214,11 @@ is part of: a **Summary** of what the proposal sets out to learn, the
 anything else every measurement needs. It opens by itself until something is
 written in it, and then folds away, showing its first line. It is kept in the
 catalog and written to no file, so this panel is the one place to change it;
-`nrw experiment status --json` shows it. A heading line, `<!--` or `-->`, and
-an unclosed code block are refused in it, as in a sample's context: it is
-quoted into the instructions a language model is given, where each would
-change how they read. A table of runs is allowed. The unattended agent's
-instructions quote it ahead of each sample's task, **New model** sends it
-beside the sample's notes, and `nrw tiled push` writes it to the experiment's
-`context/` on Tiled. Each checks it again as it reads it: a part that a
-committed catalog brought in breaking these rules is left out, and said to be.
+`nrw experiment status --json` shows it. It is written into no `sample.md`,
+so none of the rules below apply to it. The unattended agent's instructions
+quote it ahead of each sample's task, **New model** sends it beside the
+sample's notes, and `nrw tiled push` writes it to the experiment's `context/`
+on Tiled.
 
 Click a sample to fill in its context. Each box becomes the section of
 `sample.md` it is named after:
@@ -246,22 +243,17 @@ its notes. They stay in the catalog and on the page, but are not written into
 The preview shows the `sample.md` that will be written.
 
 Some text is refused, with the reason, because a reader of `sample.md` would
-misread it. A run's notes are held to the same rules, since they are written
-there too:
+misread it:
 
 - **A heading line inside a box.** A `## Fits to perform` typed into the
   Description would become the agent's task.
 - **`<!--` or `-->`.** These hide text from readers that strip comments.
 - **A `|` in a condition.** It splits the table cell.
-- **An unclosed code block.**
 - **A second table with a Run column.**
-- **A line in Measurement conditions that reads as a run's notes**,
-  `- Run 218386: ...`. That is how sample.md writes each run's notes, so the
-  line would be read back as that run's. Put it in the run's notes under
-  **Measurements**, where it is kept with the run.
-- **In a run's notes, a heading or a code block**, however it is indented.
-  A note is written inside its run's entry, where indenting it does not make
-  it harmless.
+
+A run's notes may not hold `<!--`, `-->` or a table with a Run column either.
+A heading line in them is kept: sample.md indents a note's lines under its
+run, where no reader takes one for a heading.
 
 ## Applying
 
@@ -422,11 +414,9 @@ git ignores, for the newest 20 jobs. Like the rest of the page, it can be read
 by anyone who can open the page, link or not.
 
 Fitting again when nothing has changed -- the spec, the data, the settings --
-is refused, as `nrw fit run` refuses it: the result would be the one you have.
-The Fit panel says so, links that fit, and offers **Run again anyway**, which
-records a replicate. **run again even if nothing changed** in the form does the
-same from the start. Notes in `sample.md` are not among what a fit reads: to
-fit what you wrote there, put it in the spec, or ask AuRE again.
+records a replicate of the fit you have, as `nrw fit run` does, and its log
+names that fit. Notes in `sample.md` are not among what a fit reads: to fit
+what you wrote there, put it in the spec, or ask AuRE again.
 
 **Cancel** stops the fit and every process it started. What the fit had written
 so far stays where it is, and `nrw check` lists it as an interrupted run, as it
@@ -454,10 +444,8 @@ residuals, parameters and the other fits of its model.
   another first.
 - **Delete files…** frees the disk, the fit's `NOTES.md` included. It is
   offered only for a fit already discarded, and only after you confirm. A fit
-  that anything uses keeps its files, and the page says what uses it: a
-  report in any sample that cites it or drew a figure from it, another fit
-  that read its files, or ISAAC records made or pushed from it. The record
-  that the fit ran stays in the index. The Fits list shows it as deleted,
+  whose files another fit read keeps them, and the page names that fit. The
+  record that the fit ran stays in the index. The Fits list shows it as deleted,
   behind **Show the discarded**, and its own page is gone with its files.
 
 Each of these is recorded in the fit index (`.nrw/index.jsonl`) with who and
@@ -493,14 +481,11 @@ finalized. The panel has three steps, each run as a job:
 3. **Push…** publishes exactly those records, after you confirm. What leaves
    the project is the data, the fitted model and the notes: `sample.md`, the
    fit's `NOTES.md`, the reason it was finalized, and any report that cites
-   it. It does not export again, so what the server checked is what it gets. The portal keeps
-   what it is given, so the push is recorded with the fit before it starts,
-   with the files it sends, and after it ends, with the id of every record the
-   portal made. A push that fails part way, or is stopped, is recorded as one
-   that may have made records. A copy of what was sent is kept in
-   `isaac/published/`, so a later export cannot change the record of it.
-   Pushing again adds new records and replaces none, and the page says so
-   first. The push refuses if the portal changed since you confirmed.
+   it. It does not export again, so what the server checked is what it gets.
+   Once the push has run, it is recorded with the fit: the files it sent and
+   their digests, the id of every record the portal made, and whether it
+   finished. Pushing again adds new records and replaces none, and the page
+   says so first.
 
 Once another fit is finalized in its place, the panel offers nothing more, but
 a fit that was pushed keeps its list of pushes on its page.
@@ -601,7 +586,7 @@ and the last writer wins. See [experiment-sources.md](experiment-sources.md),
 An assistant can read the experiment, with `nrw experiment status --json` and
 the page's API, and can preview `apply` and `settings`. It cannot assign,
 apply, adopt, release or change the settings. Which sample a run belongs to is a claim about the experiment, like
-promoting a fit, so those commands are refused under `NRW_AGENT` and the agent
+promoting a fit, so the project's hook refuses those commands, and the agent
 is told to write its proposal in `ESCALATIONS.md`.
 
 ## Not yet

@@ -6,8 +6,8 @@
  * Every value that came from a file or a person is set with textContent. Run
  * titles are typed by an operator at the instrument, and will later come from
  * a remote source; a title containing markup must render as text. The one
- * exception is the sample.md preview, which the server renders with raw HTML
- * disabled -- exactly as the sample page renders sample.md.
+ * exception is the sample.md preview, which the server renders as HTML,
+ * exactly as the sample page renders sample.md.
  */
 "use strict";
 
@@ -761,7 +761,7 @@
       const [label, cls] = MD_STATE[preview.state] || [preview.state || "", "text-bg-light"];
       badge.className = "badge ms-auto " + cls;
       badge.textContent = "sample.md " + label;
-      /* Rendered by the server with raw HTML disabled, as on the sample page. */
+      /* Rendered by the server, as on the sample page. */
       $("expt-preview").innerHTML = preview.html || "";
       const adoptable = state.writable &&
         (preview.state === "drifted" || preview.state === "untracked" || !preview.managed);

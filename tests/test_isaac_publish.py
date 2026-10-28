@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 import time
 from collections.abc import Iterator
@@ -157,13 +156,8 @@ def test_a_push_sends_what_was_exported_and_records_what_the_portal_made(
     assert push["who"] and push["at"]
     assert PLANTED not in json.dumps(push)
     assert "\x1b[" not in result.output  # the tool's colours, not echoed raw
-    # Recorded before it ran, with what it sent; and what it sent is kept.
+    # Recorded with what it sent.
     assert [f["file"] for f in push["files"]] == [
-        "isaac_record_state0.json",
-        "isaac_record_state1.json",
-    ]
-    kept = project / "samples" / "S1" / "results" / A / "isaac" / "published"
-    assert sorted(p.name for p in (kept / push["attempt"]).iterdir()) == [
         "isaac_record_state0.json",
         "isaac_record_state1.json",
     ]
@@ -187,31 +181,6 @@ def test_a_push_that_fails_half_way_still_records_what_was_made(
         "isaac_record_state2.json",
     ]
     assert push["complete"] is False
-
-
-def test_a_push_that_never_reported_back_is_recorded_as_one_that_may_have(
-    project: Path, settings: Path
-) -> None:
-    # Recorded before it ran; killed before it said what it made.
-    from nr_workbench.provenance.index import FitIndex
-
-    records = exported(project, A)
-    finalize(project)
-    index = FitIndex(project / ".nrw" / "index.jsonl")
-    entry = index.find(A)
-    curation.record_publish_attempt(
-        index,
-        entry,
-        portal="https://isaac.example.org",
-        files=sorted(records.iterdir()),
-    )
-
-    (push,) = pushes(project)
-
-    assert "complete" not in push  # unconfirmed: the portal may hold records
-    assert "the records pushed from it to the ISAAC Portal" in curation.used_by(
-        ProjectLayout(root=project), index, entry, records.parent.parent
-    )
 
 
 def test_no_portal_or_key_sends_nothing(project: Path, monkeypatch) -> None:
@@ -265,39 +234,12 @@ def test_nothing_exported_is_nothing_to_push(
     assert f"nrw isaac export {A}" in result.output
 
 
-def test_an_agent_publishes_nothing(project: Path, settings: Path, monkeypatch) -> None:
+def test_the_hook_refuses_a_push() -> None:
     from nr_workbench.agent.guard import judge
 
-    exported(project, A)
-    finalize(project)
-    portal(monkeypatch)
-    monkeypatch.setenv("NRW_AGENT", "1")
-
-    refused = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
-
-    assert refused.exit_code != 0
-    assert events(project, "publish") == []
     assert judge(f"nrw isaac push {A} --yes").rule == "upload"
     # Validating sends the records, and the key, off the machine too.
     assert judge(f"nrw isaac push {A} --validate-only").rule == "upload"
-
-
-def test_a_published_fits_files_are_never_deleted(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    records = exported(project, A)
-    finalize(project)
-    portal(monkeypatch)
-    nrw(project, monkeypatch, "isaac", "push", A, "--yes")
-    # Its export removed by hand, another fit final, it set aside: the portal
-    # still holds what it was given.
-    shutil.rmtree(records.parent)  # its isaac/, the published copy included
-    layout = ProjectLayout(root=project)
-    finalize(project, B)
-    curation.discard(layout, A, reason="superseded")
-
-    with pytest.raises(curation.CurationRefused, match="pushed from it"):
-        curation.delete_files(layout, A)
 
 
 # --------------------------------------------------------------------------

@@ -701,15 +701,8 @@ def test_from_notes_sends_the_experiments_context(
     assert "Summary:\nDoes Li plate on Cu?" in user
 
 
-@pytest.mark.parametrize(
-    ("loaded", "says"),
-    [
-        ("left-out", "! Left out of the request: the experiment's summary"),
-        ("unreadable", "! The experiment's catalog could not be read"),
-    ],
-)
-def test_from_notes_tells_the_person_what_of_the_experiment_it_lacks(
-    project: Path, monkeypatch: pytest.MonkeyPatch, loaded: str, says: str
+def test_from_notes_tells_the_person_the_experiment_could_not_be_read(
+    project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The person, not only the language model: a request without the
     experiment's context is weaker, as one without a skill is."""
@@ -717,13 +710,10 @@ def test_from_notes_tells_the_person_what_of_the_experiment_it_lacks(
 
     from nr_workbench import aure_adapter
     from nr_workbench.cli import main
-    from nr_workbench.experiment.model import Catalog, ExperimentContext
     from nr_workbench.experiment.store import CatalogCorruptError, ParquetCatalogStore
 
     def load(self):
-        if loaded == "unreadable":
-            raise CatalogCorruptError("the runs table does not match its manifest")
-        return Catalog(experiment=ExperimentContext(summary="## a\nx", rev=1))
+        raise CatalogCorruptError("runs.parquet cannot be read")
 
     root = sample_with_data(project)
     monkeypatch.setattr(ParquetCatalogStore, "exists", lambda self: True)
@@ -743,7 +733,7 @@ def test_from_notes_tells_the_person_what_of_the_experiment_it_lacks(
     )
 
     assert result.exit_code == 0, result.output
-    assert says in result.output
+    assert "! The experiment's catalog could not be read" in result.output
 
 
 def test_from_notes_asks_with_each_runs_condition(

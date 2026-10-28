@@ -82,11 +82,6 @@ STEADY_DIR = "steady"
 #: Where excluded and reassigned runs are moved, under ``data/``.
 EXCLUDED_DIR = "excluded"
 
-#: Largest file apply will copy. Reduced REF_L files are tens of kilobytes; this
-#: only stops something that is not reduced data from being copied because it
-#: happened to be named like it.
-MAX_FILE_BYTES = 16 * 1024 * 1024
-
 #: One apply at a time in this process; see :class:`ApplyBusy`.
 _APPLY_LOCK = threading.Lock()
 
@@ -629,9 +624,7 @@ def _already_copied(
     # it really did: a new inode or ctime alone (another client, a restore) is
     # not a re-reduction.
     try:
-        fresh = hashlib.sha256(
-            source.read_bytes(listed, max_bytes=MAX_FILE_BYTES)
-        ).hexdigest()
+        fresh = hashlib.sha256(source.read_bytes(listed)).hexdigest()
     except Exception as exc:  # noqa: BLE001 - reported, not raised
         return FileAction(
             run,
@@ -659,9 +652,7 @@ def _hand_copied(
 ) -> FileAction:
     """A file with the source's name that nrw did not copy."""
     try:
-        fresh = hashlib.sha256(
-            source.read_bytes(listed, max_bytes=MAX_FILE_BYTES)
-        ).hexdigest()
+        fresh = hashlib.sha256(source.read_bytes(listed)).hexdigest()
     except Exception as exc:  # noqa: BLE001 - reported, not raised
         return FileAction(
             run,
@@ -883,7 +874,7 @@ def _copy_runs(
             for action in actions:
                 assert action.source is not None
                 try:
-                    data = source.read_bytes(action.source, max_bytes=MAX_FILE_BYTES)
+                    data = source.read_bytes(action.source)
                     reduced_table(data)
                 except Exception as exc:  # noqa: BLE001 - the run is skipped, and says why
                     failure = f"{action.name}: {exc}"
@@ -939,30 +930,16 @@ def _copy_runs(
 
 
 def _place(source: Path, target: Path) -> None:
-    """Move *source* to *target*, refusing if *target* exists by then.
-
-    ``os.replace`` would silently overwrite a file that appeared at the target
-    after the plan was made -- a copy made by hand in the minutes between
-    review and apply. A hard link fails instead, atomically, which is the
-    never-overwrite rule enforced by the filesystem rather than by a check
-    that could race.
+    """Move *source* to *target*, refusing if *target* exists by then: a copy
+    made by hand between review and apply is never overwritten.
 
     Raises:
         FileExistsError: *target* exists.
         OSError: Anything else that stops the move.
     """
-    try:
-        os.link(source, target)
-    except FileExistsError:
-        raise
-    except OSError:
-        # No hard links on this filesystem: the check-then-replace fallback,
-        # with its small race, is the best that remains.
-        if target.exists() or target.is_symlink():
-            raise FileExistsError(f"{target.name} already exists") from None
-        os.replace(source, target)
-        return
-    source.unlink()
+    if target.exists():
+        raise FileExistsError(f"{target.name} already exists")
+    os.replace(source, target)
 
 
 def _move(

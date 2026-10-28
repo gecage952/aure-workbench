@@ -33,10 +33,6 @@ class SourceChangedError(Exception):
     """A file changed between being listed and being read."""
 
 
-class SourceFileTooLarge(Exception):
-    """A file is larger than a reduced file could plausibly be."""
-
-
 class DataSource(Protocol):
     """Where reduced data comes from.
 
@@ -54,12 +50,11 @@ class DataSource(Protocol):
         """Every run the source can see now. Never raises for missing data."""
         ...
 
-    def read_bytes(self, file: SourceFile, *, max_bytes: int) -> bytes:
+    def read_bytes(self, file: SourceFile) -> bytes:
         """The exact bytes of one listed file.
 
         Raises:
             SourceChangedError: If the file is no longer the version listed.
-            SourceFileTooLarge: If it is larger than ``max_bytes``.
             OSError: If it cannot be read.
         """
         ...

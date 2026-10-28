@@ -82,8 +82,8 @@ class _BoundedSource:
     def inventory(self) -> Any:
         return self._source.inventory()
 
-    def read_bytes(self, file: Any, *, max_bytes: int) -> bytes:
-        return self._bounded(self._source.read_bytes, file, max_bytes=max_bytes)
+    def read_bytes(self, file: Any) -> bytes:
+        return self._bounded(self._source.read_bytes, file)
 
 
 class RequestError(ValueError):
@@ -391,7 +391,6 @@ class ExperimentData:
             SourceTimeoutError: If the source does not answer in time.
         """
         w = self._wired()
-        from nr_workbench.experiment.apply import MAX_FILE_BYTES
         from nr_workbench.web.readers import read_reduced_bytes
 
         key = RunKey.parse(run)
@@ -419,7 +418,7 @@ class ExperimentData:
                 else f"{key.run} combined"
             )
             try:
-                data = source.read_bytes(source_file, max_bytes=MAX_FILE_BYTES)
+                data = source.read_bytes(source_file)
                 curve = read_reduced_bytes(data, label=label, name=source_file.name)
             except (SourceTimeoutError, Busy):
                 raise  # the source, not this segment: said once, for the request

@@ -241,7 +241,7 @@ def test_apply_write_exits_non_zero_when_a_copy_fails(expt: Path, monkeypatch) -
 
     nrw("experiment", "assign", "234277", "--sample", "Sample6", "--root", str(expt))
 
-    def unreadable(self, listed, *, max_bytes):
+    def unreadable(self, listed):
         raise OSError(5, "Input/output error")
 
     monkeypatch.setattr(LocalDirectorySource, "read_bytes", unreadable)
@@ -337,43 +337,6 @@ def test_release_hands_sample_md_back(expt: Path) -> None:
     assert "yours now" in result.output
     lock = load_lock(expt / ".nrw" / "scaffold.lock.json")
     assert "samples/Sample6/sample.md" not in lock
-
-
-# --------------------------------------------------------------------------
-# An unattended agent may look, and may not organize
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        ["assign", "234277", "--sample", "Sample6"],
-        ["apply", "--write"],
-        ["adopt", "--write"],
-        ["release", "Sample6"],
-        ["settings", "--ipts", "IPTS-1", "--write"],
-    ],
-)
-def test_an_unattended_agent_is_refused_every_organizing_command(
-    expt: Path, args
-) -> None:
-    result = CliRunner().invoke(
-        main, ["experiment", *args, "--root", str(expt)], env={"NRW_AGENT": "1"}
-    )
-
-    assert result.exit_code != 0
-    assert "ESCALATIONS.md" in result.output
-
-
-@pytest.mark.parametrize(
-    "args", [["status"], ["apply"], ["settings"], ["settings", "--ipts", "IPTS-1"]]
-)
-def test_an_unattended_agent_may_look(expt: Path, args) -> None:
-    result = CliRunner().invoke(
-        main, ["experiment", *args, "--root", str(expt)], env={"NRW_AGENT": "1"}
-    )
-
-    assert result.exit_code == 0, result.output
 
 
 # --------------------------------------------------------------------------

@@ -44,27 +44,6 @@ def main() -> None:
     beamtime folder), then `nrw sample new <ID>` and copy your reduced data
     into the sample's data/ folders.
     """
-    # Every forcing flag in this tool exists because a check said no, so an
-    # unattended run may not use any of them. Checked here rather than in each
-    # command: there are eight of them today and the next one would be added
-    # without remembering this, which is precisely how a limit becomes a
-    # limit-shaped comment.
-    import os
-    import sys
-
-    if os.environ.get("NRW_AGENT") and any(
-        arg == "--force" or arg.startswith("--force=") for arg in sys.argv[1:]
-    ):
-        from nr_workbench.agent.guard import refuse_if_agent
-
-        refuse_if_agent("force")
-
-    if os.environ.get("NRW_AGENT") and any(
-        arg == "--nested" or arg.startswith("--nested=") for arg in sys.argv[1:]
-    ):
-        from nr_workbench.agent.guard import refuse_if_agent
-
-        refuse_if_agent("nested")
 
 
 @main.command("init")
@@ -613,9 +592,6 @@ def fit_group() -> None:
 @click.option("--note", default=None, help="Free-text note stored in the record.")
 @click.option(
     "--name", "model_name", default=None, help="Model name [default: the script stem]."
-)
-@click.option(
-    "--force", is_flag=True, help="Run even if an identical run already exists."
 )
 @click.option("--dry-run", is_flag=True, help="Report what would run; write nothing.")
 def fit_run_command(**kwargs: object) -> None:

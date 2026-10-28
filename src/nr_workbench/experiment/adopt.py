@@ -370,7 +370,7 @@ def parse_sample_md(text: str) -> ParsedSample:
     kept: dict[int, str] = {}
     for run, note in notes.items():
         try:
-            kept[run] = clean_prose("note", note)
+            kept[run] = clean_prose("note", note, headings=False)
         except CatalogValidationError as exc:
             leftovers.append(f"the note on run {run}: {exc}")
     return ParsedSample(

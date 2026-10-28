@@ -22,7 +22,7 @@ from typing import Any
 
 from nr_workbench.experiment.model import Catalog, RunKey
 from nr_workbench.tiled import server as server_module
-from nr_workbench.tiled.server import TiledSyncError, said, tags_of
+from nr_workbench.tiled.server import TiledSyncError, tags_of
 
 #: The containers a push writes, in the experiment's own node.
 CONTEXT = "context"
@@ -107,16 +107,13 @@ class ExperimentPlan:
     Attributes:
         action: ``create`` when Tiled has no copy of it, ``replace``,
             ``same``, or ``none`` when there is nothing of it to write.
-        fields: The fields a push writes, each held to the page's rules again.
+        fields: The fields a push writes.
         changed: Those that differ from Tiled's copy.
-        left_out: Those that break the rules as saved now: never written, and
-            Tiled's copy of them is left as it is.
     """
 
     action: str
     fields: Mapping[str, str] = field(default_factory=dict)
     changed: tuple[str, ...] = ()
-    left_out: tuple[str, ...] = ()
 
     @property
     def writes(self) -> bool:
@@ -127,32 +124,20 @@ class ExperimentPlan:
 def plan_experiment(catalog: Catalog, remote: Remote) -> ExperimentPlan:
     """What a push of *catalog*'s experiment context over *remote* would do."""
     from nr_workbench.experiment.model import EXPERIMENT_FIELDS
-    from nr_workbench.experiment.quoted import quotable_record
 
     if not catalog.experiment.rev:
         return ExperimentPlan("none")
-    quoted = quotable_record(catalog.experiment)
-    # A field cleared on the page is written as cleared; one left out is not
-    # written at all.
-    fields = {
-        name: quoted.fields.get(name, "")
-        for name in EXPERIMENT_FIELDS
-        if name not in quoted.left_out
-    }
-    if not fields:
-        # Every field written breaks the rules: there is nothing to write.
-        return ExperimentPlan("none", left_out=quoted.left_out)
+    # A field cleared on the page is written as cleared.
+    fields = {name: getattr(catalog.experiment, name) for name in EXPERIMENT_FIELDS}
     there = (
         dict(remote.context.metadata).get(EXPERIMENT)
         if remote.context is not None
         else None
     )
     if not isinstance(there, Mapping):
-        return ExperimentPlan("create", fields, tuple(fields), quoted.left_out)
+        return ExperimentPlan("create", fields, tuple(fields))
     changed = tuple(name for name, value in fields.items() if there.get(name) != value)
-    return ExperimentPlan(
-        "replace" if changed else "same", fields, changed, quoted.left_out
-    )
+    return ExperimentPlan("replace" if changed else "same", fields, changed)
 
 
 def records_of(catalog: Catalog) -> list[Record]:
@@ -258,14 +243,10 @@ def push(
                 access_tags=context_tags,
             )
         elif writes:
-            # Read again, as each record is: the copy planned from is as old
-            # as the question the person was asked, and a key another
-            # program wrote since would be lost.
-            context = experiment[CONTEXT]
             metadata = dict(context.metadata)
             there = metadata.get(EXPERIMENT)
             there = dict(there) if isinstance(there, Mapping) else {}
-            # nrw's fields over Tiled's; a field left out keeps Tiled's copy.
+            # nrw's fields over Tiled's; a key another program keeps there stays.
             context.replace_metadata(
                 metadata={**metadata, EXPERIMENT: {**there, **own}}
             )
@@ -303,7 +284,7 @@ def push(
             written.append(item)
     except httpx.HTTPError as exc:
         raise TiledSyncError(
-            f"{where} could not be written: {said(exc)}. {len(written)} record(s) "
+            f"{where} could not be written: {exc}. {len(written)} record(s) "
             "were written before it; push again to write the rest."
         ) from None
     return written

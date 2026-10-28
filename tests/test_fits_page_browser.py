@@ -259,41 +259,6 @@ def test_the_isaac_panel_is_for_the_final_fit_and_asks_before_it_pushes(
     assert f"isaac push --yes -- {A}" in text(page, "isaac-log")
 
 
-def test_a_push_that_never_reported_back_is_shown_as_one_that_may_have(
-    page: Page, site: Site, project: Path, tmp_path: Path, monkeypatch
-) -> None:
-    from nr_workbench import env as env_module
-    from nr_workbench.provenance.index import FitIndex
-    from nr_workbench.web import isaac as isaac_module
-
-    monkeypatch.setattr(isaac_module, "_installed", lambda name: True)
-    settings = tmp_path / "nrw-settings"
-    settings.write_text(
-        "ISAAC_URL=https://isaac.example.org/api\nISAAC_KEY=k-1234567\n"
-    )
-    monkeypatch.setattr(env_module, "USER_ENV_PATH", settings)
-    records = project / "samples" / "S1" / "results" / A / "isaac" / "records"
-    records.mkdir(parents=True)
-    (records / "isaac_record_state0.json").write_text("{}")
-    curation.promote(ProjectLayout(root=project), A, reason="the answer")
-    index = FitIndex(project / ".nrw" / "index.jsonl")
-    curation.record_publish_attempt(
-        index,
-        index.find(A),
-        portal="https://isaac.example.org/api",
-        files=sorted(records.iterdir()),
-    )
-
-    open_page(page, site, f"/f/{A}")
-    page.wait_for(
-        "document.getElementById('isaac-published').textContent.length > 0",
-        what="the pushes listed",
-    )
-
-    shown = text(page, "isaac-published")
-    assert "may have made records" in shown and "0 record" not in shown
-
-
 def test_a_fit_pushed_while_final_still_says_so_once_it_is_not(
     page: Page, site: Site, project: Path, monkeypatch
 ) -> None:
@@ -304,8 +269,13 @@ def test_a_fit_pushed_while_final_still_says_so_once_it_is_not(
     layout = ProjectLayout(root=project)
     curation.promote(layout, A, reason="the answer")
     index = FitIndex(project / ".nrw" / "index.jsonl")
-    curation.record_publish_attempt(
-        index, index.find(A), portal="https://isaac.example.org/api", files=[]
+    curation.record_publish(
+        index,
+        index.find(A),
+        portal="https://isaac.example.org/api",
+        files=[],
+        records=[],
+        complete=True,
     )
     curation.promote(layout, B, reason="a better answer")
 

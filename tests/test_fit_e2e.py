@@ -215,28 +215,16 @@ def test_fit_run_appends_one_index_entry(
 
 
 @pytest.mark.fit
-def test_identical_rerun_is_refused_by_default(
-    fitted_project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Refusing a no-op re-run is what prevents twelve identical result dirs."""
-    assert do_fit(fitted_project, monkeypatch).exit_code == 0
-
-    second = do_fit(fitted_project, monkeypatch)
-
-    assert second.exit_code != 0
-    assert "identical run already exists" in second.output
-    assert len(fit_dirs(fitted_project)) == 1
-
-
-@pytest.mark.fit
-def test_identical_rerun_is_allowed_with_force_and_marked_a_replicate(
+def test_an_identical_rerun_is_recorded_as_a_replicate(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert do_fit(fitted_project, monkeypatch).exit_code == 0
     first = only_fit_dir(fitted_project).name
 
-    assert do_fit(fitted_project, monkeypatch, "--force").exit_code == 0
+    second = do_fit(fitted_project, monkeypatch)
 
+    assert second.exit_code == 0, second.output
+    assert "identical run already exists" in second.output
     directories = fit_dirs(fitted_project)
     assert len(directories) == 2
     replicate = next(d for d in directories if d.name != first)

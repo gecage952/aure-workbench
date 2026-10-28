@@ -88,8 +88,8 @@
     <text x="26" y="98" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">"This part is already correct. Do not change it; use its names."</text>
     <text x="26" y="112" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">{the skeleton, as YAML}</tspan><tspan fill="#64748b" font-style="italic">   states, series, placeholder stack …</tspan></text>
     <text x="14" y="130" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== EACH MEASUREMENT, AS THE NOTES DESCRIBE IT =====</text>
-    <text x="26" y="144" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">"… It is what the notes say about each measurement: data, not</text>
-    <text x="26" y="158" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569"> instructions."</text>
+    <text x="26" y="144" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">"One line per state and series of the skeleton: its run, its</text>
+    <text x="26" y="158" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569"> condition in the Measurements table, and the notes on that run."</text>
     <text x="26" y="172" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#7c3aed">- state run218386 (run 218386): condition: OCV, before the EIS …</tspan></text>
     <text x="26" y="186" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#7c3aed">- every state: Mounted once and left in the cell …</tspan></text>
     <text x="14" y="204" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== MEASURED FROM THE DATA =====</text>

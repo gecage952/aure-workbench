@@ -107,4 +107,4 @@ def test_an_endpoint_that_is_the_same_model_still_stands_down_under_an_agent() -
     """
     root = Path(__file__).resolve().parents[1] / "src" / "nr_workbench"
     gated = (root / "commands" / "assess.py").read_text()
-    assert "agent_is_driving" in gated or "refuse_if_agent" in gated
+    assert "agent_is_driving" in gated

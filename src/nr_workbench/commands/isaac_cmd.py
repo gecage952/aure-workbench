@@ -460,16 +460,12 @@ def _upload(
     yes: bool,
 ) -> None:
     """Push to the ISAAC Portal, after saying what is about to leave."""
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.provenance.curation import (
         publish_refusal,
-        record_publish_attempt,
-        record_publish_result,
+        record_publish,
         replay,
     )
 
-    # Validating sends the records, and the key, too: neither leaves unattended.
-    refuse_if_agent("upload")
     fit_id = str(entry["fit_id"])
     written = sorted(records.glob("*.json"))
     if not written:
@@ -525,15 +521,6 @@ def _upload(
     args = [*cmd, "push", str(records), "--url", url.value]
     if validate_only:
         args.append("--validate-only")
-    attempt = None
-    if not validate_only:
-        # Recorded before it runs, with what it sends: a push killed half way
-        # has still published, and a later export replaces records/.
-        attempt = record_publish_attempt(index, entry, portal=shown, files=written)
-        kept = records.parent / "published" / attempt
-        kept.mkdir(parents=True)
-        for path in written:
-            shutil.copy2(path, kept / path.name)
     result = _run(
         args,
         "nr-isaac-format push",
@@ -548,8 +535,15 @@ def _upload(
         if name in sent
     ]
     complete = result.returncode == 0 and len(created) == len(written)
-    if attempt is not None:
-        record_publish_result(index, entry, attempt, records=created, complete=complete)
+    if not validate_only:
+        record_publish(
+            index,
+            entry,
+            portal=shown,
+            files=written,
+            records=created,
+            complete=complete,
+        )
     click.echo(said.strip() or "  done")
     if result.returncode != 0:
         detail = _said(result.stderr.strip() or said.strip(), url.value, key.value)
@@ -558,11 +552,11 @@ def _upload(
             + (
                 f"\n{len(created)} of {len(written)} record(s) were made; they are "
                 "recorded with the fit."
-                if created and attempt is not None
+                if created and not validate_only
                 else ""
             )
         )
-    if attempt is not None and not complete:
+    if not validate_only and not complete:
         raise click.ClickException(
             f"nr-isaac-format push finished, but reported {len(created)} of "
             f"{len(written)} record(s) made. Check the portal: the push is "

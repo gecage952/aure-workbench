@@ -47,7 +47,7 @@ class DataSource(Protocol):
     kind: str
     def describe(self) -> dict: ...
     def inventory(self) -> Inventory: ...        # every run it can see, now
-    def read_bytes(self, file: SourceFile, *, max_bytes: int) -> bytes: ...
+    def read_bytes(self, file: SourceFile) -> bytes: ...
 ```
 
 A source never decides anything. Two decisions are made once, outside the
@@ -234,9 +234,8 @@ lacks, and leaves alone every one it holds: neither a size nor a time tells a
 file reduced again from the same one, so deleting a file is how it is copied
 again. Each lands under a hidden name of its own first and is renamed whole;
 the folder watcher does the rest. Only names the reduction writes are copied.
-It copies into the data folder `nrw.toml` names, or `--into DIR`, and never
-into nrw's default, the facility's own reduction folder, which the reduction
-writes for the whole experiment. `--run` narrows it to some runs, and
+It copies into the data folder `nrw.toml` names, or `--into DIR`. `--run`
+narrows it to some runs, and
 `nrw tiled status` says which files a pull would copy, before it is run. A
 pulled run counts as complete once its files have settled, as any new file does
 (five minutes by default).

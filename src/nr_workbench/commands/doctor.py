@@ -305,14 +305,8 @@ def _project_harnesses(root: Path) -> tuple[str, ...]:
 
 
 def _agent_checks() -> list[Check]:
-    """Report whether an unattended session could run here, and be limited.
-
-    Both halves matter and they fail independently. A project can have the
-    harness installed and no limits configured, which is worse than having
-    neither -- it is the state where `nrw agent run` works and nothing stops a
-    promotion. A project scaffolded before `.claude/settings.json` existed is
-    exactly that state, so this says so rather than staying quiet.
-    """
+    """Report whether an unattended session could run here: a harness on PATH,
+    and a project scaffolded for one that can be driven."""
     import os
 
     from nr_workbench.agent.session import (
@@ -348,118 +342,18 @@ def _agent_checks() -> list[Check]:
     except ProjectNotFoundError:
         return checks
 
-    # Which limits apply depends on what the project is scaffolded for. Telling
-    # a project to run `nrw init` for a file `nrw init` will not write there is
-    # worse than saying nothing: it sends someone to re-run a command, see no
-    # change, and conclude the check is broken.
-    configured_harnesses = _project_harnesses(root)
-    drivers = [h for h in resolve(configured_harnesses) if h.drives_sessions]
+    drivers = [h for h in resolve(_project_harnesses(root)) if h.drives_sessions]
     if not drivers:
         checks.append(
             Check(
-                "agent limits",
+                "agent run",
                 "warn",
                 "this project is not scaffolded for a harness that can be run "
                 "unattended, so `nrw agent run` will refuse to start here. "
                 "`nrw init --harness claude` sets one up.",
             )
         )
-        return checks
-
-    # Each driveable harness gets its own line: they check different files, and
-    # a project set up for two can easily have one guarded and one not.
-    from nr_workbench.harness.driver import GuardMissing
-
-    for harness in drivers:
-        if harness.name == "claude" or harness.verify_guard is None:
-            continue
-        try:
-            harness.verify_guard(root)
-        except GuardMissing as exc:
-            checks.append(
-                Check(f"{harness.name} limits", "warn", str(exc).splitlines()[0])
-            )
-        else:
-            checks.append(
-                Check(
-                    f"{harness.name} limits",
-                    _OK,
-                    "guard plugin and deny rules installed",
-                )
-            )
-
-    if not any(h.name == "claude" for h in drivers):
-        return checks
-
-    settings = root / ".claude" / "settings.json"
-    if not settings.is_file():
-        checks.append(
-            Check(
-                "agent limits",
-                "warn",
-                "no .claude/settings.json; run `nrw init` to add the hook that "
-                "refuses promote, curation, publishing and --force",
-            )
-        )
-        return checks
-
-    try:
-        configured = json.loads(settings.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        checks.append(Check("agent limits", "error", f"{settings.name}: {exc}"))
-        return checks
-
-    if not isinstance(configured, dict):
-        checks.append(
-            Check("agent limits", "error", f"{settings.name} is not a JSON object")
-        )
-        return checks
-
-    permissions = configured.get("permissions")
-    denied = len(
-        (permissions.get("deny") or []) if isinstance(permissions, dict) else []
-    )
-    where = guard_hook_event(configured)
-
-    if where == "PreToolUse":
-        detail = f"PreToolUse hook + {denied} deny rule(s)"
-        status = _OK
-    elif where:
-        # The misconfiguration most worth naming: the hook is there, so a
-        # substring test would call this fine, but PostToolUse runs *after*
-        # the command and refuses nothing.
-        detail = f"`nrw agent guard` is on {where}, not PreToolUse -- it cannot refuse"
-        status = "warn"
-    else:
-        detail = f"{denied} deny rule(s), but no `nrw agent guard` hook"
-        status = "warn"
-
-    checks.append(Check("agent limits", status, detail))
     return checks
-
-
-def guard_hook_event(configured: dict[str, Any]) -> str:
-    """Which hook event runs `nrw agent guard`, or an empty string.
-
-    Walks the structure rather than searching the serialised text: a hook
-    registered under the wrong event, or matched against the wrong tool, is
-    present in the JSON and does nothing.
-    """
-    hooks = configured.get("hooks")
-    if not isinstance(hooks, dict):
-        return ""
-    for event, entries in hooks.items():
-        for entry in entries if isinstance(entries, list) else []:
-            if not isinstance(entry, dict):
-                continue
-            matcher = str(entry.get("matcher", ""))
-            if event == "PreToolUse" and "Bash" not in matcher:
-                continue
-            for hook in entry.get("hooks") or []:
-                command = str(hook.get("command", "")) if isinstance(hook, dict) else ""
-                if "agent guard" in command:
-                    return str(event)
-    return ""
 
 
 def _harness_version(binary: str) -> str | None:

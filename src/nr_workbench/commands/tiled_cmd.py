@@ -62,11 +62,9 @@ def _catalog(project: Path) -> Any:
 @contextmanager
 def _asking(start: Path | None) -> Iterator[tuple[Any, Any]]:
     """The person's server and the client's parts, with every failure of the
-    client said as a command's error. Refused to an agent."""
-    from nr_workbench.agent.guard import refuse_if_agent
+    client said as a command's error."""
     from nr_workbench.tiled.server import TiledSyncError, library, server, talking
 
-    refuse_if_agent("tiled")
     try:
         chosen = server(start)
         tiled = library()
@@ -116,7 +114,6 @@ def status(project: Path) -> dict[str, Any]:
         EXPERIMENT_PATH,
         connect,
         experiment_node,
-        said,
         server,
         tags_of,
         whoami,
@@ -144,8 +141,7 @@ def status(project: Path) -> dict[str, Any]:
         "ipts": ipts,
         "experiment": EXPERIMENT_PATH.format(ipts=ipts),
         "experiment_found": node is not None,
-        # The server's own text, escaped: anyone who writes there chose it.
-        "tags": [said(tag) for tag in tags_of(node)] if node is not None else [],
+        "tags": tags_of(node) if node is not None else [],
         "context_found": remote is not None and remote.context is not None,
         # Each of this project's records against Tiled's copy.
         "records": {
@@ -153,33 +149,32 @@ def status(project: Path) -> dict[str, Any]:
             for action in ("same", "replace", "create")
         },
         "only_on_tiled": sorted(
-            said(f"{container}/{key}")
+            f"{container}/{key}"
             for container, key in theirs
             if (container, key) not in ours
         ),
-        "others": [said(key) for key in remote.others] if remote is not None else [],
+        "others": list(remote.others) if remote is not None else [],
         # The experiment's own context against Tiled's copy, in context/'s
         # own metadata.
         "experiment_context": (
             {
                 "state": context_plan.action,
                 "changed": list(context_plan.changed),
-                "left_out": list(context_plan.left_out),
             }
             if context_plan is not None
             else None
         ),
         # The reduced files there against the data folder: what a pull copies.
-        "data": _data_status(node, project, ipts) if node is not None else None,
+        "data": _data_status(node, project) if node is not None else None,
     }
 
 
-def _data_status(experiment: Any, project: Path, ipts: str) -> dict[str, Any]:
+def _data_status(experiment: Any, project: Path) -> dict[str, Any]:
     """The reduced files in *experiment* on Tiled against the data folder
     nrw.toml names: what `nrw tiled pull --data` would copy into it."""
     from nr_workbench.tiled.data import autoreduction_of, plan_pull, run_of
 
-    folder, facility = _folder_of(project, ipts)
+    folder = _folder_of(project)
     autoreduction = autoreduction_of(experiment)
     missing, held = (
         plan_pull(autoreduction, folder) if autoreduction is not None else ([], 0)
@@ -187,7 +182,6 @@ def _data_status(experiment: Any, project: Path, ipts: str) -> dict[str, Any]:
     return {
         "on_tiled": autoreduction is not None,
         "folder": str(folder) if folder is not None else None,
-        "facility_folder": facility,
         "files": len(missing) + held,
         "held": held,
         "missing": [item.name for item in missing],
@@ -231,15 +225,12 @@ def _echo_context(found: dict[str, Any]) -> None:
     )
     context = found["experiment_context"]
     shown = {
-        "same": "as this project has it"
-        + (", but for what is left out" if context and context["left_out"] else ""),
+        "same": "as this project has it",
         "replace": f"different: {', '.join(context['changed'])}" if context else "",
         "create": "not there yet",
     }
     if context and context["state"] in shown:
         click.echo(f"            the experiment's context {shown[context['state']]}")
-    if context and context["left_out"]:
-        click.echo(_left_out(context["left_out"]))
     for path in records["replace"]:
         click.echo(f"  ~ {path}")
     for path in records["create"]:
@@ -248,14 +239,6 @@ def _echo_context(found: dict[str, Any]) -> None:
         click.echo(f"  = {path}  (Tiled's alone: a push leaves it)")
     if found["others"]:
         click.echo(f"  others: {', '.join(found['others'])}  (not nrw's)")
-
-
-def _left_out(names: Any) -> str:
-    """The experiment's fields a push leaves out, and why."""
-    return (
-        f"  ! the experiment's {', '.join(names)}: text the Experiment page "
-        "would refuse, so a push leaves Tiled's copy as it is"
-    )
 
 
 def _echo_data(data: dict[str, Any]) -> None:
@@ -274,15 +257,9 @@ def _echo_data(data: dict[str, Any]) -> None:
     if not missing:
         click.echo(f"data        all {files} reduced file(s) on Tiled are in {folder}")
         return
-    if data["facility_folder"]:
-        # A pull refuses the facility's own folder: it says where else to go.
-        where = f"{folder}, nrw's default"
-        pull = "`nrw tiled pull --data --into DIR` copies them into a folder of yours"
-    else:
-        where, pull = folder, "`nrw tiled pull --data` copies them"
     click.echo(
         f"data        {len(missing)} of the {files} reduced file(s) on Tiled are "
-        f"not in {where}: {pull}"
+        f"not in {folder}: `nrw tiled pull --data` copies them"
     )
     click.echo(f"            from {_runs(data['missing_runs'])}")
 
@@ -347,8 +324,6 @@ def run_push(
             click.echo(
                 f"  {mark} the experiment's context: {', '.join(context_plan.changed)}"
             )
-        if context_plan.left_out:
-            click.echo(_left_out(context_plan.left_out))
         for item in changes:
             click.echo(
                 f"  {'+' if item.action == 'create' else '~'} {item.record.path}"
@@ -371,31 +346,20 @@ def run_push(
     click.echo(f"Pushed {len(written)} record(s){also}.")
 
 
-def _folder_of(project: Path, ipts: str) -> tuple[Path | None, bool]:
-    """The data folder nrw.toml names, ``None`` when it cannot be worked out;
-    and whether it is nrw's default, the facility's own reduction folder."""
+def _folder_of(project: Path) -> Path | None:
+    """The data folder nrw.toml names, ``None`` when it cannot be worked out."""
     from nr_workbench.experiment.config import experiment_config_for
-    from nr_workbench.project.config import DEFAULT_EXPERIMENT_LOCATION
 
-    folder = experiment_config_for(project).source.path
-    return folder, folder == Path(DEFAULT_EXPERIMENT_LOCATION.replace("{ipts}", ipts))
+    return experiment_config_for(project).source.path
 
 
-def _data_folder(project: Path, ipts: str) -> Path:
-    """The configured data folder; refused when it is the facility's own."""
-    folder, facility = _folder_of(project, ipts)
+def _data_folder(project: Path) -> Path:
+    """The data folder nrw.toml names."""
+    folder = _folder_of(project)
     if folder is None:
         raise click.ClickException(
             "The data folder cannot be worked out from nrw.toml: give --into DIR, "
             "or set [experiment.source] location."
-        )
-    if facility:
-        # The reduction writes there, for the whole experiment: a copy from
-        # Tiled could stand in for a file reduced again since.
-        raise click.ClickException(
-            f"{folder} is the facility's own reduction folder: pull copies into "
-            "a folder of yours. Give --into DIR, or set [experiment.source] "
-            "location."
         )
     return folder
 
@@ -427,7 +391,7 @@ def run_pull(
         )
     project = _project(root)
     ipts = _ipts(project)
-    folder = Path(into).resolve() if into else _data_folder(project, ipts)
+    folder = Path(into).resolve() if into else _data_folder(project)
     with _asking(project):
         experiment = experiment_node(connect(project, data_sources=True), ipts)
         where = f"{EXPERIMENT_PATH.format(ipts=ipts)}/{AUTOREDUCTION}"

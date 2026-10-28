@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from nr_workbench.tiled.server import TiledSyncError, said
+from nr_workbench.tiled.server import TiledSyncError
 
 #: Where the reduced files are, in the experiment's own node.
 AUTOREDUCTION = "autoreduction"
@@ -136,7 +136,7 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
             os.replace(partial, target)
         except httpx.HTTPError as exc:
             raise TiledSyncError(
-                f"{item.name} could not be downloaded: {said(exc)}. {_before(written)}"
+                f"{item.name} could not be downloaded: {exc}. {_before(written)}"
             ) from None
         except OSError as exc:
             raise TiledSyncError(

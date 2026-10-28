@@ -304,7 +304,6 @@
     });
     const note = $("expt-fit-note").value.trim();
     if (note) body.note = note;
-    if ($("expt-fit-force").checked) body.force = true;
     $("expt-fit-run").disabled = true;
     try {
       const started = await api(
@@ -312,7 +311,6 @@
       );
       $("expt-fit-form").classList.add("d-none");
       $("expt-fit-note").value = "";
-      $("expt-fit-force").checked = false;
       follow(started.job);
     } catch (error) {
       $("expt-model-status").textContent = error.message;
@@ -360,63 +358,19 @@
     if (job.running || job.ended === current.status) return;
     job.ended = current.status;
     const result = $("expt-job-result");
-    if (current.same_as) {
-      // Refused, not failed: nothing has changed since that fit.
-      result.replaceChildren(
-        "Nothing has changed since fit ", fitLink(current.same_as),
-        ": the same spec, data, settings and environment, so the result would " +
-        "be the one you have. "
-      );
-      const force = forcedRequest(current);
-      if (force && WRITER) {
-        const button = el("button", {
-          type: "button",
-          className: "btn btn-sm btn-outline-primary py-0",
-          text: "Run again anyway",
-        });
-        button.addEventListener("click", async function () {
-          button.disabled = true;
-          try {
-            follow((await api("POST", force.path, force.body)).job);
-          } catch (error) {
-            result.append(" " + error.message);
-          }
-        });
-        result.append(button);
-      }
-    } else {
-      const last = current.steps[current.steps.length - 1] || [];
-      const fit = last[0] === "fit" && last[1] === "run";
-      // Only a fit leaves an interrupted run for `nrw check` to list.
-      result.replaceChildren(current.status === "cancelled" && !fit
-        ? "Cancelled. What it had written so far is left as it was."
-        : ENDINGS[current.status] || current.status);
-      if (current.fit_id) result.append(" Recorded as ", fitLink(current.fit_id), ".");
-    }
+    const last = current.steps[current.steps.length - 1] || [];
+    const fit = last[0] === "fit" && last[1] === "run";
+    // Only a fit leaves an interrupted run for `nrw check` to list.
+    result.replaceChildren(current.status === "cancelled" && !fit
+      ? "Cancelled. What it had written so far is left as it was."
+      : ENDINGS[current.status] || current.status);
+    if (current.fit_id) result.append(" Recorded as ", fitLink(current.fit_id), ".");
     result.append(" ", el("a", { href: "/fits", text: "All fits" }), ".");
     if (shown === current.sample) load(shown);  // its script is generated now
   }
 
   function fitLink(fitId) {
     return el("a", { href: "/f/" + encodeURIComponent(fitId), className: "mono", text: fitId });
-  }
-
-  /* The request that fits the job's model again as its last step did, with
-   * `force`: rebuilt from the step itself, so it works after a reload too. */
-  function forcedRequest(current) {
-    const last = current.steps[current.steps.length - 1] || [];
-    if (last[0] !== "fit" || last[1] !== "run") return null;
-    const body = { force: true };
-    last.slice(2).forEach(function (arg) {
-      const match = /^--(method|steps|samples|burn|note)=(.*)$/.exec(arg);
-      if (!match) return;
-      const value = match[1] === "method" || match[1] === "note" ? match[2] : Number(match[2]);
-      body[match[1]] = value;
-    });
-    return {
-      path: modelsPath(current.sample) + "/" + encodeURIComponent(current.model) + "/fit",
-      body: body,
-    };
   }
 
   function append(text) {

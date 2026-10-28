@@ -10,12 +10,9 @@ exists because some check said no, and each either records that it was forced
 or backs up what it displaced. An agent reaching for one has hit exactly the
 situation a human is supposed to see.
 
-This runs as a Claude Code ``PreToolUse`` hook, so the refusal happens before
-the command executes and does not depend on the model agreeing. ``nrw`` itself
-refuses the same set under ``NRW_AGENT=1``, which is a second mechanism rather
-than a belt-and-braces flourish: a hook can be misconfigured and an
-environment variable can be unset, but both failing silently at once is a
-different order of accident.
+This runs as a ``PreToolUse`` hook in Claude Code, and from a plugin in
+OpenCode, so the refusal happens before the command executes and does not
+depend on the model agreeing.
 
 The refusal always names what to do instead. An agent that is only told "no"
 retries; one that is told "write it in ESCALATIONS.md and stop" has somewhere
@@ -37,9 +34,7 @@ BLOCK = 2
 AGENT_ENV = "NRW_AGENT"
 
 
-#: Why each action is refused, and what to do instead. One source, because
-#: the parser reaches these from two directions --- tokenised and raw --- and
-#: two copies of a refusal drift into two different pieces of advice.
+#: Why each action is refused, and what to do instead.
 _REASONS = {
     "promote": (
         "Marking a fit as the answer is a person's decision, and the reason "
@@ -55,8 +50,8 @@ _REASONS = {
     ),
     "force": (
         "Every --force in nr-workbench exists because a check said no: "
-        "drifted inputs, a hand-edited script, an identical run, a directory "
-        "somebody else wrote. Reaching for one is exactly the situation a "
+        "drifted inputs, a hand-edited script, a directory somebody else "
+        "wrote. Reaching for one is exactly the situation a "
         "person is meant to see. Record what was refused and why you think it "
         "should be overridden in ESCALATIONS.md."
     ),
@@ -151,13 +146,8 @@ def judge(command: str) -> Verdict:
         try:
             tokens = shlex.split(piece)
         except ValueError:
-            # `shlex` is not bash: unbalanced quotes here may still be a
-            # command bash runs happily. Fall back to reading the raw text
-            # rather than waving it through -- failing open on a parse error
-            # is only defensible when nothing refusable is in the text.
-            verdict = _judge_text(piece)
-        else:
-            verdict = _judge_one(tokens)
+            continue  # text `shlex` cannot split is not judged
+        verdict = _judge_one(tokens)
         if not verdict.allowed:
             return verdict
     return Verdict(allowed=True)
@@ -222,50 +212,6 @@ def _segments(command: str) -> list[str]:
 
 #: What `nrw fit` does to a fit rather than with it: each is a person's call.
 _CURATION = ("star", "unstar", "discard", "restore", "delete")
-
-
-def _judge_text(piece: str) -> Verdict:
-    """Judge raw text that could not be tokenised.
-
-    The floor under the parser. It cannot tell a flag from a filename, so it
-    only fires when the text names this tool *and* one of the refused things
-    --- which is enough to stop a quoting accident from being a hole. Tiled's
-    own command line counts as this tool's: it acts with the same login.
-    """
-    tiled_cli = r"(?<![\w./-])tiled\s+(?:" + "|".join(_TILED_CLI) + r")(?![\w-])"
-    if re.search(tiled_cli, piece):
-        return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
-    if not re.search(r"(?<![\w./-])(nrw|nr-workbench)(?![\w-])", piece):
-        return Verdict(allowed=True)
-    # The two whose preview stays allowed: `--dry-run` anywhere in the text
-    # lets them through here, as it does in the parser.
-    previewed = re.search(r"--dry-run(?![\w-])", piece)
-    for pattern, rule in (
-        (r"(?<![\w-])sample\s+reset(?![\w-])", "reset"),
-        (r"(?<![\w-])aure\s+run(?![\w-])", "aure-run"),
-    ):
-        if re.search(pattern, piece) and not previewed:
-            return Verdict(allowed=False, rule=rule, reason=_REASONS[rule])
-    experiment = re.search(r"(?<![\w-])experiment(?![\w-])", piece)
-    if experiment and re.search(
-        r"(?<![\w-])(assign|release)(?![\w-])|--write(?![\w-])",
-        piece[experiment.end() :],
-    ):
-        return Verdict(allowed=False, rule="experiment", reason=_REASONS["experiment"])
-    if re.search(r"(?<![\w-])isaac\s+push(?![\w-])", piece):
-        return Verdict(allowed=False, rule="upload", reason=_REASONS["upload"])
-    if re.search(r"(?<![\w-])tiled(?![\w-])", piece):
-        return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
-    for pattern, rule in (
-        (r"(?<![\w-])promote(?![\w-])", "promote"),
-        (r"(?<![\w-])fit\s+(?:" + "|".join(_CURATION) + r")(?![\w-])", "curate"),
-        (r"--upload(?![\w-])", "upload"),
-        (r"--force(?![\w-])", "force"),
-        (r"--nested(?![\w-])", "nested"),
-    ):
-        if re.search(pattern, piece):
-            return Verdict(allowed=False, rule=rule, reason=_REASONS[rule])
-    return Verdict(allowed=True)
 
 
 def _judge_one(tokens: list[str]) -> Verdict:
@@ -435,40 +381,3 @@ def agent_is_driving() -> bool:
     import os
 
     return bool(os.environ.get(AGENT_ENV))
-
-
-def reason_for(action: str) -> str:
-    """Why *action* is refused unattended, and what to do instead.
-
-    Raises:
-        KeyError: An action with no recorded reason -- a programming error.
-    """
-    return _REASONS[action]
-
-
-def refuse_if_agent(action: str) -> None:
-    """Refuse an action when running unattended.
-
-    The second of two independent mechanisms. The hook stops the command
-    before it runs; this stops it from inside, so a project with no hook
-    configured is still protected and a hook that was bypassed still is.
-
-    Args:
-        action: ``promote``, ``upload``, ``force``, ``nested``,
-            ``aure-run``, ``experiment``, ``curate``, ``reset`` or ``tiled``.
-
-    Raises:
-        click.ClickException: When ``NRW_AGENT`` is set.
-        KeyError: If asked about an action with no recorded reason, which is a
-            programming error rather than a refusal.
-    """
-    import os
-
-    if not os.environ.get(AGENT_ENV):
-        return
-
-    import click
-
-    raise click.ClickException(
-        f"{AGENT_ENV} is set, so this is running unattended. {_REASONS[action]}"
-    )

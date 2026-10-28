@@ -273,7 +273,7 @@ def test_the_fit_is_found_before_the_job_is_seen_to_end(
     def find(job) -> dict:
         looking.set()
         release.wait(20)
-        return {"fit_id": "20260929-120000Z-abcdef01", "same_as": None}
+        return {"fit_id": "20260929-120000Z-abcdef01"}
 
     runner = JobRunner(tmp_path, on_finished=find)
     try:
