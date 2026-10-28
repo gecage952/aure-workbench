@@ -991,7 +991,8 @@ what leaves the project: the data, the fitted model and the notes —
 `sample.md`, the fit's `NOTES.md`, the reason it was finalized, and any report
 that cites it. A record on a shared portal is not straightforwardly
 retractable, so each push is recorded with the fit: the files it sent, their
-digests, and the records the portal made. The fit's page in
+digests, and the records the portal made. A push stopped part way is recorded
+as one that may have made records. The fit's page in
 `nrw serve` offers the same steps: **Export**, **Validate with the server** and
 **Push…**.
 

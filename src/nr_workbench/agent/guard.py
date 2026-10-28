@@ -143,14 +143,32 @@ def judge(command: str) -> Verdict:
         otherwise would give false confidence.
     """
     for piece in _segments(command):
-        try:
-            tokens = shlex.split(piece)
-        except ValueError:
-            continue  # text `shlex` cannot split is not judged
-        verdict = _judge_one(tokens)
-        if not verdict.allowed:
-            return verdict
+        for words in _words(piece):
+            verdict = _judge_one(words)
+            if not verdict.allowed:
+                return verdict
     return Verdict(allowed=True)
+
+
+def _words(piece: str) -> list[list[str]]:
+    """The words of *piece*, a list for each command in it.
+
+    ``shlex`` is not bash: it cannot split ``$'...'`` quoting, nor the text
+    after a quote opened in a here-document's body, and bash runs both. Such a
+    piece is judged line by line, and a line ``shlex`` still cannot split is
+    split on whitespace, so a refused command in it is found all the same.
+    """
+    try:
+        return [shlex.split(piece)]
+    except ValueError:
+        pass
+    words: list[list[str]] = []
+    for line in piece.split("\n"):
+        try:
+            words.append(shlex.split(line))
+        except ValueError:
+            words.append(line.split())
+    return words
 
 
 #: Characters that end one command and begin another. Split on these *in the
@@ -166,8 +184,8 @@ def _segments(command: str) -> list[str]:
     """Split a command line into the commands it will actually run.
 
     Quote-aware, because `echo 'a;b'` is one command and splitting inside the
-    quotes would invent a second. Comments are dropped: bash will not run
-    them, so judging them produces refusals nobody can act on.
+    quotes would invent a second. A comment is dropped to the end of its line:
+    bash will not run it, so judging it produces refusals nobody can act on.
 
     Args:
         command: The raw shell text.
@@ -179,8 +197,13 @@ def _segments(command: str) -> list[str]:
     current: list[str] = []
     quote: str | None = None
     escaped = False
+    comment = False
 
     for index, char in enumerate(command):
+        if comment:
+            if char != "\n":
+                continue
+            comment = False  # the newline ends it, and the piece below
         if escaped:
             current.append(char)
             escaped = False
@@ -199,7 +222,8 @@ def _segments(command: str) -> list[str]:
             current.append(char)
             continue
         if char == "#" and (index == 0 or command[index - 1].isspace()):
-            break  # a comment runs to end of line, and we split on newlines
+            comment = True
+            continue
         if char in SEPARATORS:
             pieces.append("".join(current))
             current = []

@@ -234,6 +234,61 @@ def test_nothing_exported_is_nothing_to_push(
     assert f"nrw isaac export {A}" in result.output
 
 
+def stopped(monkeypatch, stop) -> None:
+    """The push's tool, stopped while it runs: *stop* is called in its place."""
+    run = isaac_cmd._run
+
+    def stopping(cmd, step, **kwargs):
+        if step == "nr-isaac-format push":
+            stop()
+        return run(cmd, step, **kwargs)
+
+    monkeypatch.setattr(isaac_cmd, "_run", stopping)
+
+
+def test_a_push_stopped_by_ctrl_c_is_recorded_as_one_that_may_have_made_records(
+    project: Path, settings: Path, monkeypatch
+) -> None:
+    exported(project, A)
+    finalize(project)
+    portal(monkeypatch)
+
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    stopped(monkeypatch, interrupt)
+
+    result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
+
+    assert result.exit_code != 0
+    (push,) = pushes(project)
+    assert "complete" not in push and "records" not in push
+    assert [f["file"] for f in push["files"]] == [
+        "isaac_record_state0.json",
+        "isaac_record_state1.json",
+    ]
+
+
+def test_a_push_the_pages_cancel_stops_is_recorded_too(
+    project: Path, settings: Path, monkeypatch
+) -> None:
+    """Cancel sends SIGTERM to the push's processes."""
+    import signal
+
+    exported(project, A)
+    finalize(project)
+    portal(monkeypatch)
+    before = signal.getsignal(signal.SIGTERM)
+    stopped(monkeypatch, lambda: signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None))
+
+    result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
+
+    assert result.exit_code == 128 + signal.SIGTERM
+    (push,) = pushes(project)
+    assert "complete" not in push
+    assert signal.getsignal(signal.SIGTERM) is before
+
+
 def test_the_hook_refuses_a_push() -> None:
     from nr_workbench.agent.guard import judge
 

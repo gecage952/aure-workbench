@@ -54,8 +54,8 @@
       ? pushes.map(function (push) {
         const made = (push.records || []).length;
         const said = "Pushed " + push.at + " by " + push.who + " to " + push.portal + ": ";
-        // Recorded before it ran: one that never reported back may still have
-        // made records, and pushing again would make them twice.
+        // A push stopped before it reported back may still have made records,
+        // and pushing again would make them twice.
         if (push.complete === undefined) {
           return said + "its outcome was never recorded, so it may have made " +
             "records. Check the portal before pushing again.";

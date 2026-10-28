@@ -1173,10 +1173,10 @@ def run(
     # daemon has no shell.
     environment = dict(os.environ)
     environment[AGENT_ENV] = "1"
-    # The person's Tiled login is theirs alone. A session is given no key and
-    # a token cache of its own, empty, so a Tiled client it starts -- `nrw
-    # tiled`, Tiled's own command, or a line of Python -- finds no login to
-    # act with: taken away, rather than matched in what the agent types.
+    # The person's Tiled login is theirs alone. A session is given no key in
+    # its environment and a token cache of its own, empty, so Tiled's own
+    # command or a line of Python finds no login to act with. `nrw tiled`
+    # still reads a key set in nrw's settings files; the hook refuses it.
     environment.pop("TILED_API_KEY", None)
 
     invocation = harness_invocation(

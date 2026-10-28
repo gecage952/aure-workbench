@@ -2,8 +2,8 @@
  *
  * On a fit's page it draws the action bar from what the server says about the
  * fit, and draws it again from each answer -- the rules (a final fit is not
- * discarded, files go only after a discard, nothing a report uses is deleted)
- * are the server's, and this page only offers what they allow. On the Fits
+ * discarded, files go only after a discard and never while another fit reads
+ * them) are the server's, and this page only offers what they allow. On the Fits
  * list it toggles stars and shows or hides the discarded fits.
  *
  * On a view-only server everything here is shown, and nothing is offered.
