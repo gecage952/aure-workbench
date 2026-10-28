@@ -270,9 +270,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
-  window.NRW_EXPERIMENT = {{ payload|nrwjson|safe }};
-  window.NRW_WRITE_TOKEN = {{ page_token|nrwjson|safe }};
+<script>
+  window.NRW_EXPERIMENT = {{ payload|tojson }};
 </script>
 <script src="{{ url_for('static', filename='nrwpage.js') }}"></script>
 <script src="{{ url_for('static', filename='experiment.js') }}"></script>

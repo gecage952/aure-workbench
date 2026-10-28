@@ -38,7 +38,7 @@
 </main>
 
 {% block plotly_check %}
-<script{% if csp_nonce %} nonce="{{ csp_nonce }}"{% endif %}>
+<script>
   if (typeof Plotly === "undefined") {
     document.getElementById("offline-warning").classList.remove("d-none");
   }

@@ -31,9 +31,6 @@ from nr_workbench.web.app import create_app
 
 from .test_curation import A, B, events, recorded
 
-TOKEN = "t" * 32
-ORIGIN = "http://localhost"
-
 #: The key ~/.nrw holds: it must reach the tool, and never the page.
 PLANTED = "not-a-real-one-q2w8"
 
@@ -367,24 +364,18 @@ def test_a_published_fits_files_are_never_deleted(
 
 @pytest.fixture
 def app(project: Path, settings: Path):
-    app = create_app(project, token=TOKEN, autostart=False)
+    app = create_app(project, autostart=False)
     yield app
     app.config["NRW_MODELS"].jobs.stop()
 
 
 @pytest.fixture
 def writer(app):
-    client = app.test_client()
-    assert client.get(f"/auth/{TOKEN}").status_code == 303
-    return client
+    return app.test_client()
 
 
 def step(client, app, fit_id: str, name: str, body: dict | None = None):
-    return client.post(
-        f"/api/experiment/fits/{fit_id}/isaac/{name}",
-        json=body or {},
-        headers={"X-NRW-Token": app.config["NRW_PAGE_TOKEN"], "Origin": ORIGIN},
-    )
+    return client.post(f"/api/experiment/fits/{fit_id}/isaac/{name}", json=body or {})
 
 
 def test_the_panel_says_where_the_portal_and_key_are_set_and_never_the_key(
@@ -436,20 +427,17 @@ def test_each_step_is_a_job_and_only_for_the_final_fit(
     ]
 
 
-def test_publishing_from_the_page_needs_the_link_and_a_writable_server(
-    app, project: Path, settings: Path
+def test_publishing_from_the_page_needs_a_writable_server(
+    project: Path, settings: Path
 ) -> None:
     exported(project, A)
     finalize(project)
-    read_only = create_app(project, token=TOKEN, autostart=False, writable=False)
-    viewer = read_only.test_client()
-    viewer.get(f"/auth/{TOKEN}")
+    read_only = create_app(project, autostart=False, writable=False)
 
-    stranger = step(app.test_client(), app, A, "push", {"confirm": A})
-    refused = step(viewer, read_only, A, "push", {"confirm": A})
+    refused = step(read_only.test_client(), read_only, A, "push", {"confirm": A})
 
-    assert (stranger.status_code, refused.status_code) == (403, 403)
-    assert app.config["NRW_MODELS"].jobs.current() is None
+    assert refused.status_code == 403
+    assert read_only.config["NRW_MODELS"].jobs.current() is None
 
 
 def test_nrw_doctor_says_the_key_is_set_and_never_what_it_is(

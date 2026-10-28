@@ -29,23 +29,11 @@ nrw serve
 
   This experiment is not set up yet: nrw needs its IPTS, or the
   folder its reduced data is in, before it can watch anything.
-
-  To edit the experiment, curate fits or change the settings, open this link
-  in your browser:
-    http://127.0.0.1:8765/auth/9f0c…
-  It works once, for one browser, and is kept out of the request log.
-  Without it the pages are view-only.
-  It opens Settings.
 ```
 
-On a project that is not set up yet the link opens **Settings** (see
-[Settings](#settings) below); once it is, the link opens the Experiment page.
-
-The `/auth/…` link lets *this browser* make changes. Without it the page is
-view-only, which is on purpose: an analysis node is shared, and anyone logged in
-to it can reach `127.0.0.1`. The link stops working once it has been used, so a
-copy left in scrollback or pasted into a chat opens nothing. To edit from a
-second browser, restart `nrw serve` for a new link.
+On a project that is not set up yet, start with **Settings** (see
+[Settings](#settings) below). The pages edit the project when the server is
+bound to loopback, as it is by default; started with `--host`, it only shows it.
 
 The same organization is available from the command line, for scripts and for
 anyone who prefers it:
@@ -333,8 +321,7 @@ panel says when there are edits saved on the page that it does not have yet.
 
 A spec that already exists is never overwritten: choose another name, or edit
 that one. A name is a plain name (letters, digits, `.`, `-`, `_`), because it
-becomes the spec's filename. As with every change on the page, only a browser
-that opened the link `nrw serve` printed can write one.
+becomes the spec's filename.
 
 ### A quick fit with AuRE
 
@@ -452,8 +439,7 @@ starts, and a fit that went on to finish is in Fits all the same.
 
 Setting up and running fits happens on this page. Judging them happens where
 their evidence is: a fit's own page (**Fits**, then a fit), with its curves,
-residuals, parameters and the other fits of its model. As with every change the
-pages make, only a browser that opened the link `nrw serve` printed can curate.
+residuals, parameters and the other fits of its model.
 
 - **☆ Star** marks a fit worth coming back to, and **★ Starred** takes the
   star away. The Fits list has a star beside each fit, which does the same.

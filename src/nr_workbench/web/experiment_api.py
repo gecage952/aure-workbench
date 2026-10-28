@@ -3,11 +3,10 @@
 Every route is a one-line call plus error mapping, for the same reason as
 :mod:`nr_workbench.web.api`: an agent debugging the page can ``curl`` exactly
 what the browser received. This blueprint is the only place in the server that
-accepts a write, and every write passes :func:`~nr_workbench.web.security.
-refuse_unless_writer` first.
+accepts a write; a read-only server refuses each one with a 403.
 
-Status codes say whose problem it is: 400 the request was wrong, 403 it is not
-allowed from here, 404 there is no such run, spec or job, 409 something changed
+Status codes say whose problem it is: 400 the request was wrong, 403 the server
+is read-only, 404 there is no such run, spec or job, 409 something changed
 or must be resolved first -- or an nrw command declined, saying why -- 503 the
 catalog cannot be read, 504 the data source, or an nrw command, did not answer.
 """
@@ -20,7 +19,6 @@ from flask import Blueprint, current_app, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from nr_workbench.bounded import Busy, TimedOut
-from nr_workbench.web import security
 from nr_workbench.web.curation import CurationData
 from nr_workbench.web.experiment import (
     ExperimentData,
@@ -65,11 +63,6 @@ def curation_data() -> CurationData:
 def isaac_data() -> IsaacData:
     """The request's :class:`IsaacData`, held on the app config."""
     return current_app.config["NRW_ISAAC"]  # type: ignore[no-any-return]
-
-
-@experiment_api.before_request
-def _gate() -> None:
-    security.refuse_unless_writer()
 
 
 def _body() -> dict[str, Any]:
@@ -141,17 +134,7 @@ def _map(exc: Exception) -> tuple[Any, int]:
         if isinstance(exc, kinds):
             return _error(exc, status)
     current_app.logger.exception("Unhandled error in %s", request.path)
-    # Not str(exc): an unexpected error's text can carry paths and data, and
-    # the log already has all of it.
-    return (
-        jsonify(
-            {
-                "error": "nrw hit an unexpected error; the server's log has the details.",
-                "kind": "InternalError",
-            }
-        ),
-        500,
-    )
+    return _error(exc, 500)
 
 
 def _http_json(exc: HTTPException) -> tuple[Any, int]:
@@ -162,7 +145,7 @@ def _http_json(exc: HTTPException) -> tuple[Any, int]:
 # status code* before any level's class-based handler, so the app's HTML 403
 # and 404 pages would otherwise answer this API's refusals -- and a script
 # reading `response.json()["error"]` would get a page of markup instead.
-for _code in (400, 403, 404, 405, 409, 413, 415):
+for _code in (400, 403, 404, 405, 409):
     experiment_api.register_error_handler(_code, _http_json)
 
 
@@ -399,11 +382,10 @@ def current_job() -> Any:
     raw = request.args.get("offset")
     offset = None
     if raw is not None:
-        # ASCII digits, and few enough of them: "²" is a digit to isdigit(),
-        # and a number past 4300 digits is refused by int() itself.
-        if not (raw.isascii() and raw.isdigit() and len(raw) <= 18):
-            raise RequestError(f"offset must be a byte count, not {raw[:40]!r}.")
-        offset = int(raw)
+        try:
+            offset = int(raw)
+        except ValueError:
+            raise RequestError(f"offset must be a byte count, not {raw!r}.") from None
     return jsonify(models_data().job_status(offset))
 
 

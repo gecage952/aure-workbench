@@ -11,8 +11,7 @@
   const N = window.NRWPage;
   const $ = N.$;
   const el = N.el;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
-  const api = N.client(TOKEN);
+  const api = N.client();
   let shown = window.NRW_SETTINGS;
 
   function message(text, kind) {
@@ -20,7 +19,7 @@
   }
 
   function writable() {
-    return Boolean(shown.writable && TOKEN);
+    return Boolean(shown.writable);
   }
 
   function isSet(value) {
@@ -139,8 +138,7 @@
       banner.classList.remove("d-none");
       banner.textContent = shown.read_only_reason || (
         shown.editable
-          ? "View only. To change the settings, open the link `nrw serve` " +
-            "printed when it started, then reload this page."
+          ? "View only."
           : "nrw.toml cannot be edited from here; the notes below say why."
       );
     }

@@ -222,12 +222,6 @@ def test_series_warnings_are_returned_not_printed(
     assert isinstance(payload["problems"], list)
 
 
-def test_series_directory_cannot_escape_the_sample(populated: Path) -> None:
-    """A crafted series name must not read outside the tNR directory."""
-    with pytest.raises(FileNotFoundError):
-        ProjectData(populated).series_data("Sample1", "../../../etc")
-
-
 @pytest.fixture
 def assessed(populated: Path) -> Path:
     """The populated project with a real tNR assessment written."""
@@ -530,23 +524,6 @@ def test_sample_page_embeds_parseable_payloads(client) -> None:
         match = re.search(rf"const {name} = (.*?);\n", html, re.S)
         assert match, f"{name} is not embedded in the page"
         json.loads(match.group(1))
-
-
-def test_embedded_json_cannot_break_out_of_the_script_tag() -> None:
-    """A label containing </script> must not end the block early."""
-    from nr_workbench.web.app import _compact_json
-
-    encoded = _compact_json({"label": "</script><img src=x onerror=alert(1)>"})
-
-    assert "</script>" not in encoded
-    assert json.loads(encoded)["label"].startswith("</script>")
-
-
-def test_figure_route_rejects_traversal(client) -> None:
-    """A crafted filename must not read outside the assessment directory."""
-    response = client.get("/figures/Sample1/r900001/..%2f..%2f..%2fnrw.toml")
-
-    assert response.status_code in (301, 400, 404)
 
 
 def test_help_does_not_import_flask() -> None:

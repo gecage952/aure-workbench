@@ -15,8 +15,8 @@
   const page = window.NRWPage;
   const $ = page.$;
   const el = page.el;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
-  const api = page.client(TOKEN);
+  const WRITER = Boolean(window.NRW_EXPERIMENT && window.NRW_EXPERIMENT.writable);
+  const api = page.client();
   const POLL_MS = 1000;
   // The most of a job's output kept on the page; the whole of it is in
   // .nrw/jobs/<id>.log.
@@ -36,7 +36,7 @@
 
   /* Why a new model cannot be written yet, or "" when it can. */
   function blocked(payload) {
-    if (!TOKEN || !payload.writable) return "This page is view-only.";
+    if (!payload.writable) return "This page is view-only.";
     if (!payload.exists) {
       return "Apply first: it creates samples/" + payload.sample +
         "/ and copies in the data a spec is built from.";
@@ -76,7 +76,7 @@
     if (!payload.models.length) {
       list.append(el("p", { className: "text-secondary mb-1", text: "No models yet." }));
     }
-    const canFit = Boolean(TOKEN && payload.writable);
+    const canFit = Boolean(payload.writable);
     payload.models.forEach(function (model) {
       const fit = el("button", {
         type: "button",
@@ -355,7 +355,7 @@
     $("expt-job-state").textContent = job.running
       ? "step " + current.step + " of " + current.steps.length
       : current.status;
-    $("expt-job-cancel").classList.toggle("d-none", !job.running || !TOKEN);
+    $("expt-job-cancel").classList.toggle("d-none", !job.running || !WRITER);
     $("expt-job-close").classList.toggle("d-none", job.running);
     if (job.running || job.ended === current.status) return;
     job.ended = current.status;
@@ -368,7 +368,7 @@
         "be the one you have. "
       );
       const force = forcedRequest(current);
-      if (force && TOKEN) {
+      if (force && WRITER) {
         const button = el("button", {
           type: "button",
           className: "btn btn-sm btn-outline-primary py-0",

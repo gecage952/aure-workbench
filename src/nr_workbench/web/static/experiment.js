@@ -13,7 +13,6 @@
 
 (function () {
   const initial = window.NRW_EXPERIMENT;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
   const POLL_MS = 10000;
   const MAX_QUICK = 8;
 
@@ -56,14 +55,14 @@
     // filled with.
     experiment: initial.experiment || {},
     contextBase: null,
-    writable: Boolean(initial.writable && TOKEN),
+    writable: Boolean(initial.writable),
     confirmed: new Set(),
     plan: null,
   };
 
   const $ = window.NRWPage.$;
   const el = window.NRWPage.el;
-  const api = window.NRWPage.client(TOKEN);
+  const api = window.NRWPage.client();
 
   function message(text, kind) {
     window.NRWPage.show($("expt-message"), text, kind);
@@ -94,7 +93,7 @@
     // can hold what someone else saved since the last poll, so the poll after
     // a save always reloads, and shows it.
     state.catalogVersion = payload.catalog.version;
-    state.writable = Boolean(payload.writable && TOKEN);
+    state.writable = Boolean(payload.writable);
     for (const key of Array.from(state.selected)) {
       if (!state.rows.has(key)) state.selected.delete(key);
     }
@@ -162,9 +161,7 @@
       banner.classList.add("d-none");
     } else {
       banner.classList.remove("d-none");
-      banner.textContent = payload.read_only_reason ||
-        "View only. To edit the experiment, open the link `nrw serve` printed " +
-        "when it started, then reload this page.";
+      banner.textContent = payload.read_only_reason || "View only.";
     }
     renderScan(payload.scan);
   }

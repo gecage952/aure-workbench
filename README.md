@@ -75,9 +75,9 @@ folder — it never overwrites a file you have edited.
 
 While an experiment is running, `nrw serve` has an **Experiment** page that
 lists every run as the reduction writes it, with whether it has finished
-arriving. From an empty folder, `nrw init` then `nrw serve` is enough: the link
-it prints opens **Settings**, where you set the IPTS and the data folder, and
-check the folder before choosing it. Select runs, assign them to a sample with a condition, describe the
+arriving. From an empty folder, `nrw init` then `nrw serve` is enough:
+**Settings** is where you set the IPTS and the data folder, and check the
+folder before choosing it. Select runs, assign them to a sample with a condition, describe the
 sample, and **apply**. The data is copied into the sample and its `sample.md`
 is written. Nothing is overwritten, and only complete runs are copied. The same
 from the command line:
