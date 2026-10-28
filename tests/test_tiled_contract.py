@@ -38,6 +38,9 @@ from .test_tiled_sync import catalogued, own_settings
 
 pytestmark = pytest.mark.tiled_server
 
+#: Three segments of one REF_L measurement, as the reduction wrote them.
+REFERENCE = Path(__file__).parent / "data" / "reference" / "steady"
+
 
 def _free_port() -> int:
     with socket.socket() as sock:
@@ -124,6 +127,57 @@ def nrw(project: Path, *args: str):
     return CliRunner().invoke(main, ["tiled", *args, "--root", str(project)])
 
 
+def real_fit(project: Path) -> float:
+    """A starred fit of the three segments, exported as bumps exports a fit,
+    at its starting values: a record of a real fit's size, whose problem file
+    refl1d loads. Its chisq."""
+    import hashlib
+
+    import numpy as np
+    from bumps.serialize import serialize
+    from refl1d.names import SLD, Experiment, FitProblem, QProbe
+
+    from .test_tiled_analysis import fitted, starred
+
+    steady = project / "samples" / "S1" / "data" / "steady"
+    steady.mkdir(parents=True, exist_ok=True)
+    thf, cu, si = SLD("THF", rho=6.2), SLD("Cu", rho=6.5), SLD("Si", rho=2.07)
+    stack = thf(0, 5) | cu(500, 8) | si
+    stack["Cu"].thickness.range(400, 600)
+    experiments, data = [], []
+    for source in sorted(REFERENCE.glob("REFL_218386_*_partial.txt")):
+        copy = steady / source.name
+        shutil.copyfile(source, copy)
+        q, r, dr, dq = np.loadtxt(copy).T[:4]
+        experiments.append(Experiment(sample=stack, probe=QProbe(q, dq, R=r, dR=dr)))
+        data.append(
+            {
+                "role": f"data:steady:{copy.stem}",
+                "path": copy.relative_to(project).as_posix(),
+                "sha256": hashlib.sha256(copy.read_bytes()).hexdigest(),
+                "bytes": copy.stat().st_size,
+            }
+        )
+    problem = FitProblem(experiments)
+    directory = fitted(project, chisq=problem.chisq())
+    inputs = json.loads((directory / "inputs.json").read_text())
+    scripts = [entry for entry in inputs["inputs"] if entry["role"] == "script"]
+    (directory / "inputs.json").write_text(json.dumps({"inputs": data + scripts}))
+    fit = directory / "fit"
+    for path in fit.iterdir():
+        path.unlink()
+    problem.save(str(fit / "film"))
+    (fit / "film.json").write_text(json.dumps(serialize(problem)))
+    (fit / "film.par").write_text(
+        "".join(
+            f"{n} {v:.15g}\n"
+            for n, v in zip(problem.labels(), problem.getp(), strict=True)
+        )
+    )
+    starred(project)
+    return problem.chisq()
+
+
 def test_a_push_writes_the_records_and_reads_them_back(
     project: Path, on_local_tiled
 ) -> None:
@@ -188,3 +242,78 @@ def test_a_second_push_writes_only_what_changed_and_keeps_others_fields(
     assert changed.exit_code == 0, changed.output
     kept = on_local_tiled["context/samples/S1"].metadata
     assert (kept["title"], kept["beamline_note"]) == ("Cu/Pt, annealed", "theirs")
+
+
+def test_a_record_of_a_real_fits_size_is_kept_as_it_was_written(
+    project: Path, on_local_tiled
+) -> None:
+    """Three segments make a record of about 270 kB: the server gives it back
+    as it was written, so a push again finds it the same."""
+    from nr_workbench.tiled.analysis import fit_records
+    from nr_workbench.tiled.context import Remote
+
+    from .test_tiled_analysis import A
+
+    real_fit(project)
+
+    pushed = nrw(project, "push", "--only", "fits", "--yes")
+    again = nrw(project, "push", "--only", "fits", "--dry-run")
+
+    assert pushed.exit_code == 0, pushed.output
+    kept = dict(on_local_tiled[f"analysis/S1/{A}"].metadata)
+    (record,), _ = fit_records(project, Remote())
+    assert len(json.dumps(kept)) > 250_000
+    assert kept == {**record.fields, "pushed_at": kept["pushed_at"]}
+    assert "0 new, 0 changed, 1 the same" in again.output, again.output
+
+
+def test_a_fit_pushed_is_pulled_into_a_colleagues_project_as_it_was_recorded(
+    project: Path, on_local_tiled, tmp_path_factory, context
+) -> None:
+    """The hand-over: the whole record through the server, and the fit rebuilt
+    from it, whose problem file bumps loads at the chisq recorded."""
+    from nr_workbench.commands.init_cmd import plan_project_files
+    from nr_workbench.experiment.store import ParquetCatalogStore
+    from nr_workbench.fitting.runner import load_problem_file
+    from nr_workbench.project.config import load_config
+    from nr_workbench.project.scaffold import apply_scaffold
+    from nr_workbench.provenance.index import FitIndex
+
+    from .test_tiled_analysis import SCRIPT, A
+
+    catalogued(project)
+    real_fit(project)
+    pushed = nrw(project, "push", "--yes")
+    colleague = tmp_path_factory.mktemp("colleague")
+    apply_scaffold(colleague, plan_project_files(context))
+    toml = colleague / "nrw.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace(
+            "IPTS-00001", load_config(project).ipts
+        ),
+        encoding="utf-8",
+    )
+
+    shown = nrw(colleague, "pull", "--context", "--fits", "--yes")
+
+    assert pushed.exit_code == 0, pushed.output
+    assert shown.exit_code == 0, shown.output
+    ours = project / "samples" / "S1" / "results" / A
+    theirs = colleague / "samples" / "S1" / "results" / A
+    for name in ("model.py", "fit/film.json", "fit/film.par", "fit/film-3-refl.dat"):
+        assert (theirs / name).read_bytes() == (ours / name).read_bytes(), name
+    for source in REFERENCE.glob("REFL_218386_*_partial.txt"):
+        read = f"samples/S1/data/steady/{source.name}"
+        assert (colleague / read).read_bytes() == source.read_bytes()
+        assert (theirs / "data" / read).read_bytes() == source.read_bytes()
+    recorded = FitIndex(colleague / ".nrw" / "index.jsonl").find(A)["chisq"]
+    loaded = load_problem_file(theirs / "fit" / "film.json")
+    assert loaded.problem.chisq() == pytest.approx(recorded, rel=1e-12)
+    models = colleague / "samples" / "S1" / "models"
+    assert (models / "film.py").read_bytes() == SCRIPT
+    ours, theirs = (
+        ParquetCatalogStore.for_project(root).load() for root in (project, colleague)
+    )
+    assert {k: e.content() for k, e in theirs.runs.items()} == {
+        k: e.content() for k, e in ours.runs.items()
+    }

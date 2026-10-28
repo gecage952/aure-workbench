@@ -91,10 +91,12 @@ nrw experiment apply --write
 The organization is kept in `experiment/*.parquet`.
 **[docs/experiment.md](docs/experiment.md)** walks through it.
 
-To share it with everyone on the experiment, `nrw tiled push` writes it to the
-experiment's node on tiled.ornl.gov, `nrw tiled status` says what is there, and
-`nrw tiled pull --data` copies the reduced files in when the data mount is out
-of reach. Each acts with your own Tiled login (`nrw tiled login`), and needs
+To share it with everyone on the experiment, `nrw tiled push` writes it, and
+the starred and final fits, to the experiment's node on tiled.ornl.gov, and
+`nrw tiled status` says what is there. A colleague starting fresh runs `nrw
+tiled pull --context --data --fits` to bring back the catalog, the reduced
+files, and each fit as it was recorded; `nrw fit run --from <fit_id>` runs
+one again. Each acts with your own Tiled login (`nrw tiled login`), and needs
 the installer's `NRW_EXTRAS=tiled`.
 
 ### Choosing an assistant
@@ -165,8 +167,10 @@ come from `nrw fit run`, or from **Fit…** on the Experiment page, which runs
 
 1. the command line (`nrw fit run model.py --method amoeba --steps 500`), or
    the page's Fit form;
-2. the project's `nrw.toml`, under `[fit]`;
-3. bumps' own default for that fitter.
+2. with `nrw fit run --from <fit_id>`, which runs a recorded fit again from
+   its own problem file, the fitter, settings and seed that fit ran with;
+3. the project's `nrw.toml`, under `[fit]`;
+4. bumps' own default for that fitter.
 
 When nothing names a fitter, it is **DREAM**: it samples the posterior, so its
 answer comes with uncertainties. In `nrw.toml`, `[fit]` names the fitter and

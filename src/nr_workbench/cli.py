@@ -514,11 +514,20 @@ def fit_group() -> None:
 
 
 @fit_group.command("run")
-@click.argument("script", type=click.Path(exists=True, dir_okay=False))
+@click.argument("script", required=False, type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--from",
+    "from_fit",
+    metavar="FIT_ID",
+    default=None,
+    help="Run this fit again from its own problem file, instead of a script, "
+    "with its fitter and settings but for those given.",
+)
 @click.option(
     "--sample",
     default=None,
-    help="Sample to record under [default: inferred from the path].",
+    help="Sample to record under [default: inferred from the path; with "
+    "--from, the fit's].",
 )
 @click.option(
     "--method",
@@ -591,14 +600,19 @@ def fit_group() -> None:
 )
 @click.option("--note", default=None, help="Free-text note stored in the record.")
 @click.option(
-    "--name", "model_name", default=None, help="Model name [default: the script stem]."
+    "--name",
+    "model_name",
+    default=None,
+    help="Model name [default: the script stem; with --from, the fit's].",
 )
 @click.option("--dry-run", is_flag=True, help="Report what would run; write nothing.")
 def fit_run_command(**kwargs: object) -> None:
-    """Run SCRIPT and write an immutable record of the fit.
+    """Run SCRIPT, or the fit named by --from again, and record the fit.
 
     Works on hand-written refl1d scripts as they are: no migration, no schema.
-    The script must define a module-level `problem = FitProblem(...)`.
+    The script must define a module-level `problem = FitProblem(...)`. With
+    --from, the fit's own problem file runs: its model, its parameters at the
+    fit's values, and its data, as bumps saved them.
     """
     from nr_workbench.commands.fit import run_fit_command
 
@@ -959,7 +973,7 @@ def isaac_push_command(fit_id: str, validate_only: bool, yes: bool) -> None:
 
 @main.group("tiled")
 def tiled_group() -> None:
-    """Tiled: push the experiment's catalog, say what is there, fetch data.
+    """Tiled: push the catalog and the fits, say what is there, pull them back.
 
     Needs the installer's NRW_EXTRAS=tiled. The server is TILED_URL
     (tiled.ornl.gov by default), read as nrw's other settings are. Each
@@ -998,11 +1012,17 @@ def tiled_status_command(**kwargs: object) -> None:
 @tiled_group.command("push")
 @click.option("--root", type=click.Path(file_okay=False), help="Project root.")
 @click.option(
+    "--only",
+    type=click.Choice(["context", "fits"]),
+    default=None,
+    help="Push only the catalog (context/) or only the fits (analysis/).",
+)
+@click.option(
     "--dry-run", is_flag=True, help="Say what would be written; write nothing."
 )
 @click.option("--yes", is_flag=True, help="Skip the confirmation.")
 def tiled_push_command(**kwargs: object) -> None:
-    """Write this project's catalog to its experiment's context/ on Tiled.
+    """Write the catalog to context/, and the starred and final fits to analysis/.
 
     The last writer wins: a record that differs is written over Tiled's copy,
     keeping fields other programs keep on it. Records Tiled alone holds stay.
@@ -1013,7 +1033,11 @@ def tiled_push_command(**kwargs: object) -> None:
 
 
 @tiled_group.command("pull")
+@click.option(
+    "--context", is_flag=True, help="The catalog's runs, samples and context."
+)
 @click.option("--data", is_flag=True, help="The experiment's reduced files.")
+@click.option("--fits", is_flag=True, help="The fits, as they were recorded.")
 @click.option(
     "--run", "runs", type=int, multiple=True, help="Only this run; repeat for more."
 )
@@ -1022,13 +1046,19 @@ def tiled_push_command(**kwargs: object) -> None:
     type=click.Path(file_okay=False),
     help="Copy into this folder [default: the configured data folder].",
 )
-@click.option("--dry-run", is_flag=True, help="Say what would be copied; copy nothing.")
+@click.option(
+    "--dry-run", is_flag=True, help="Say what would be pulled; write nothing."
+)
+@click.option("--yes", is_flag=True, help="Skip the confirmation.")
 @click.option("--root", type=click.Path(file_okay=False), help="Project root.")
 def tiled_pull_command(**kwargs: object) -> None:
-    """Copy the experiment's reduced files from Tiled into the data folder.
+    """Bring back the catalog, the reduced files and the fits from Tiled.
 
-    For when the data mount is out of reach. Each file the folder lacks, or
-    holds at another size, is copied whole; the folder watcher does the rest.
+    --context writes Tiled's records into the catalog, Tiled's copy winning.
+    --data copies each reduced file the data folder lacks; the folder watcher
+    does the rest. --fits rebuilds each fit as it was recorded, with the
+    reduced files it read, and writes its spec and script into its sample's
+    models/; `nrw fit run --from` runs it again.
     """
     from nr_workbench.commands.tiled_cmd import run_pull
 

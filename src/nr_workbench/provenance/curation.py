@@ -493,6 +493,66 @@ def promote(
     return promotion
 
 
+def label_holders(index: FitIndex) -> dict[tuple[str | None, str], str]:
+    """Each label's holder in *index*: ``(sample, label)`` to the fit's id."""
+    return {
+        key: str(promotion.get("fit_id"))
+        for key, promotion in replay(index.entries()).holders.items()
+    }
+
+
+def adopt(
+    index: FitIndex,
+    entry: dict[str, Any],
+    *,
+    starred_by: dict[str, Any] | None,
+    promotions: dict[str, dict[str, Any]],
+    holders: dict[tuple[str | None, str], str],
+    write: bool = True,
+) -> list[tuple[str, str]]:
+    """Take over what another copy of the project said about a fit.
+
+    Its star, and each label it holds there, are appended as they were said:
+    each promotion with its reason, who and when. A label another fit holds
+    here stays that fit's.
+
+    Args:
+        index: This project's index, which holds the fit's own line.
+        entry: The fit's index entry.
+        starred_by: Who starred it, and when (``who``, ``at``); ``None`` when
+            it is not starred.
+        promotions: Each label it holds, with its promotion's ``reason``,
+            ``who``, ``at`` and ``forced``.
+        holders: Each label's holder here (:func:`label_holders`), which
+            this keeps up to date, so that fits taken over together share
+            each label as the index will.
+        write: ``False`` says what would be taken over, and writes nothing.
+
+    Returns:
+        Each label it is not given, and the fit here that keeps it.
+    """
+    fit_id = str(entry["fit_id"])
+    sample = entry.get("sample")
+    events: list[tuple[dict[str, Any], str]] = []
+    if starred_by is not None:
+        events.append(({"fit_id": fit_id, "sample": sample, **starred_by}, EVENT_STAR))
+    kept: list[tuple[str, str]] = []
+    for label, promotion in sorted(promotions.items()):
+        key = (_sample_key(sample), label)
+        if holders.get(key, fit_id) != fit_id:
+            kept.append((label, holders[key]))
+            continue
+        holders[key] = fit_id
+        said = {name: promotion.get(name) for name in ("reason", "who", "at")}
+        event = {"fit_id": fit_id, "sample": sample, "model": entry.get("model")}
+        event.update(label=label, **said, forced=bool(promotion.get("forced")))
+        events.append(({**event, "supersedes": None}, EVENT_PROMOTE))
+    if write:
+        for event, kind in events:
+            index.append(event, event=kind)
+    return kept
+
+
 # --------------------------------------------------------------------------
 # Publishing
 # --------------------------------------------------------------------------

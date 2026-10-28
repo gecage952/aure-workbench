@@ -184,6 +184,100 @@ def load_problem(script: Path, *, root: Path | None = None) -> LoadedProblem:
     )
 
 
+def problem_path(fit_dir: Path) -> Path | None:
+    """Bumps' file of a fit's problem, ``fit/<model>.json``: the model, its
+    parameters at the fit's values, and its data. ``None`` when the fit left
+    none."""
+    for path in sorted((Path(fit_dir) / "fit").glob("*.json")):
+        if not path.name.endswith(("-err.json", "-expt.json")):
+            return path
+    return None
+
+
+#: The classes a problem file may name: those of refl1d's and bumps' own
+#: models that fits use. Bumps builds each class a problem file names, with
+#: the file's arguments, and unpickles each function in it, so a file naming
+#: any other class, or holding a function, could run code as it loads.
+PROBLEM_CLASSES = frozenset(
+    {
+        "bumps.fitproblem.FitProblem",
+        "bumps.parameter.Calculation",
+        "bumps.parameter.FreeVariables",
+        "bumps.parameter.Parameter",
+        "bumps.parameter.Uniform",
+        "bumps.parameter.Variable",
+        "bumps.util.NumpyArray",
+        "refl1d.experiment.Experiment",
+        "refl1d.probe.probe.NeutronProbe",
+        "refl1d.probe.probe.QProbe",
+        "refl1d.sample.layers.Slab",
+        "refl1d.sample.layers.Stack",
+        "refl1d.sample.material.SLD",
+    }
+)
+
+#: What bumps calls a node that stands for an object defined once elsewhere
+#: in the file, and a pickled function.
+_REFERENCE, _FUNCTION = "Reference", "Callable"
+
+
+def load_problem_file(path: Path) -> LoadedProblem:
+    """Load a problem file as bumps' export wrote it (:func:`problem_path`).
+
+    It reads no other file: the data are in it. It is refused before bumps
+    builds anything from it when it holds a pickled function, or names a
+    class outside :data:`PROBLEM_CLASSES`. The check reads the file as bumps
+    does, once bumps' migrations have brought it to the current format.
+
+    Raises:
+        FitError: It is refused, or bumps cannot load it.
+    """
+    import json
+
+    from bumps import plugin
+    from bumps.serialize import deserialize, migrate
+
+    try:
+        _, document = migrate(json.loads(Path(path).read_text(encoding="utf-8")))
+        document = plugin.migrate_serialized(document)
+    except Exception as exc:  # noqa: BLE001 - whatever bumps raises, it did not load
+        raise FitError(f"{path} could not be loaded: {exc}") from exc
+    refused = _code_in(document)
+    if refused:
+        raise FitError(
+            f"{path} holds {refused}, so nrw does not load it: bumps would run "
+            "it as the file loads. A problem file of refl1d's and bumps' own "
+            "models loads; this fit's script, in its sample's models/, runs it "
+            "as code you can read."
+        )
+    try:
+        problem = deserialize(document, migration=False)
+    except Exception as exc:  # noqa: BLE001 - whatever bumps raises, it did not load
+        raise FitError(f"{path} could not be loaded: {exc}") from exc
+    return LoadedProblem(problem=problem, opened=[])
+
+
+def _code_in(document: Any) -> str:
+    """What in a problem file bumps would run as it loads: a pickled function,
+    or a class outside :data:`PROBLEM_CLASSES`; ``""`` when nothing is."""
+    pending = [document]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            if "__class__" in node:
+                kind = node["__class__"]
+                if kind == _FUNCTION:
+                    return "a pickled function"
+                if kind != _REFERENCE and (
+                    not isinstance(kind, str) or kind not in PROBLEM_CLASSES
+                ):
+                    return f"the class {kind!r}"
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    return ""
+
+
 def _filter_inputs(opened: set[str], *, script: Path, root: Path | None) -> list[Path]:
     """Reduce observed opens to the data files that count as fit inputs.
 

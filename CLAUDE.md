@@ -28,9 +28,10 @@ This is a research project. These rules override the workflow above:
   prompt-injection defences, hidden-character rules or hostile-input checks
   on their own data). Guard against what goes wrong in real use: a crash,
   lost data, a wrong result.
-- **The security review runs once per PR, at the very end.** Run the
-  `security-reviewer` agent after everything else is done, report what it
-  found, and fix none of it until the person says which findings to act on.
+- **The security review runs once per plan, as its last item.** Run the
+  `security-reviewer` agent after everything else in the plan is done, report
+  what it found, and fix none of it until the person says which findings to
+  act on.
 - **Comments, docstrings and docs describe the code as it is.** Never explain
   it by an earlier version of the code or of the requirements ("this used
   to…", "changed from…", "before this…"). State the facts a reader needs to
@@ -86,7 +87,7 @@ change has to be fixed.
 
 ```bash
 pytest                        # ~2,900 tests, under two minutes; fits nothing
-pytest -m fit                 # the 33 that run real fits, for fitting code
+pytest -m fit                 # the 32 that run real fits, for fitting code
 pytest -m tiled_server        # nrw tiled against a real Tiled 0.2.18 (uvx)
 pytest --record-fits TESTS    # re-record fits the default run replays
 ruff check src tests          # lint

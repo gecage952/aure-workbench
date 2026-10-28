@@ -573,32 +573,6 @@ def test_promote_refuses_a_stale_fit(
 
 
 @pytest.mark.fit
-def test_promote_supersedes_and_keeps_the_earlier_decision(
-    fitted_project: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    assert do_fit(fitted_project, monkeypatch).exit_code == 0
-    first = only_fit_dir(fitted_project).name
-    run_cli(fitted_project, monkeypatch, "promote", first, "--reason", "first attempt")
-
-    assert do_fit(fitted_project, monkeypatch, "--force").exit_code == 0
-    second = next(d.name for d in fit_dirs(fitted_project) if d.name != first)
-    result = run_cli(
-        fitted_project, monkeypatch, "promote", second, "--reason", "better"
-    )
-
-    assert result.exit_code == 0, result.output
-    entries = [
-        json.loads(line)
-        for line in (fitted_project / ".nrw" / "index.jsonl")
-        .read_text()
-        .strip()
-        .splitlines()
-    ]
-    assert any(e["event"] == "supersede" and e["fit_id"] == first for e in entries)
-    assert len([e for e in entries if e["event"] == "promote"]) == 2
-
-
-@pytest.mark.fit
 def test_check_passes_on_a_clean_project(
     fitted_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

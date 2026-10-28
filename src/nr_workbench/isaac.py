@@ -492,11 +492,12 @@ def _states_from_inputs(
     file belongs to, and inventing that from filenames would be a guess
     presented as provenance.
     """
+    from nr_workbench.provenance.hashing import MODEL_ROLES
     from nr_workbench.provenance.record import FitDirectory
 
     files = []
     for entry in FitDirectory(fit_dir).read_inputs():
-        if entry.get("role") == "script":
+        if entry.get("role") in MODEL_ROLES:
             continue
         path = (root / str(entry.get("path", ""))).resolve()
         if path.is_file():
