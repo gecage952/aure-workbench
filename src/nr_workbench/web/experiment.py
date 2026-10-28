@@ -720,10 +720,8 @@ class ExperimentData:
         """
         from nr_workbench.experiment.store import CatalogError
 
-        store = w.workspace.store
         try:
-            catalog, problems = store.load_report()
-            return (catalog, list(problems), True)
+            return (w.workspace.store.load(), [], True)
         except CatalogError as exc:
             return (Catalog(), [Problem("catalog", str(exc))], False)
 

@@ -968,36 +968,26 @@ def isaac_export_command(**kwargs: object) -> None:
     help="Ask the API whether the records would be accepted, without keeping them.",
 )
 @click.option("--yes", is_flag=True, help="Skip the confirmation.")
-@click.option(
-    "--expect-host",
-    default=None,
-    metavar="HOST",
-    help="Refuse unless the portal is HOST: what was confirmed, when the page asked.",
-)
-def isaac_push_command(
-    fit_id: str, validate_only: bool, yes: bool, expect_host: str | None
-) -> None:
+def isaac_push_command(fit_id: str, validate_only: bool, yes: bool) -> None:
     """Send FIT_ID's exported records to the ISAAC Portal.
 
     The records `nrw isaac export` wrote, unchanged: what the server validated
     is what is published. Only the final fit of a sample is published, and
-    each push is recorded in the fit index. ISAAC_URL and ISAAC_KEY are the
-    person's own -- the shell, ~/.nrw or ~/.aure -- never the project's .env.
+    each push is recorded in the fit index. ISAAC_URL and ISAAC_KEY are read
+    as every other setting is.
     """
     from nr_workbench.commands.isaac_cmd import run_push
 
-    run_push(
-        fit_id=fit_id, validate_only=validate_only, yes=yes, expect_host=expect_host
-    )
+    run_push(fit_id=fit_id, validate_only=validate_only, yes=yes)
 
 
 @main.group("tiled")
 def tiled_group() -> None:
     """Tiled: push the experiment's catalog, say what is there, fetch data.
 
-    Needs the installer's NRW_EXTRAS=tiled. The server is TILED_URL, from
-    your shell or ~/.nrw (tiled.ornl.gov by default), never a project's files.
-    Each command acts with your login, so an agent is refused them all.
+    Needs the installer's NRW_EXTRAS=tiled. The server is TILED_URL
+    (tiled.ornl.gov by default), read as nrw's other settings are. Each
+    command acts with your login, so an agent is refused them all.
     """
 
 

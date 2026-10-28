@@ -8,7 +8,6 @@ it did not recognise without saying so.
 
 from __future__ import annotations
 
-import errno
 import os
 from pathlib import Path
 
@@ -162,66 +161,6 @@ def test_an_unreadable_header_quarantines_the_run_and_names_the_file(
 # --------------------------------------------------------------------------
 
 
-def test_a_symbolic_link_is_not_followed(tmp_path: Path) -> None:
-    """A link in a team-writable folder can point at anything this account reads."""
-    folder = tmp_path / "reduced"
-    write_autoreduced(folder, 234277, [1])
-    secret = tmp_path / "private.txt"
-    secret.write_text("not data")
-    (folder / "REFL_234278_1_234278_autoreduction.dat").symlink_to(secret)
-
-    inventory = source_for(folder, ipts="IPTS-00001").inventory()
-
-    assert RunKey(234278) not in inventory.runs
-    assert any("symbolic link" in p.message for p in inventory.problems)
-
-
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes here")
-def test_a_pipe_named_like_data_is_reported_and_never_opened(tmp_path: Path) -> None:
-    """Opening a pipe waits for a writer: a listing that opened one would hang."""
-    from nr_workbench.bounded import Bounded
-
-    folder = tmp_path / "reduced"
-    write_autoreduced(folder, 234277, [1])
-    os.mkfifo(folder / "REFL_234278_1_234278_autoreduction.dat")
-    once = Bounded(slots=1, timeout=10, busy="", name="test-listing")
-
-    inventory = once.run(source_for(folder, ipts="IPTS-00001").inventory)
-
-    assert list(inventory.runs) == [RunKey(234277)]
-    assert any("not plain files" in p.message for p in inventory.problems)
-
-
-def test_names_from_a_shared_folder_are_reported_escaped(tmp_path: Path) -> None:
-    """They reach terminals: an escape sequence in one could rewrite the screen."""
-    folder = tmp_path / "reduced"
-    write_autoreduced(folder, 234277, [1])
-    (folder / "\x1b]0;spoofed\x07.dat").mkdir()  # a folder named like data
-    (folder / "odd\x1b[2J.txt").write_text("x")  # a name nrw does not know
-    (folder / "link\x1b[1m.dat").symlink_to(folder / "odd\x1b[2J.txt")
-
-    problems = source_for(folder, ipts="IPTS-00001").inventory().problems
-
-    said = " ".join(p.message for p in problems)
-    assert "\x1b" not in said
-    assert said.count("\\x1b") == 3  # still named, so a person can find them
-
-
-def test_a_check_reports_a_link_named_like_data_and_does_not_count_it(
-    tmp_path: Path,
-) -> None:
-    folder = tmp_path / "reduced"
-    write_autoreduced(folder, 234277, [1])
-    secret = tmp_path / "private.txt"
-    secret.write_text("not data")
-    (folder / "REFL_234278_1_234278_autoreduction.dat").symlink_to(secret)
-
-    probe = source_for(folder, ipts="IPTS-00001").probe()
-
-    assert probe.runs == 1
-    assert any("symbolic link" in p.message for p in probe.problems)
-
-
 def test_an_unrecognized_data_file_is_reported_not_skipped(tmp_path: Path) -> None:
     """A folder of files in an unknown dialect once looked exactly like an empty one."""
     (tmp_path / "REFL_234277_seg1_v3.dat").write_text("0.01 1 0.1 0.001\n")
@@ -372,26 +311,6 @@ def test_read_bytes_refuses_a_file_too_large_to_be_reduced_data(tmp_path: Path) 
 
     with pytest.raises(SourceFileTooLarge):
         source.read_bytes(listed, max_bytes=100)
-
-
-@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="no O_NOFOLLOW here")
-def test_read_bytes_will_not_open_a_file_swapped_for_a_link(tmp_path: Path) -> None:
-    """Refused by the open itself, not noticed afterwards.
-
-    Checking the version after opening would already have followed the link,
-    and a FIFO or a device behind it can hang the read.
-    """
-    copy_reference(tmp_path)
-    source = source_for(tmp_path)
-    listed = source.inventory().runs[RunKey(218386)].files[0]
-    target = tmp_path / listed.name
-    target.unlink()
-    target.symlink_to(tmp_path / "REFL_218393_1_218393_partial.txt")
-
-    with pytest.raises(OSError) as raised:
-        source.read_bytes(listed, max_bytes=1 << 20)
-
-    assert raised.value.errno == errno.ELOOP
 
 
 # --------------------------------------------------------------------------

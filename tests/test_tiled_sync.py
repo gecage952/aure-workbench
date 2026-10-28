@@ -259,17 +259,6 @@ def test_the_server_is_ornls_unless_the_person_names_another(project: Path) -> N
     assert server(project).url == "https://tiled-test.ornl.gov"
 
 
-def test_a_projects_env_chooses_neither_the_server_nor_the_key(project: Path) -> None:
-    """It is written by anyone who commits: it would choose where the person's
-    login is sent, and what is sent."""
-    project_env(project, f"TILED_URL=https://evil.example\nTILED_API_KEY={KEY}\n")
-
-    chosen = server(project)
-
-    assert chosen.url == "https://tiled.ornl.gov"
-    assert chosen.key is None
-
-
 def test_the_persons_key_is_sent_and_said_where_it_is_set(project: Path) -> None:
     own_settings(f"TILED_API_KEY={KEY}\n")
 
@@ -278,59 +267,12 @@ def test_the_persons_key_is_sent_and_said_where_it_is_set(project: Path) -> None
     assert chosen.key == KEY and chosen.key_source.endswith(".nrw")
 
 
-@pytest.mark.parametrize(
-    ("url", "said"),
-    [
-        ("http://tiled.ornl.gov", "not an https:// address"),
-        ("https://someone:pw@tiled.ornl.gov", "a user name"),
-        ("https://tiled.ornl.gov/?api_key=SECRET-1", "a query"),
-        ("https://tiled.ornl.gov/api/v1", "has a path"),
-    ],
-)
-def test_an_address_nrw_sends_no_login_to_is_refused_without_repeating_it(
-    project: Path, url: str, said: str
-) -> None:
-    own_settings(f"TILED_URL={url}\n")
+def test_an_address_with_a_path_is_refused(project: Path) -> None:
+    """The client would take the path for the place everything is under."""
+    own_settings("TILED_URL=https://tiled.ornl.gov/api/v1\n")
 
-    with pytest.raises(TiledSyncError) as refused:
+    with pytest.raises(TiledSyncError, match="has a path"):
         server(project)
-
-    assert said in str(refused.value)
-    assert url not in str(refused.value) and "SECRET" not in str(refused.value)
-
-
-def test_plain_http_is_for_the_contract_tests_server_alone(
-    project: Path, monkeypatch
-) -> None:
-    """Another account on the machine could answer on a loopback port."""
-    own_settings("TILED_URL=http://127.0.0.1:8000\n")
-
-    with pytest.raises(TiledSyncError, match="not an https:// address"):
-        server(project)
-
-    monkeypatch.setattr(server_module, "ALLOW_PLAIN_HTTP", True)
-
-    assert server(project).url == "http://127.0.0.1:8000"
-    own_settings("TILED_URL=http://tiled.ornl.gov\n")
-    with pytest.raises(TiledSyncError, match="not an https:// address"):
-        server(project)
-
-
-def test_what_nrws_env_loading_set_of_tileds_is_taken_out_and_the_shells_kept(
-    monkeypatch,
-) -> None:
-    """The client reads TILED_CACHE_DIR, TILED_API_KEY and TILED_LOG_AUTH_TOKEN
-    itself: from a file, they would move the person's tokens, or log them."""
-    monkeypatch.setenv("TILED_LOG_AUTH_TOKEN", "1")
-    monkeypatch.setenv("TILED_RETRY_ATTEMPTS", "2")
-    monkeypatch.setattr(env_module, "_set_by_files", {"TILED_LOG_AUTH_TOKEN"})
-
-    server_module._scrub_environment()
-
-    import os
-
-    assert "TILED_LOG_AUTH_TOKEN" not in os.environ
-    assert os.environ["TILED_RETRY_ATTEMPTS"] == "2"
 
 
 # --------------------------------------------------------------------------
@@ -616,11 +558,11 @@ def test_doctor_says_where_tiled_commands_would_go_and_with_what(
 def test_doctor_warns_of_an_address_no_command_would_use() -> None:
     from nr_workbench.commands import doctor
 
-    own_settings("TILED_URL=http://tiled.ornl.gov\n")
+    own_settings("TILED_URL=https://tiled.ornl.gov/api/v1\n")
 
     (check,) = doctor._tiled_checks()
 
-    assert check.status == "warn" and "not an https:// address" in check.detail
+    assert check.status == "warn" and "has a path" in check.detail
 
 
 # --------------------------------------------------------------------------

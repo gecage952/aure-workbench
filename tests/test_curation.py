@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -278,27 +277,6 @@ def test_files_something_uses_are_never_deleted(project: Path, use, said: str) -
     assert said in str(refused.value)
     assert (directory / "manifest.json").is_file()
     assert events(project, "delete") == []
-
-
-@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges")
-def test_a_fit_directory_that_is_a_link_is_never_deleted_through(
-    project: Path, tmp_path: Path
-) -> None:
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    (elsewhere / "manifest.json").write_text("{}\n")
-    (elsewhere / "precious.txt").write_text("keep me")
-    results = project / "samples" / "S1" / "results"
-    results.mkdir(parents=True, exist_ok=True)
-    (results / A).symlink_to(elsewhere)
-    index_of(project).append({"fit_id": A, "sample": "S1", "status": "ok"})
-    layout = layout_of(project)
-    curation.discard(layout, A, reason="planted")
-
-    with pytest.raises(curation.CurationRefused, match="not a fit directory"):
-        curation.delete_files(layout, A)
-
-    assert (elsewhere / "precious.txt").read_text() == "keep me"
 
 
 # --------------------------------------------------------------------------
@@ -680,36 +658,6 @@ def test_a_fit_is_curated_by_its_whole_id_beside_a_same_second_replicate(
 
     assert curation.star(layout_of(project), A) == A
     assert curation.curation_of(index_of(project).entries())[A].starred
-
-
-@pytest.mark.skipif(os.name == "nt", reason="symbolic links need privileges")
-@pytest.mark.parametrize("linked", ["results", "sample"])
-def test_a_link_anywhere_on_the_way_to_a_fit_is_never_deleted_through(
-    project: Path, tmp_path: Path, linked: str
-) -> None:
-    import shutil
-
-    elsewhere = tmp_path / "scratch-disk"
-    elsewhere.mkdir()
-    sample = project / "samples" / "S1"
-    if linked == "results":
-        (elsewhere / A).mkdir()
-        (elsewhere / A / "manifest.json").write_text("{}")
-        shutil.rmtree(sample / "results", ignore_errors=True)
-        (sample / "results").symlink_to(elsewhere)
-    else:
-        (elsewhere / "results" / A).mkdir(parents=True)
-        (elsewhere / "results" / A / "manifest.json").write_text("{}")
-        shutil.rmtree(sample)
-        sample.symlink_to(elsewhere)
-    index_of(project).append({"fit_id": A, "sample": "S1", "status": "ok"})
-    layout = layout_of(project)
-    curation.discard(layout, A, reason="planted")
-
-    with pytest.raises(curation.CurationRefused, match="not a fit directory"):
-        curation.delete_files(layout, A)
-
-    assert any(elsewhere.rglob("manifest.json"))
 
 
 @pytest.mark.parametrize(

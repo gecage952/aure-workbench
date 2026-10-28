@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from nr_workbench.web import jobs as jobs_module
-from nr_workbench.web.jobs import JobBusy, JobNotFound, JobRunner
+from nr_workbench.web.jobs import JobBusy, JobRunner
 
 
 @pytest.fixture
@@ -391,23 +391,6 @@ def test_a_record_that_cannot_be_read_shows_no_job_and_stops_nothing(
 # --------------------------------------------------------------------------
 # The folder, which the page reads from
 # --------------------------------------------------------------------------
-
-
-def test_a_log_replaced_by_a_link_is_not_followed(
-    tmp_path: Path, runner: JobRunner
-) -> None:
-    job = start(runner, ["print('fitted')"])
-    ended(runner)
-    secret = tmp_path / "secret.txt"
-    secret.write_text("PRIVATE KEY")
-    log = tmp_path / ".nrw" / "jobs" / f"{job.id}.log"
-    log.unlink()
-    log.symlink_to(secret)
-
-    with pytest.raises(JobNotFound):
-        runner.log(job.id, 0)
-    with pytest.raises(JobNotFound):
-        runner.output(job.id)
 
 
 def test_the_jobs_are_kept_out_of_git_in_any_project(

@@ -878,50 +878,6 @@ def test_a_missing_aure_binary_is_reported(sample: Path, monkeypatch) -> None:
 
 
 # --------------------------------------------------------------------------
-# A setup may not choose the endpoint
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "key,value",
-    [
-        ("llm_base_url", "http://127.0.0.1:9/v1"),
-        ("llm_api_key", "sk-not-a-real-key"),
-        ("llm_provider", "openai"),
-    ],
-)
-def test_a_setup_may_not_redirect_the_endpoint(
-    sample: Path, fake_aure, key: str, value: str
-) -> None:
-    """A setup is a committed, shareable file, and AuRE applies these keys as
-    environment overrides -- taking this machine's own API key with it.
-
-    So one arriving from a collaborator or an archived beamtime must not be
-    able to decide where the credential is sent.
-    """
-    _run("aure", "new", "Sample1")
-    setup = sample / "samples/Sample1/aure/Sample1-218386/setup.yaml"
-    setup.write_text(setup.read_text() + f"\n{key}: {value}\n", encoding="utf-8")
-
-    result = _run("aure", "run", str(setup))
-
-    assert result.exit_code != 0
-    assert key in result.output
-    assert not fake_aure, "the run must be refused before the process starts"
-
-
-def test_the_endpoint_refusal_says_to_rotate_the_key(sample: Path) -> None:
-    """Somebody who ran a setup they did not write needs to be told."""
-    _run("aure", "new", "Sample1")
-    setup = sample / "samples/Sample1/aure/Sample1-218386/setup.yaml"
-    setup.write_text(setup.read_text() + "\nllm_api_key: sk-x\n", encoding="utf-8")
-
-    result = _run("aure", "run", str(setup), "--dry-run")
-
-    assert "rotate" in result.output
-
-
-# --------------------------------------------------------------------------
 # Under an unattended agent
 # --------------------------------------------------------------------------
 

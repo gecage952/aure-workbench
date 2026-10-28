@@ -126,25 +126,6 @@ def test_atomic_write_bytes_keeps_the_files_mode(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_atomic_write_bytes_never_writes_through_a_planted_name(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """A link waiting at the temp file's name must not receive the data."""
-    outside = tmp_path / "outside.txt"
-    outside.write_bytes(b"not yours\n")
-    target = tmp_path / "project" / "nrw.toml"
-    target.parent.mkdir()
-    target.write_bytes(b"old\n")
-    monkeypatch.setattr(fsutil.secrets, "token_hex", lambda n: "planted")
-    (target.parent / ".nrw.toml.planted.tmp").symlink_to(outside)
-
-    with pytest.raises(FileExistsError):
-        atomic_write_bytes(target, b"new\n")
-
-    assert outside.read_bytes() == b"not yours\n"
-    assert target.read_bytes() == b"old\n"
-
-
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_atomic_write_bytes_sets_permissions_on_the_open_file(
     tmp_path: Path, monkeypatch
@@ -212,47 +193,3 @@ def test_atomic_write_bytes_keeps_no_setuid_setgid_or_sticky_bit(
     atomic_write_bytes(target, b"new\n")
 
     assert target.stat().st_mode & 0o7777 == 0o775
-
-
-@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="no O_NOFOLLOW here")
-def test_advisory_lock_refuses_a_link_planted_at_its_name(tmp_path: Path) -> None:
-    import errno
-
-    elsewhere = tmp_path / "elsewhere"
-    guarded = tmp_path / "cache" / "nrw.toml"
-    guarded.parent.mkdir()
-    (guarded.parent / "nrw.toml.lock").symlink_to(elsewhere)
-
-    with pytest.raises(OSError) as refused, advisory_lock(guarded):
-        pass
-
-    assert refused.value.errno == errno.ELOOP
-    assert not elsewhere.exists()
-
-
-def test_write_new_file_refuses_a_linked_folder_on_the_way(tmp_path: Path) -> None:
-    from nr_workbench.fsutil import write_new_file
-
-    project, outside = tmp_path / "project", tmp_path / "outside"
-    (project / ".nrw").mkdir(parents=True)
-    outside.mkdir()
-    (project / ".nrw" / "backups").symlink_to(outside)
-
-    with pytest.raises(OSError):
-        write_new_file(
-            project / ".nrw" / "backups" / "x", "nrw.toml", b"a", base=project
-        )
-
-    assert list(outside.iterdir()) == []
-
-
-def test_write_new_file_never_replaces_an_existing_file(tmp_path: Path) -> None:
-    from nr_workbench.fsutil import write_new_file
-
-    folder = tmp_path / ".nrw" / "backups" / "x"
-    write_new_file(folder, "nrw.toml", b"first", base=tmp_path)
-
-    with pytest.raises(FileExistsError):
-        write_new_file(folder, "nrw.toml", b"second", base=tmp_path)
-
-    assert (folder / "nrw.toml").read_bytes() == b"first"

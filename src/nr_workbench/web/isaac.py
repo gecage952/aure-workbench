@@ -7,11 +7,8 @@ wrote, unchanged, so what the server validated is what is published. The rules
 are the commands' own -- only the final fit of a sample is published, and each
 push is recorded in the fit index -- and the page asks only for the final fit.
 
-The key never passes through here. The portal and the key are the person's
-own -- the shell or ``~/.nrw``, never the project's ``.env``, which anyone who
-can write the project writes -- and this says only where each is set, and the
-host the portal is. A step that sends records names the host the person
-confirmed, and the push refuses if the portal is another by then.
+The key never passes through here: this says only where the portal and the
+key are set, and the host the portal is.
 
 Nothing here imports Flask; :mod:`nr_workbench.web.experiment_api` maps the
 errors to status codes.
@@ -92,7 +89,7 @@ class IsaacData:
             if directory is not None
             else []
         )
-        url, key, ignored = portal_settings(self.root)
+        url, key = portal_settings(self.root)
         return {
             "fit_id": fit_id,
             "sample": entry.get("sample"),
@@ -107,8 +104,6 @@ class IsaacData:
                 "set": key is not None,
                 "from": shown_source(key.source, self.root) if key else None,
             },
-            # Set in the project's .env, and not used: said, so it is no mystery.
-            "ignored": ignored,
             "records": [path.name for path in records],
             "exported_at": _when(max(p.stat().st_mtime for p in records))
             if records
@@ -117,17 +112,13 @@ class IsaacData:
             "writable": self.writable,
         }
 
-    def start(
-        self, fit_id: str, step: str, confirm: Any = None, host: Any = None
-    ) -> dict[str, Any]:
+    def start(self, fit_id: str, step: str, confirm: Any = None) -> dict[str, Any]:
         """Start one step as a job: ``export``, ``validate`` or ``push``.
 
         Args:
             fit_id: The fit, whole: a prefix is the terminal's shorthand.
             step: Which.
             confirm: For ``push``, the fit's id, as the person agreed to it.
-            host: For ``validate`` and ``push``, the portal's host as the person
-                was shown it: the push refuses if the portal is another by then.
 
         Returns:
             ``{"job": ...}``, the job started.
@@ -157,28 +148,16 @@ class IsaacData:
                 )
             if not status["portal"]["host"] or not status["key"]["set"]:
                 raise CurationRefused(
-                    "Set ISAAC_URL and ISAAC_KEY in ~/.nrw to send records to the "
-                    "portal."
-                )
-            if host != status["portal"]["host"]:
-                raise RequestError(
-                    "host must be the portal's host, as the page showed it"
+                    "Set ISAAC_URL and ISAAC_KEY to send records to the portal."
                 )
         if step == "push" and confirm != fit_id:
             raise RequestError("confirm must be the id of the fit being published")
         # `--` before the id: never read as an option, whatever it is.
         steps = {
             "export": ["isaac", "export", "--", fit_id],
-            "validate": [
-                "isaac",
-                "push",
-                "--validate-only",
-                f"--expect-host={host}",
-                "--",
-                fit_id,
-            ],
-            # --yes: the page asked, naming the fit and the host.
-            "push": ["isaac", "push", "--yes", f"--expect-host={host}", "--", fit_id],
+            "validate": ["isaac", "push", "--validate-only", "--", fit_id],
+            # --yes: the page asked, naming the fit and the portal.
+            "push": ["isaac", "push", "--yes", "--", fit_id],
         }
         labels = {
             "export": "ISAAC export",

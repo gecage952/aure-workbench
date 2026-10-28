@@ -1,12 +1,8 @@
 """The person's Tiled server, and a client of it that asks no one to log in.
 
-The server and its key are the person's: ``TILED_URL`` and ``TILED_API_KEY``
-from the shell, ``~/.nrw`` or ``~/.aure``, never a project's ``.env``, which
-anyone who can commit to the project writes and which would then choose where
-the person's login goes (2026-10-21, the same rule as ``ISAAC_URL``). The
-official client also reads several ``TILED_*`` variables itself -- the key,
-where it keeps its tokens, whether to log them -- so each one nrw's own
-``.env`` loading put in the environment is taken out before it starts.
+The server and its key are ``TILED_URL`` and ``TILED_API_KEY``, read as every
+other setting is: the shell, the project's ``.env``, ``~/.nrw``, then
+``~/.aure``.
 
 Only ``nrw tiled login`` starts a login: Tiled's device-code flow, which
 asks at the terminal which login when the server offers several
@@ -18,7 +14,6 @@ there is nothing.
 
 from __future__ import annotations
 
-import os
 import urllib.parse
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -65,17 +60,17 @@ class Server:
 
 
 def server(root: Path | None = None) -> Server:
-    """The person's server and key, from the shell, ``~/.nrw`` or ``~/.aure``.
+    """The person's server and key.
 
     Args:
-        root: The project, whose own ``.env`` is never read for either.
+        root: The project.
 
     Raises:
-        TiledSyncError: ``TILED_URL`` is not an address nrw sends a login to.
+        TiledSyncError: ``TILED_URL`` names no server, or has a path.
     """
     from nr_workbench.env import shown_source, where_set
 
-    settings = where_set(root, skip_project=True)
+    settings = where_set(root)
     named = settings.get("TILED_URL")
     if named is not None and named.value.strip():
         url = named.value.strip().rstrip("/")
@@ -84,7 +79,6 @@ def server(root: Path | None = None) -> Server:
         url, source = DEFAULT_URL, "nrw's default"
     problem = _url_problem(url)
     if problem is not None:
-        # The address itself is not repeated: a key pasted into it would be.
         raise TiledSyncError(f"TILED_URL, set in {source}, {problem}")
     key = settings.get("TILED_API_KEY")
     if key is not None and key.value:
@@ -93,54 +87,17 @@ def server(root: Path | None = None) -> Server:
 
 
 def _url_problem(url: str) -> str | None:
-    """Why *url* is no server nrw sends a login to; ``None`` when it is one.
+    """Why *url* is no server's address; ``None`` when it is one.
 
-    A user name, a query or a fragment is refused rather than printed back: a
-    key pasted into the address would be. A path is refused because the
-    client would take it for the place everything else is under.
+    A path is refused because the client would take it for the place
+    everything else is under.
     """
     parts = urllib.parse.urlsplit(url)
-    local = parts.hostname in ("localhost", "127.0.0.1", "::1")
-    if parts.scheme != "https" and not (
-        parts.scheme == "http" and local and ALLOW_PLAIN_HTTP
-    ):
-        return "is not an https:// address."
     if not parts.hostname:
         return "names no server."
-    if parts.username or parts.password or parts.query or parts.fragment:
-        return "holds a user name, a query or a fragment: give the server alone."
     if parts.path not in ("", "/"):
         return f"has a path: give the server alone, such as {DEFAULT_URL}."
     return None
-
-
-#: Plain http, to a server on this machine: for the contract tests' own
-#: server alone. Another account on the machine could answer on that port.
-ALLOW_PLAIN_HTTP = False
-
-#: What else the client, or the network under it, reads from the environment:
-#: where to send the requests, which certificates to trust, where to write
-#: the TLS keys.
-_NETWORK = (
-    "HTTPS_PROXY",
-    "HTTP_PROXY",
-    "ALL_PROXY",
-    "NO_PROXY",
-    "SSL_CERT_FILE",
-    "SSL_CERT_DIR",
-    "SSLKEYLOGFILE",
-)
-
-
-def _scrub_environment() -> None:
-    """Take out what nrw's ``.env`` loading put in the environment that the
-    client reads itself: every ``TILED_*`` variable, and the network's. Those
-    files are not the person's alone; what the person's shell set stays."""
-    from nr_workbench.env import loaded_from_files
-
-    for name in loaded_from_files():
-        if name.startswith("TILED_") or name.upper() in _NETWORK:
-            os.environ.pop(name, None)
 
 
 class Library(NamedTuple):
@@ -153,13 +110,11 @@ class Library(NamedTuple):
 
 
 def library() -> Library:
-    """The official client's parts, imported now, once the environment holds
-    nothing of a project's for it: it reads some of it as it is imported.
+    """The official client's parts, imported now.
 
     Raises:
         TiledSyncError: It is not installed.
     """
-    _scrub_environment()
     try:
         from tiled.client.auth import CannotRefreshAuthentication
         from tiled.client.constructors import from_context

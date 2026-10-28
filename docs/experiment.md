@@ -117,8 +117,7 @@ for another provider, such as `gpt-4o`, would be passed to `claude`. Choosing
 whoever wrote them: after a choice of Claude, that leaves `.env` exactly as it
 was before. Nothing else in `.env` is changed. The section says
 so, and changes nothing, when `.env` is something it should not edit: a
-symbolic link, a file that is not text, or one changed by hand since the page
-read it.
+file that is not text, or one changed by hand since the page read it.
 
 Each job reads `.env` as it starts, so a choice applies from the next one, with
 no restart. The exception is a variable set in the environment `nrw serve` was
@@ -516,11 +515,9 @@ ISAAC_URL=https://isaac.slac.stanford.edu/portal/api
 ISAAC_KEY=...
 ```
 
-They are read from your own settings only (the shell, `~/.nrw`, or
-`~/.aure` if you keep them there) and never from the project's `.env`. Anyone who can write the project writes that file,
-and a portal named there would decide where your key and the records go. The
-panel says where each is set, the portal's host, and when the project's
-`.env` names one that is ignored. It never shows the key. From the terminal:
+They are read as nrw's other settings are: the shell, the project's
+`.env`, `~/.nrw`, then `~/.aure`. The panel says where each is set, and the
+portal's host. It never shows the key. From the terminal:
 
 ```bash
 nrw isaac export <fit_id>
@@ -576,7 +573,6 @@ nrw experiment release Sample6
 | `experiment/runs.parquet` | One row per run: its sample, type, condition, good or not, its notes | Yes |
 | `experiment/samples.parquet` | One row per sample: its context | Yes |
 | `experiment/experiment.parquet` | One row, once written: the experiment's own context, its summary, hypotheses and notes | Yes |
-| `experiment/catalog.json` | Digests of each, written last, so an interrupted save is noticed | Yes |
 | `samples/<id>/data/sources.json` | What apply copied | Yes |
 | `nrw.toml` (`[beamtime]`, `[experiment.*]`) | The IPTS, where the data is, and how new runs are noticed | Yes |
 
@@ -586,8 +582,7 @@ Parquet is binary, which has two consequences:
 
 - **git cannot merge it.** If two people organize the same experiment on
   different branches, the merge leaves one side in place with no conflict
-  markers. nrw refuses to load or save the catalog while git reports it
-  unmerged, and says how to resolve it.
+  markers: keep one side, and make the other's edits again on the page.
 - **A diff does not show what changed.** `nrw experiment status --json` does.
 
 A catalog file that exists but cannot be read is never treated as empty. The

@@ -323,9 +323,8 @@ def recorded_angle(path: Path) -> RecordedAngle:
 def read_header_bytes(data: bytes, path: Path, *, dq: bool = True) -> ReducedHeader:
     """:func:`read_header`, for a caller that has already read the file.
 
-    The experiment's data source reads a shared folder, where a file can be
-    swapped for a symbolic link between being listed and being opened; it opens
-    each file itself, refusing links, and hands the bytes here.
+    The experiment's data source opens each file itself, checking it is still
+    the file it listed, and hands the bytes here.
 
     Args:
         data: The start of the file. Only the first :data:`MAX_HEADER_BYTES`

@@ -443,25 +443,6 @@ ENVIRONMENT_ONLY_KNOBS: dict[str, str] = {
     "USE_RUN_TITLE": "0",
 }
 
-#: Setup keys that choose the language-model endpoint or carry its credential.
-#: AuRE accepts all of these and applies them as environment overrides for the
-#: duration of a run, so a setup file can silently re-point the run at another
-#: host -- taking the caller's own ``LLM_API_KEY`` with it, because AuRE reads
-#: the key from the ambient environment while taking the URL from the file.
-#:
-#: A setup is a *tracked, shareable* file here, which is exactly why this
-#: matters: one arriving from a collaborator, or from an archived beamtime,
-#: must not be able to decide where this machine's credentials are sent. The
-#: endpoint comes from ``.env``, which is gitignored for the same reason.
-CREDENTIAL_SETUP_KEYS: tuple[str, ...] = (
-    "llm_api_key",
-    "llm_base_url",
-    "llm_provider",
-    "llm_model",
-    "llm_temperature",
-    "llm_timeout",
-)
-
 
 class SetupInvalidError(Exception):
     """Raised when a setup document is rejected -- by AuRE, or by us.
@@ -472,18 +453,6 @@ class SetupInvalidError(Exception):
     fix. Reporting the second as the first sends a fixable data problem to an
     issue tracker.
     """
-
-
-def credential_keys_in(document: dict[str, Any]) -> list[str]:
-    """Return any endpoint- or credential-choosing keys the document sets.
-
-    Args:
-        document: A parsed setup mapping.
-
-    Returns:
-        The offending key names, in declaration order.
-    """
-    return [key for key in CREDENTIAL_SETUP_KEYS if document.get(key) not in (None, "")]
 
 
 def validate_setup(path: Path) -> dict[str, Any]:
@@ -504,8 +473,7 @@ def validate_setup(path: Path) -> dict[str, Any]:
 
     Raises:
         AureUnavailableError: If AuRE is not importable.
-        SetupInvalidError: If the setup is rejected -- by AuRE's own loader, or
-            because it tries to choose the language-model endpoint.
+        SetupInvalidError: If AuRE's own loader rejects the setup.
     """
     try:
         from aure.setup import load_setup
@@ -513,23 +481,9 @@ def validate_setup(path: Path) -> dict[str, Any]:
         raise AureUnavailableError(f"Cannot import aure.setup: {exc}") from exc
 
     try:
-        document = dict(load_setup(str(path)))
+        return dict(load_setup(str(path)))
     except Exception as exc:
         raise SetupInvalidError(f"{path}: {exc}") from exc
-
-    # Checked after parsing so synonyms and coercion have been applied, and
-    # before the caller can act on the document. See CREDENTIAL_SETUP_KEYS.
-    offending = credential_keys_in(document)
-    if offending:
-        raise SetupInvalidError(
-            f"{path} sets {', '.join(offending)}. A setup file may not choose "
-            "the language-model endpoint or carry a key: it is committed and "
-            "shared, and AuRE would apply those to the run while still using "
-            "the API key from your environment. Remove them -- the endpoint "
-            "comes from .env, which is gitignored. If this file came from "
-            "somebody else, rotate any key you have configured."
-        )
-    return document
 
 
 # --------------------------------------------------------------------------
