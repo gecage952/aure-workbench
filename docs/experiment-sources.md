@@ -112,9 +112,8 @@ and know them sooner:
   *acquired*, before any reduction exists. The page shows such a run as
   **awaiting reduction**, a state the folder can never show. The monitor's run
   lists need an ORNL login, so a monitor feed needs credentials. They belong
-  where ISAAC's key does, in `~/.nrw` or the shell: never in `nrw.toml`, and
-  not in the project's `.env`, which anyone who can write the project can
-  write.
+  where ISAAC's key does, in the project's `.env`, `~/.nrw` or the shell:
+  never in `nrw.toml`, which is committed.
 
 A feed returns every run it currently knows. `experiment/live.py` works out
 what changed, so a feed never keeps state about what it has already said. If a
@@ -206,8 +205,8 @@ own command line, to an agent.
 | `nrw tiled pull --data` | copies the experiment's reduced files into the data folder |
 
 The server is `TILED_URL` (tiled.ornl.gov by default), and `TILED_API_KEY`
-is sent instead of a login when set: both from the shell, `~/.nrw` or
-`~/.aure`, never a project's `.env`, which anyone who commits writes.
+is sent instead of a login when set: both read as nrw's other settings are,
+from the shell, the project's `.env`, `~/.nrw`, then `~/.aure`.
 
 **What a push writes.** In the experiment's node, `context/` holds `runs/`
 and `samples/`, with one container per record: nrw's fields are its metadata,

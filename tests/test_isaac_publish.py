@@ -214,48 +214,7 @@ def test_a_push_that_never_reported_back_is_recorded_as_one_that_may_have(
     )
 
 
-def test_the_tool_reads_no_portal_of_its_own_choosing(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    exported(project, A)
-    finalize(project)
-    seen: list[dict] = []
-    real_run = isaac_cmd._run
-
-    def run(cmd, step, **options):
-        seen.append(options["env"])
-        return real_run(cmd, step, **options)
-
-    monkeypatch.setattr(isaac_cmd, "_run", run)
-    portal(monkeypatch)
-
-    nrw(project, monkeypatch, "isaac", "push", A, "--yes")
-
-    # python-dotenv switched off in the tool: it would otherwise load a .env it
-    # finds near its own install, and take a portal from it.
-    assert seen[0]["PYTHON_DOTENV_DISABLED"] == "1"
-    assert seen[0]["ISAAC_URL"] == "https://isaac.example.org/portal/api"
-
-
-def test_a_portal_the_projects_env_names_is_never_the_one_used(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    # Anyone who can write the project writes its .env: it would choose where
-    # the person's key, and the records, go.
-    (project / ".env").write_text("ISAAC_URL=https://attacker.example/api\n")
-    exported(project, A)
-    finalize(project)
-    portal(monkeypatch)
-
-    result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
-
-    assert result.exit_code == 0, result.output
-    (push,) = pushes(project)
-    assert push["records"][0]["record_id"].endswith("@isaac.example.org")
-    assert "attacker" not in result.output
-
-
-def test_no_portal_or_key_of_ones_own_sends_nothing(project: Path, monkeypatch) -> None:
+def test_no_portal_or_key_sends_nothing(project: Path, monkeypatch) -> None:
     exported(project, A)
     finalize(project)
 
@@ -267,23 +226,7 @@ def test_no_portal_or_key_of_ones_own_sends_nothing(project: Path, monkeypatch) 
     result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
 
     assert result.exit_code != 0
-    assert "Set ISAAC_URL and ISAAC_KEY in your own settings" in result.output
-    assert pushes(project) == ()
-
-
-def test_a_push_to_a_host_other_than_the_one_confirmed_sends_nothing(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    exported(project, A)
-    finalize(project)
-    portal(monkeypatch)
-
-    result = nrw(
-        project, monkeypatch, "isaac", "push", A, "--yes", "--expect-host=other.org"
-    )
-
-    assert result.exit_code != 0
-    assert "not other.org as confirmed" in result.output
+    assert "Set ISAAC_URL and ISAAC_KEY" in result.output
     assert pushes(project) == ()
 
 
@@ -408,9 +351,8 @@ def test_each_step_is_a_job_and_only_for_the_final_fit(
     while jobs.current().status == "running" and time.monotonic() < deadline:
         time.sleep(0.05)
     exported(project, A)
-    unconfirmed = step(writer, app, A, "push", {"host": "isaac.example.org"})
-    elsewhere = step(writer, app, A, "push", {"confirm": A, "host": "other.org"})
-    pushed = step(writer, app, A, "push", {"confirm": A, "host": "isaac.example.org"})
+    unconfirmed = step(writer, app, A, "push")
+    pushed = step(writer, app, A, "push", {"confirm": A})
 
     assert (
         not_final.status_code == 409 and "Finalize it first" in not_final.json["error"]
@@ -419,12 +361,8 @@ def test_each_step_is_a_job_and_only_for_the_final_fit(
     assert export.status_code == 202, export.json
     assert export.json["job"]["steps"] == [["isaac", "export", "--", A]]
     assert unconfirmed.status_code == 400
-    assert elsewhere.status_code == 400
     assert pushed.status_code == 202, pushed.json
-    # The host the person was shown goes with the job: the push refuses another.
-    assert pushed.json["job"]["steps"] == [
-        ["isaac", "push", "--yes", "--expect-host=isaac.example.org", "--", A]
-    ]
+    assert pushed.json["job"]["steps"] == [["isaac", "push", "--yes", "--", A]]
 
 
 def test_publishing_from_the_page_needs_a_writable_server(

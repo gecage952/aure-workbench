@@ -455,7 +455,6 @@ def test_serve_loads_no_env_file_into_its_own_environment(
     from click.testing import CliRunner
 
     from nr_workbench.cli import main
-    from nr_workbench.commands.isaac_cmd import portal_settings
 
     planted = ("ISAAC_URL", "TILED_URL", "NRW_PLANTED_ABOVE")
     (expt / ".env").write_text(
@@ -478,8 +477,6 @@ def test_serve_loads_no_env_file_into_its_own_environment(
         assert result.exit_code == 0, result.output
         assert started, "the server was never started"
         assert [name for name in planted if name in os.environ] == []
-        url, _, ignored = portal_settings(expt)
-        assert url is None and ignored == ["ISAAC_URL"]
     finally:
         for name in planted:  # what a failure loaded must not reach a later test
             os.environ.pop(name, None)

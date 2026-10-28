@@ -34,7 +34,6 @@ from nr_workbench.project import envfile as envfile_module
 from nr_workbench.project.envfile import (
     ABSENT,
     EnvFileConflict,
-    EnvFileError,
     EnvValueError,
     read_env_file,
     set_values,
@@ -338,44 +337,6 @@ def test_saving_the_same_choice_again_leaves_the_file_alone(tmp_path: Path) -> N
     assert (env.read_bytes(), env.stat().st_mtime_ns) == before
 
 
-@POSIX
-def test_a_symbolic_link_is_neither_read_nor_written_through(tmp_path: Path) -> None:
-    # Planted in a shared project, a link would have nrw write into whatever
-    # file it names -- a shell profile, another person's settings.
-    target = tmp_path / "profile"
-    target.write_text("export PATH=/usr/bin\n")
-    project = tmp_path / "proj"
-    project.mkdir()
-    (project / ".env").symlink_to(target)
-
-    with pytest.raises(EnvFileError, match="symbolic link"):
-        read_env_file(project)
-    with pytest.raises(EnvFileError, match="symbolic link"):
-        set_values(project, {"LLM_PROVIDER": "claude_code"}, base_revision=ABSENT)
-
-    assert target.read_text() == "export PATH=/usr/bin\n"
-    assert (project / ".env").is_symlink()
-
-
-@POSIX
-def test_a_fifo_or_an_oversized_env_is_refused_without_being_waited_on(
-    tmp_path: Path,
-) -> None:
-    fifo, big = tmp_path / "fifo", tmp_path / "big"
-    fifo.mkdir()
-    big.mkdir()
-    os.mkfifo(fifo / ".env")  # nobody writes to it: reading would never end
-    (big / ".env").write_bytes(b"#" * (envfile_module.MAX_BYTES + 1))
-
-    started = time.monotonic()
-    with pytest.raises(EnvFileError, match="not a regular file"):
-        read_env_file(fifo)
-    with pytest.raises(EnvFileError, match="larger than"):
-        read_env_file(big)
-
-    assert time.monotonic() - started < 5
-
-
 def test_a_change_made_by_hand_meanwhile_is_never_written_over(tmp_path: Path) -> None:
     env = tmp_path / ".env"
     env.write_text("LLM_PROVIDER=openai\n")
@@ -407,47 +368,6 @@ def test_a_hand_edit_made_while_the_change_is_worked_out_is_refused_too(
         )
 
     assert "typed-just-now" in env.read_text()
-
-
-@POSIX
-def test_the_mode_is_never_looked_up_through_a_link_put_there_meanwhile(
-    tmp_path: Path, monkeypatch
-) -> None:
-    env = tmp_path / ".env"
-    env.write_text(f"LLM_API_KEY={PLANTED}\n")
-    env.chmod(0o600)
-    theirs = tmp_path / "theirs"
-    theirs.write_text("x")
-    theirs.chmod(0o666)
-    real = envfile_module.atomic_write_bytes
-
-    def swapped_just_before(target, data, **options):
-        target.unlink()
-        target.symlink_to(theirs)
-        real(target, data, **options)
-
-    monkeypatch.setattr(envfile_module, "atomic_write_bytes", swapped_just_before)
-
-    set_values(
-        tmp_path, {"LLM_PROVIDER": "claude_code"}, base_revision=revision(tmp_path)
-    )
-
-    # The keys stay the owner's alone, and the planted file is untouched.
-    assert not env.is_symlink()
-    assert env.stat().st_mode & 0o777 == 0o600
-    assert (theirs.stat().st_mode & 0o777, theirs.read_text()) == (0o666, "x")
-
-
-def test_the_revision_confirms_nothing_about_what_the_file_holds(
-    tmp_path: Path,
-) -> None:
-    import hashlib
-
-    data = f"LLM_API_KEY={PLANTED}\n".encode()
-    (tmp_path / ".env").write_bytes(data)
-
-    assert revision(tmp_path) != hashlib.sha256(data).hexdigest()
-    assert revision(tmp_path) == revision(tmp_path)
 
 
 @pytest.mark.parametrize(

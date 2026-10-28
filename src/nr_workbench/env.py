@@ -53,7 +53,7 @@ KNOWN_VARS = (
     "ISAAC_URL",
     "ISAAC_KEY",
     # The Tiled server `nrw tiled` uses, and the key it sends instead of a
-    # login: the person's alone, read from the shell, ~/.nrw or ~/.aure.
+    # login.
     "TILED_URL",
     "TILED_API_KEY",
 )
@@ -175,7 +175,6 @@ def where_set(
         # Checked before each file, as load_dotenv does: one may set it.
         if (skip_project and is_project) or _dotenv_disabled(environ):
             continue
-        # A regular file only: the server never waits on a FIFO put there.
         if not path.is_file():
             continue
         try:

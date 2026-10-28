@@ -172,16 +172,11 @@ def read_config(path: Path) -> ConfigText:
     """Read a configuration file, refusing any the editor must not touch.
 
     Raises:
-        TomlEditError: It is a symbolic link, not UTF-8, starts with a byte
-            order mark, holds git conflict markers, or is not valid TOML.
+        TomlEditError: It is not UTF-8, starts with a byte order mark, holds
+            git conflict markers, or is not valid TOML.
         OSError: It cannot be read.
     """
     path = Path(path)
-    if path.is_symlink():
-        raise TomlEditError(
-            f"{path.name} is a symbolic link; nrw edits only a plain file, so "
-            "that writing it cannot change a file somewhere else."
-        )
     raw = path.read_bytes()
     if raw.startswith(b"\xef\xbb\xbf"):
         raise TomlEditError(
@@ -687,33 +682,23 @@ def write_config(
         TomlConflictError: The file is no longer what was read.
         OSError: It could not be written.
     """
-    from nr_workbench.fsutil import atomic_write_bytes, write_new_file
+    from nr_workbench.fsutil import atomic_write_bytes
 
     path = Path(path)
     cache_dir, backups_dir = Path(cache_dir), Path(backups_dir)
     # Encoded before anything is written: text that cannot be, fails here,
     # not after the backup has been made.
     data = new_text.encode("utf-8")
-    for folder in (cache_dir.parent, cache_dir, backups_dir):
-        if folder.is_symlink():
-            raise TomlEditError(
-                f"{folder} is a symbolic link. nrw writes its temporary file and "
-                "its backups only into the project's own folders, so "
-                "that saving cannot write anywhere else; make it a plain folder."
-            )
-    if path.is_symlink() or path.read_bytes() != base.raw:
+    if path.read_bytes() != base.raw:
         raise TomlConflictError(
             f"{path.name} changed since it was read -- edited by hand, or saved "
             "from somewhere else. Nothing was written; look again."
         )
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    # The bytes that were read and compared, not the file read again by name;
-    # into a new folder, reached through no link.
-    backup = write_new_file(
-        backups_dir / f"{stamp}-{secrets.token_hex(8)}",
-        path.name,
-        base.raw,
-        base=path.parent,
-    )
+    # The bytes that were read and compared, not the file read again.
+    folder = backups_dir / f"{stamp}-{secrets.token_hex(8)}"
+    folder.mkdir(parents=True)
+    backup = folder / path.name
+    backup.write_bytes(base.raw)
     atomic_write_bytes(path, data, scratch=cache_dir)
     return backup

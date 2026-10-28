@@ -256,9 +256,7 @@ def test_the_isaac_panel_is_for_the_final_fit_and_asks_before_it_pushes(
         "document.getElementById('isaac-log').textContent.includes('isaac push')",
         what="the push's job",
     )
-    assert f"isaac push --yes --expect-host=isaac.example.org -- {A}" in text(
-        page, "isaac-log"
-    )
+    assert f"isaac push --yes -- {A}" in text(page, "isaac-log")
 
 
 def test_a_push_that_never_reported_back_is_shown_as_one_that_may_have(

@@ -995,10 +995,8 @@ sent is copied under the fit's `isaac/published/`. The fit's page in
 `nrw serve` offers the same steps: **Export**, **Validate with the server** and
 **Push…**.
 
-The portal and the key are yours, not the project's: set `ISAAC_URL` and
-`ISAAC_KEY` in `~/.nrw` (or your shell, or `~/.aure`). The project's `.env` is
-never read for them: anyone who can write the project can write that file, and
-it would choose where your key and your records are sent.
+Set `ISAAC_URL` and `ISAAC_KEY` where nrw reads its other settings: the
+project's `.env`, `~/.nrw`, your shell, or `~/.aure`.
 
 nr-workbench does not map anything to the ISAAC schema itself — `data-assembler`
 and `nr-isaac-format` own that, and a second copy would drift from a schema

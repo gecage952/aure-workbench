@@ -33,7 +33,6 @@ from click.testing import CliRunner
 
 from nr_workbench.cli import main
 from nr_workbench.tiled import context as context_module
-from nr_workbench.tiled import server as server_module
 
 from .test_tiled_sync import catalogued, own_settings
 
@@ -105,7 +104,6 @@ def on_local_tiled(local_tiled, project: Path, monkeypatch, tmp_path: Path):
     from tiled.client import from_uri
 
     url, key = local_tiled
-    monkeypatch.setattr(server_module, "ALLOW_PLAIN_HTTP", True)
     own_settings(f"TILED_URL={url}\nTILED_API_KEY={key}\n")
     monkeypatch.setenv("TILED_CACHE_DIR", str(tmp_path / "tiled-cache"))
     # No access policy, so no tags: what the policy would have given.

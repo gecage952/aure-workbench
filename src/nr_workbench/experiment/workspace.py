@@ -72,9 +72,6 @@ class _UnavailableStore:
     def load(self) -> Any:
         return self._refuse()
 
-    def load_report(self) -> Any:
-        return self._refuse()
-
     def update(self, **kwargs: Any) -> Any:
         del kwargs
         return self._refuse()

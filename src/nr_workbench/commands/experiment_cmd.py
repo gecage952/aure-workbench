@@ -80,8 +80,7 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
     ]
     readable = True
     try:
-        catalog, recovered = workspace.store.load_report()
-        problems.extend(recovered)
+        catalog = workspace.store.load()
     except CatalogError as exc:
         from nr_workbench.experiment.model import Catalog
         from nr_workbench.problems import Problem

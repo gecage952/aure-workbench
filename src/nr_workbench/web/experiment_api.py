@@ -344,9 +344,7 @@ def isaac_status(fit_id: str) -> Any:
 def isaac_step(fit_id: str, step: str) -> Any:
     """Export, validate or push a final fit's records, as a job."""
     body = _body()
-    return jsonify(
-        isaac_data().start(fit_id, step, body.get("confirm"), body.get("host"))
-    ), 202
+    return jsonify(isaac_data().start(fit_id, step, body.get("confirm"))), 202
 
 
 # ---------------------------------------------------------------------------

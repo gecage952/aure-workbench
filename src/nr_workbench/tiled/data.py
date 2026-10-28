@@ -7,10 +7,9 @@ lacks into that folder, and nothing else: a file the folder holds already is
 left as it is, since a size or a time would not tell a re-reduction from the
 same file. The folder watcher does the rest, as for any file that appears.
 
-Only names the reduction writes are copied, so nothing a node is called can
-become a path here. Each lands in a file of a random name, made new, and is
-renamed whole: the watcher never reads half of one, and nothing planted in
-the folder is written through. Nothing is written on Tiled.
+Only names the reduction writes are copied. Each is written under a hidden
+name and renamed whole, so the watcher never reads half of one. Nothing is
+written on Tiled.
 
 Each file is fetched by the route the client's own ``raw_export`` takes, but
 not through it: in tiled 0.2.18 that logs a failed download as a line of
@@ -20,7 +19,6 @@ output, rather than raising it, and draws a progress bar for every file.
 from __future__ import annotations
 
 import os
-import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,7 +124,7 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
     written: list[Path] = []
     for item in missing:
         target = folder / item.name
-        partial: Path | None = None
+        partial = folder / f".{item.name}.nrw-pull"
         try:
             data = content_of(item.node)
             if data is None:
@@ -134,15 +132,7 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
                     f"{item.name} on Tiled is not one file: nothing of it was "
                     f"copied. {_before(written)}"
                 )
-            # Made new, under a name no one could have planted: written
-            # through nothing, then renamed over the target whole.
-            handle, name = tempfile.mkstemp(dir=folder, prefix=".nrw-pull-")
-            partial = Path(name)
-            with os.fdopen(handle, "wb") as out:
-                out.write(data)
-            umask = os.umask(0)
-            os.umask(umask)
-            partial.chmod(0o666 & ~umask)
+            partial.write_bytes(data)
             os.replace(partial, target)
         except httpx.HTTPError as exc:
             raise TiledSyncError(
@@ -153,8 +143,7 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
                 f"{target} could not be written: {exc}. {_before(written)}"
             ) from None
         finally:
-            if partial is not None:
-                partial.unlink(missing_ok=True)
+            partial.unlink(missing_ok=True)
         written.append(target)
     return written
 

@@ -12,9 +12,7 @@ One at a time: two fits compete for the same cores, and neither finishes sooner
 than if it had waited its turn. What a job printed is kept in
 ``.nrw/jobs/<id>.log`` and what it was in ``<id>.json``, so the page can say
 what became of a job after ``nrw serve`` was restarted under it. The folder
-ignores itself in git, keeps the newest :data:`KEEP_JOBS` jobs, and is never
-read or written through a symbolic link: the log is served to the page, and a
-link planted in a shared project would serve whatever it pointed at.
+ignores itself in git, and keeps the newest :data:`KEEP_JOBS` jobs.
 
 Cancel sends SIGTERM, never SIGINT: bumps' DREAM takes a keyboard interrupt as
 "stop sampling" and returns the chain so far, which ``nrw fit run`` would then
@@ -33,8 +31,8 @@ import signal
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager, suppress
+from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,9 +54,6 @@ KEEP_JOBS = 20
 #: A job id: when it started, to the microsecond, so that the newest sorts
 #: last; then six hex digits.
 _ID_RE = re.compile(r"\d{8}T\d{12}Z-[0-9a-f]{6}")
-
-#: Opened never through a symbolic link, where the platform can say so.
-_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 _log = logging.getLogger(__name__)
 
@@ -332,16 +327,16 @@ class JobRunner:
             The text, and the byte offset just past what it covers.
 
         Raises:
-            JobNotFound: No such job, or its log is not a file of this folder's.
+            JobNotFound: No such job.
         """
         try:
-            with _opened(self._path(job_id, ".log"), os.O_RDONLY) as handle:
+            with self._path(job_id, ".log").open("rb") as handle:
                 size = os.fstat(handle.fileno()).st_size
                 tail = offset is None
                 start = max(0, size - LOG_CHUNK if tail else min(offset, size))
                 handle.seek(start)
                 chunk = handle.read(LOG_CHUNK)
-        except OSError as exc:  # absent, or a link where the log should be
+        except OSError as exc:
             raise JobNotFound(f"No log of job {job_id!r} can be read here.") from exc
         if tail and start > 0:
             newline = chunk.find(b"\n") + 1
@@ -357,11 +352,11 @@ class JobRunner:
         """All a job printed, as text: to read what it says, not to page through.
 
         Raises:
-            JobNotFound: No such job, or its log is not a file of this folder's.
+            JobNotFound: No such job.
         """
         try:
-            with _opened(self._path(job_id, ".log"), os.O_RDONLY) as handle:
-                return handle.read().decode("utf-8", errors="replace")
+            data = self._path(job_id, ".log").read_bytes()
+            return data.decode("utf-8", errors="replace")
         except OSError as exc:
             raise JobNotFound(f"No log of job {job_id!r} can be read here.") from exc
 
@@ -392,7 +387,7 @@ class JobRunner:
 
     def _steps(self, job: Job) -> str:
         """Run the job's steps in order; how the job ended."""
-        with _opened(self._path(job.id, ".log"), _CREATE, mode="ab") as log:
+        with self._path(job.id, ".log").open("ab") as log:
             for number, args in enumerate(job.steps, 1):
                 process = self._launch(job, number, args, log)
                 if process is None:
@@ -450,8 +445,8 @@ class JobRunner:
         """Make the folder, ignored by git, holding only the newest jobs."""
         self.directory.mkdir(parents=True, exist_ok=True)
         ignore = self.directory / ".gitignore"
-        with suppress(FileExistsError), _opened(ignore, _CREATE, mode="wb") as handle:
-            handle.write(b"*\n")
+        if not ignore.exists():
+            ignore.write_bytes(b"*\n")
         recorded = sorted(
             path.stem
             for path in self.directory.glob("*.json")
@@ -465,12 +460,7 @@ class JobRunner:
     def _save(self, job: Job) -> None:
         path = self._path(job.id, ".json")
         partial = path.with_name(f"{path.name}.partial")
-        # A partial left by a crash -- or a link planted in its place -- is
-        # removed, never written through.
-        with suppress(FileNotFoundError):
-            partial.unlink()
-        with _opened(partial, _CREATE, mode="wb") as handle:
-            handle.write((json.dumps(job.as_dict(), indent=2) + "\n").encode())
+        partial.write_bytes((json.dumps(job.as_dict(), indent=2) + "\n").encode())
         os.replace(partial, path)
 
     def _last_recorded(self) -> Job | None:
@@ -491,8 +481,7 @@ class JobRunner:
         if not recorded:
             return None
         try:
-            with _opened(recorded[-1], os.O_RDONLY) as handle:
-                job = Job(**json.loads(handle.read().decode("utf-8")))
+            job = Job(**json.loads(recorded[-1].read_bytes().decode("utf-8")))
         except (OSError, ValueError, TypeError):
             return None  # unreadable: nothing is claimed about it
         if job.id != recorded[-1].stem or not isinstance(job.steps, list):
@@ -500,18 +489,6 @@ class JobRunner:
         if job.status == "running":
             job.status = "detached"
         return job
-
-
-#: Created new, and only new: never through a link, never over a file.
-_CREATE = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-
-
-@contextmanager
-def _opened(path: Path, flags: int, *, mode: str = "rb") -> Iterator[IO[bytes]]:
-    """*path* opened with *flags*, never through a symbolic link."""
-    fd = os.open(path, flags | _NOFOLLOW, 0o600)
-    with os.fdopen(fd, mode) as handle:
-        yield handle
 
 
 def _stop(process: subprocess.Popen[bytes]) -> None:

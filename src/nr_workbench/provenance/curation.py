@@ -37,8 +37,6 @@ import json
 import os
 import secrets
 import shutil
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -310,19 +308,19 @@ def delete_files(layout: ProjectLayout, fit_id: str) -> Path:
     index, entry, state, parts = _deletable(layout, fit_id)
     hidden = f".deleting-{parts[-1]}-{secrets.token_hex(4)}"
     error: OSError | None = None
-    with _opened_parent(layout, parts) as parent:
-        parent.rename(parts[-1], hidden)
-        try:
-            parent.remove(hidden)
-        except OSError as exc:
-            error = exc
-        _append(
-            index,
-            entry,
-            EVENT_DELETE,
-            reason=(state.discarded or {}).get("reason"),
-            partial=True if error else None,
-        )
+    parent = layout.root.joinpath(*parts[:-1])
+    (parent / parts[-1]).rename(parent / hidden)
+    try:
+        shutil.rmtree(parent / hidden)
+    except OSError as exc:
+        error = exc
+    _append(
+        index,
+        entry,
+        EVENT_DELETE,
+        reason=(state.discarded or {}).get("reason"),
+        partial=True if error else None,
+    )
     relative = Path(*parts)
     if error is not None:
         raise CurationRefused(
@@ -344,9 +342,8 @@ def deletable(layout: ProjectLayout, fit_id: str) -> Path:
         The fit's result directory.
 
     Raises:
-        CurationRefused: No such fit; not discarded; already deleted; used by a
-            report, a figure, another fit or an ISAAC record; or its directory
-            is not where a fit's is -- a link on the way to it included.
+        CurationRefused: No such fit; not discarded; already deleted; or used
+            by a report, a figure, another fit or an ISAAC record.
     """
     return layout.root / Path(*_deletable(layout, fit_id)[3])
 
@@ -377,18 +374,6 @@ def _deletable(
         if sample
         else ("results", resolved)
     )
-    # Where it really is, every link on the way followed: exactly the fit's own
-    # directory of this project, or nothing is removed.
-    try:
-        within = (
-            directory.resolve(strict=True)
-            .relative_to(layout.root.resolve(strict=True))
-            .parts
-        )
-    except (OSError, ValueError):
-        within = ()
-    if within != parts:
-        raise CurationRefused(f"{directory} is not a fit directory this removes.")
     return index, entry, state, parts
 
 
@@ -722,55 +707,3 @@ def _refuse_if_agent(action: str) -> None:
         raise CurationRefused(
             f"{AGENT_ENV} is set, so this is running unattended. {reason_for(action)}"
         )
-
-
-class _Parent:
-    """A fit's parent directory, reached without following a link."""
-
-    def __init__(self, path: Path, descriptor: int | None) -> None:
-        self.path = path
-        self.descriptor = descriptor
-
-    def rename(self, name: str, new: str) -> None:
-        if self.descriptor is not None:
-            os.rename(name, new, src_dir_fd=self.descriptor, dst_dir_fd=self.descriptor)
-        else:  # pragma: no cover - no descriptor-relative calls (Windows)
-            os.rename(self.path / name, self.path / new)
-
-    def remove(self, name: str) -> None:
-        if self.descriptor is not None:
-            shutil.rmtree(name, dir_fd=self.descriptor)
-        else:  # pragma: no cover - Windows
-            shutil.rmtree(self.path / name)
-
-
-@contextmanager
-def _opened_parent(layout: ProjectLayout, parts: tuple[str, ...]) -> Iterator[_Parent]:
-    """The fit's ``results/``, opened one directory at a time from the project's
-    real root and none of them through a link: a link swapped in after the
-    checks is refused, not followed."""
-    root = layout.root.resolve(strict=True)
-    usable = (
-        os.open in os.supports_dir_fd
-        and os.rename in os.supports_dir_fd
-        and getattr(shutil.rmtree, "avoids_symlink_attacks", False)
-    )
-    if not usable:  # pragma: no cover - Windows
-        yield _Parent(root.joinpath(*parts[:-1]), None)
-        return
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(root, flags)
-    try:
-        for part in parts[:-1]:
-            try:
-                deeper = os.open(part, flags, dir_fd=descriptor)
-            except OSError as exc:
-                raise CurationRefused(
-                    f"{root.joinpath(*parts[:-1])} is not a directory this removes "
-                    f"from: {exc.strerror}."
-                ) from exc
-            os.close(descriptor)
-            descriptor = deeper
-        yield _Parent(root.joinpath(*parts[:-1]), descriptor)
-    finally:
-        os.close(descriptor)

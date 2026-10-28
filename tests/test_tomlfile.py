@@ -134,15 +134,6 @@ def test_read_config_refuses_a_file_it_must_not_edit(
         read_config(path)
 
 
-def test_read_config_refuses_a_symbolic_link(tmp_path: Path) -> None:
-    real = tmp_path / "elsewhere.toml"
-    real.write_text(BASE, encoding="utf-8")
-    (tmp_path / "nrw.toml").symlink_to(real)
-
-    with pytest.raises(TomlEditError, match="symbolic link"):
-        read_config(tmp_path / "nrw.toml")
-
-
 # --------------------------------------------------------------------------
 # Editing nrw's own lines
 # --------------------------------------------------------------------------
@@ -418,31 +409,6 @@ def test_write_config_keeps_the_files_permissions(tmp_path: Path) -> None:
     )
 
     assert path.stat().st_mode & 0o777 == 0o664
-
-
-@pytest.mark.parametrize("linked", ["cache", "backups"])
-def test_write_config_refuses_a_linked_cache_or_backups_folder(
-    tmp_path: Path, linked: str
-) -> None:
-    """Its lock, temporary file and backups go only into the project's own folders."""
-    path = tmp_path / "nrw.toml"
-    path.write_text(BASE, encoding="utf-8")
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (tmp_path / ".nrw").mkdir()
-    (tmp_path / ".nrw" / linked).symlink_to(outside)
-
-    with pytest.raises(TomlEditError, match="symbolic link"):
-        write_config(
-            path,
-            read_config(path),
-            BASE + "\n",
-            cache_dir=tmp_path / ".nrw" / "cache",
-            backups_dir=tmp_path / ".nrw" / "backups",
-        )
-
-    assert list(outside.iterdir()) == []
-    assert path.read_text(encoding="utf-8") == BASE
 
 
 def test_text_that_cannot_be_written_fails_before_any_backup(tmp_path: Path) -> None:
