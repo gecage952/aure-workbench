@@ -72,6 +72,12 @@ from nr_workbench.agent import guard, session
         ('sh -c "nrw promote abc"', "promote"),
         ("echo x; $(nrw promote abc)", "promote"),
         ("`nrw promote abc`", "promote"),
+        # A comment ends at its line: what follows it is judged.
+        ("# best fit\nnrw promote abc --reason x", "promote"),
+        ("cd S1  # go\nnrw isaac push abc --yes", "upload"),
+        # shlex cannot split these; bash runs them.
+        ("nrw promote abc --reason $'the oxide\\'s real'", "promote"),
+        ("cat <<'EOF'\nit's done\nEOF\nnrw promote abc", "promote"),
         # Organizing the experiment is a person's claim about it.
         ("nrw experiment assign 218386 --sample S6", "experiment"),
         ("nrw experiment apply --write", "experiment"),
@@ -85,6 +91,8 @@ from nr_workbench.agent import guard, session
         ("cd x && nrw experiment apply --write", "experiment"),
         ("bash -c 'nrw experiment apply --write'", "experiment"),
         ("python -m nr_workbench.cli experiment assign 1 --sample S", "experiment"),
+        ("nrw experiment assign 1 --note $'it\\'s' --sample S", "experiment"),
+        ("nrw aure run samples/S1/aure/x/setup.yaml $'it\\'s'", "aure-run"),
     ],
 )
 def test_the_refused_commands_are_refused(command: str, rule: str) -> None:
@@ -127,8 +135,9 @@ def test_the_refused_commands_are_refused(command: str, rule: str) -> None:
         "nrw experiment settings",
         "nrw experiment settings --check --json",
         "nrw experiment settings --location /data/x",
-        # Validating an AuRE setup calls no endpoint.
+        # Validating an AuRE setup calls no endpoint, split by shlex or not.
         "nrw aure run samples/S1/aure/x/setup.yaml --dry-run",
+        "nrw aure run samples/S1/aure/x/setup.yaml --dry-run $'it\\'s'",
     ],
 )
 def test_the_working_commands_are_allowed(command: str) -> None:
@@ -136,9 +145,9 @@ def test_the_working_commands_are_allowed(command: str) -> None:
     assert guard.judge(command).allowed, command
 
 
-def test_an_unparseable_command_is_let_through() -> None:
-    """An unbalanced quote is the shell's problem: the guard lets the text
-    through rather than fail."""
+def test_an_unparseable_command_with_nothing_refused_in_it_is_allowed() -> None:
+    """An unbalanced quote is the shell's problem when nothing refused is in
+    the text."""
     assert guard.judge("nrw ls --sample 'unclosed").allowed
 
 

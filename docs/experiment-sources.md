@@ -230,15 +230,15 @@ without them is its maker's alone, invisible to everyone else on the
 experiment.
 
 **Pulling data.** `pull --data` copies each reduced file the data folder
-lacks, and leaves alone every one it holds: neither a size nor a time tells a
-file reduced again from the same one, so deleting a file is how it is copied
-again. Each lands under a hidden name of its own first and is renamed whole;
-the folder watcher does the rest. Only names the reduction writes are copied.
-It copies into the data folder `nrw.toml` names, or `--into DIR`. `--run`
-narrows it to some runs, and
+lacks, and leaves alone every one it holds, or that appears while it runs:
+neither a size nor a time tells a file reduced again from the same one, so
+deleting a file is how it is copied again. Each lands under a hidden name of
+its own first and is renamed whole; the folder watcher does the rest. Only
+names the reduction writes are copied. It copies into the data folder
+`nrw.toml` names, or `--into DIR`. `--run` narrows it to some runs, and
 `nrw tiled status` says which files a pull would copy, before it is run. A
-pulled run counts as complete once its files have settled, as any new file does
-(five minutes by default).
+pulled run counts as complete once its files have settled, as any new file
+does (five minutes by default).
 
 A push and a status run against a real Tiled 0.2.18, started with uvx apart
 from nrw's environment, in `pytest -m tiled_server`. A Globus login, the tags

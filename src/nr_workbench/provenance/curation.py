@@ -21,7 +21,8 @@ not set aside; finalize another first. A discarded fit is not finalized or
 starred until it is restored.
 
 **A push is recorded once it has run:** the files it sent and their
-digests, the records the portal made, and whether it finished.
+digests, the records the portal made, and whether it finished. One stopped
+before it said is recorded with the files alone.
 
 Nothing here imports click; the commands and the page wrap it.
 """
@@ -79,7 +80,8 @@ class Curation:
         promotions: Each label it holds now, with the promotion that gave it.
         published: Each push of its records, oldest first: when, by whom,
             where, the files sent, the records the portal made, and whether
-            it finished (``complete``).
+            it finished (``complete``) -- the last two absent for a push
+            stopped before it said, which may have made records all the same.
     """
 
     starred: bool = False
@@ -516,10 +518,10 @@ def record_publish(
     *,
     portal: str,
     files: list[Path],
-    records: list[dict[str, str]],
-    complete: bool,
+    records: list[dict[str, str]] | None = None,
+    complete: bool | None = None,
 ) -> None:
-    """Record a push of these files, once it has run.
+    """Record a push of these files, once it has run or been stopped.
 
     Args:
         index: The fit index.
@@ -527,8 +529,13 @@ def record_publish(
         portal: Where they went: the portal's URL, as it may be shown.
         files: The record files sent.
         records: Each record the portal made, by the file it came from.
-        complete: Whether the push finished and made a record of every file.
+        complete: Whether the push finished and made a record of every file;
+            ``None`` for a push stopped before it said, recorded without
+            either.
     """
+    outcome = (
+        {} if complete is None else {"records": records or [], "complete": complete}
+    )
     _append(
         index,
         entry,
@@ -541,8 +548,7 @@ def record_publish(
             }
             for path in files
         ],
-        records=records,
-        complete=complete,
+        **outcome,
     )
 
 

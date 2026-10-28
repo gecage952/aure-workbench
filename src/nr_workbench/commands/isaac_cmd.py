@@ -33,8 +33,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -521,12 +524,20 @@ def _upload(
     args = [*cmd, "push", str(records), "--url", url.value]
     if validate_only:
         args.append("--validate-only")
-    result = _run(
-        args,
-        "nr-isaac-format push",
-        check=False,
-        env={**os.environ, "ISAAC_URL": url.value, "ISAAC_KEY": key.value},
-    )
+    try:
+        with _cancel_as_exit():
+            result = _run(
+                args,
+                "nr-isaac-format push",
+                check=False,
+                env={**os.environ, "ISAAC_URL": url.value, "ISAAC_KEY": key.value},
+            )
+    except (KeyboardInterrupt, SystemExit):
+        if not validate_only:
+            # Stopped before the tool said what it made: the portal may hold
+            # records of it all the same.
+            record_publish(index, entry, portal=shown, files=written)
+        raise
     said = _said(result.stdout, url.value, key.value)
     sent = {path.name for path in written}
     created = [
@@ -562,6 +573,22 @@ def _upload(
             f"{len(written)} record(s) made. Check the portal: the push is "
             "recorded with the fit as unconfirmed."
         )
+
+
+@contextmanager
+def _cancel_as_exit() -> Iterator[None]:
+    """The page's Cancel, a SIGTERM, raised as :class:`SystemExit` meanwhile,
+    so that a push it stops is still recorded."""
+    previous = signal.signal(signal.SIGTERM, _exit)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _exit(signum: int, frame: Any) -> None:
+    del frame
+    raise SystemExit(128 + signum)
 
 
 def _said(text: str, url: str, key: str) -> str:

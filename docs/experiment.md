@@ -484,8 +484,9 @@ finalized. The panel has three steps, each run as a job:
    it. It does not export again, so what the server checked is what it gets.
    Once the push has run, it is recorded with the fit: the files it sent and
    their digests, the id of every record the portal made, and whether it
-   finished. Pushing again adds new records and replaces none, and the page
-   says so first.
+   finished. A push stopped part way, by **Cancel** or Ctrl-C, is recorded with
+   the files it sent, as one that may have made records. Pushing again adds
+   new records and replaces none, and the page says so first.
 
 Once another fit is finalized in its place, the panel offers nothing more, but
 a fit that was pushed keeps its list of pushes on its page.
@@ -510,7 +511,8 @@ nrw isaac push <fit_id> --validate-only
 nrw isaac push <fit_id>          # the final fit only; asks first
 ```
 
-A fit whose records were pushed keeps its files, even once it is discarded.
+A fit whose records were pushed can still have its files deleted once it is
+discarded; the fit index keeps the record of each push.
 Neither validating nor pushing is done by an unattended agent: both send the
 records, and the key, off the machine.
 

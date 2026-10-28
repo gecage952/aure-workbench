@@ -3,9 +3,9 @@
 The experiment's ``autoreduction/`` on Tiled holds the files the reduction
 wrote into ``new_reduction/``, one ``bytes`` node per file, named as the file
 (another process registers them). A pull copies each one the data folder
-lacks into that folder, and nothing else: a file the folder holds already is
-left as it is, since a size or a time would not tell a re-reduction from the
-same file. The folder watcher does the rest, as for any file that appears.
+lacks into that folder, and nothing else: a file the folder holds already, or
+comes to hold while the pull runs, is left as it is, since a size or a time
+would not tell a re-reduction from the same file. The folder watcher does the rest, as for any file that appears.
 
 Only names the reduction writes are copied. Each is written under a hidden
 name and renamed whole, so the watcher never reads half of one. Nothing is
@@ -133,6 +133,8 @@ def pull(missing: Iterable[Missing], folder: Path) -> list[Path]:
                     f"copied. {_before(written)}"
                 )
             partial.write_bytes(data)
+            if target.exists():
+                continue  # written meanwhile, by the reduction or a person
             os.replace(partial, target)
         except httpx.HTTPError as exc:
             raise TiledSyncError(

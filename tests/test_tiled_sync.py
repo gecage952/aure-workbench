@@ -945,6 +945,29 @@ def test_a_file_the_folder_holds_already_is_left_as_it_is(
     assert (away / SEGMENT).read_bytes() == b"first"
 
 
+def test_a_file_that_appears_while_the_pull_runs_is_left_as_it_is(
+    project: Path, tiled: FakeTiled, away: Path, monkeypatch
+) -> None:
+    """The reduction may write it meanwhile: its file stays, not Tiled's copy."""
+    from nr_workbench.tiled import data as data_module
+
+    reduced(tiled, {SEGMENT: b"from Tiled"})
+    fetch = data_module.content_of
+
+    def meanwhile(node):
+        (away / SEGMENT).write_bytes(b"reduced just now")
+        return fetch(node)
+
+    monkeypatch.setattr(data_module, "content_of", meanwhile)
+
+    shown = pulled(project, away)
+
+    assert shown.exit_code == 0, shown.output
+    assert "Copied 0 file(s)" in shown.output
+    assert (away / SEGMENT).read_bytes() == b"reduced just now"
+    assert [p.name for p in away.iterdir() if p.name.startswith(".")] == []
+
+
 def test_a_link_planted_in_the_folder_is_not_written_through(
     project: Path, tiled: FakeTiled, away: Path, tmp_path: Path
 ) -> None:

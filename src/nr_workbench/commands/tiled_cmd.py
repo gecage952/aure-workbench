@@ -1,9 +1,9 @@
 """``nrw tiled``: log in, say what is on Tiled for this experiment, push the
 catalog to it, and copy its reduced files in.
 
-Each command is a person's: it acts with their login. The guard refuses them
-all to an agent, and each refuses itself under one too. Every way the client
-fails is caught in one place, :func:`nr_workbench.tiled.server.talking`.
+Each command is a person's: it acts with their login, and the guard refuses
+them all to an agent. Every way the client fails is caught in one place,
+:func:`nr_workbench.tiled.server.talking`.
 """
 
 from __future__ import annotations

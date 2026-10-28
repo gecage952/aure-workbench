@@ -298,7 +298,7 @@ Fits are curated on the fit pages of `nrw serve` — star, finalize, discard,
 restore and delete — or with `nrw fit star`, `unstar`, `discard`, `restore`
 and `delete`; **Finalize** on a page is `nrw promote --as final`. A discarded
 fit leaves the listings (`nrw ls --all` shows it) but keeps its files until you
-delete them, which is refused while anything uses them, and the record that it
+delete them, which is refused while another fit reads them, and the record that it
 ran is never lost. A sample's final fit is published to the ISAAC Portal from
 its page, or with `nrw isaac export` and `nrw isaac push`, and each push is
 recorded with the fit. See
