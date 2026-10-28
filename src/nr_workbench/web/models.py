@@ -24,7 +24,7 @@ from nr_workbench.experiment.model import CatalogValidationError, validate_sampl
 from nr_workbench.fitters import FITTERS, refuse
 from nr_workbench.fitting.settings import (
     BUMPS_DEFAULTS,
-    FIT_LIMITS,
+    FIT_MINIMUMS,
     METHOD_SETTINGS,
     FitDefaults,
     FitSettingsError,
@@ -202,9 +202,9 @@ class ModelsData:
             name: The model, ``models/<name>.yaml``.
             request: ``method`` (amoeba, de or dream; the project's default
                 from nrw.toml when absent), and optionally ``steps``, DREAM's
-                ``samples`` and ``burn``, a one-line ``note``, and ``force``
-                to run again what already ran. A setting not given is left to
-                ``nrw fit run``, which takes it from nrw.toml, else bumps.
+                ``samples`` and ``burn``, and a one-line ``note``. A setting
+                not given is left to ``nrw fit run``, which takes it from
+                nrw.toml, else bumps.
 
         Returns:
             ``{"job": ...}``, the job started.
@@ -242,21 +242,13 @@ class ModelsData:
                     f"{key} is not a {method} setting: {method} takes "
                     f"{', '.join(METHOD_SETTINGS[method])}."
                 )
-            low, high = FIT_LIMITS[key]
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, int)
-                or not low <= value <= high
-            ):
-                raise RequestError(
-                    f"{key} must be a whole number from {low} to {high}."
-                )
+            low = FIT_MINIMUMS[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < low:
+                raise RequestError(f"{key} must be a whole number, at least {low}.")
             options.append(f"--{key}={value}")
         note = _fit_note(request.get("note", ""))
         if note:
             options.append(f"--note={note}")
-        if request.get("force") is True:
-            options.append("--force")
         job = self.jobs.start(
             label=f"{method} fit of {name}",
             sample=sample_id,
@@ -396,13 +388,12 @@ class ModelsData:
         Returns:
             ``fit_id``: the fit it recorded -- none when the fit step never ran,
             or was cancelled, which leaves an interrupted run the index does not
-            have. ``same_as``: the fit it was refused as identical to, which the
-            page links, offering to run again anyway.
+            have.
         """
-        from nr_workbench.commands.fit import IDENTICAL_RE, RUNNING_RE
+        from nr_workbench.commands.fit import RUNNING_RE
         from nr_workbench.provenance.index import FitIndex
 
-        found: dict[str, str | None] = {"fit_id": None, "same_as": None}
+        found: dict[str, str | None] = {"fit_id": None}
         if not job.steps or job.steps[-1][:2] != ["fit", "run"]:
             return found
         if job.step != len(job.steps):
@@ -414,9 +405,6 @@ class ModelsData:
         if running:
             fit_id = PurePosixPath(running[-1].group("directory")).name
             found["fit_id"] = fit_id if index.find(fit_id) else None
-        identical = IDENTICAL_RE.search(fitted)
-        if identical and index.find(identical.group("fit_id")):
-            found["same_as"] = identical.group("fit_id")
         return found
 
     def _free_run_dir(self, sample_id: str, name: str) -> Path:

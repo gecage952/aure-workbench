@@ -180,7 +180,6 @@ class Job:
         started_at: When it started, UTC.
         finished_at: When it ended, UTC.
         fit_id: The fit it recorded, once known.
-        same_as: The fit it was refused as identical to, when it was.
     """
 
     id: str
@@ -194,7 +193,6 @@ class Job:
     started_at: str = ""
     finished_at: str = ""
     fit_id: str | None = None
-    same_as: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """The job as the page reads it."""
@@ -209,7 +207,7 @@ class JobRunner:
         on_finished: Called with a job as it ends, from the job's thread and
             before its status changes, so a page that sees it end sees this
             too; returns what it found -- ``fit_id``, the fit the job
-            recorded, and ``same_as``, the one it was refused as identical to.
+            recorded.
     """
 
     def __init__(
@@ -381,7 +379,6 @@ class JobRunner:
                 self._process = None
                 job.status, job.finished_at = ended, _now()
                 job.fit_id = found.get("fit_id")
-                job.same_as = found.get("same_as")
                 with suppress(OSError):
                     self._save(job)
 

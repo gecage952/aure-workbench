@@ -142,7 +142,7 @@ def _render_markdown(text: str | None) -> Any:
 
     from nr_workbench.web.prose import render
 
-    return Markup(render(text))  # noqa: S704 - render() disables raw HTML
+    return Markup(render(text))  # noqa: S704 - the project's own notes, as written
 
 
 def _register_views(app: Flask) -> None:

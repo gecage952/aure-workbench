@@ -679,64 +679,6 @@ def test_a_model_aure_proposed_offers_a_quick_fit_again(
     assert page.text("expt-job-title") == "Quick fit of auto with AuRE again (S1)"
 
 
-def test_a_fit_refused_as_identical_links_that_fit_and_runs_again_anyway(
-    page: Page, site: Site, project: Path, monkeypatch
-) -> None:
-    import json
-
-    from nr_workbench.web import jobs as jobs_module
-
-    earlier = "20260929-120000Z-aaaaaaaa"
-    index = project / ".nrw" / "index.jsonl"
-    index.parent.mkdir(exist_ok=True)
-    with index.open("a", encoding="utf-8") as handle:
-        entry = {"event": "fit", "fit_id": earlier, "sample": "S1", "model": "oxide"}
-        handle.write(json.dumps(entry) + "\n")
-
-    def command(*args: str) -> list[str]:
-        # The fit is refused as the identical run -- until it is forced.
-        if args[:2] == ("fit", "run") and "--force" not in args:
-            code = f"import sys; print('Error: An identical run already exists: {earlier}'); sys.exit(1)"
-            return [sys.executable, "-c", code]
-        return [sys.executable, "-c", "pass"]
-
-    monkeypatch.setattr(jobs_module, "nrw_command", command)
-    spec = project / "samples" / "S1" / "models" / "oxide.yaml"
-    spec.parent.mkdir(parents=True)
-    spec.write_text("{}\n")
-    (project / "samples" / "S1" / "data" / "steady").mkdir(parents=True)
-    open_s1(page, site)
-    page.wait_for(
-        "document.querySelector('#expt-models-list .expt-model-fit') !== null",
-        what="the spec listed",
-    )
-    page.js("document.querySelector('#expt-models-list .expt-model-fit').click()")
-    page.js(
-        "{ const m = document.getElementById('expt-fit-method'); m.value = 'amoeba';"
-        " m.dispatchEvent(new Event('change')); }"
-    )
-    page.click("expt-fit-run")
-    page.wait_for(
-        "document.getElementById('expt-job-result').textContent.includes('Nothing has changed')",
-        what="the refusal, said as such",
-    )
-    assert (
-        page.js("document.querySelector('#expt-job-result a').getAttribute('href')")
-        == f"/f/{earlier}"
-    )
-
-    page.js(
-        "Array.from(document.querySelectorAll('#expt-job-result button'))"
-        ".find(b => b.textContent === 'Run again anyway').click()"
-    )
-
-    page.wait_for(
-        "document.getElementById('expt-job-state').textContent === 'ok'",
-        what="the fit run again",
-    )
-    assert "--force" in page.text("expt-job-log")
-
-
 def test_a_finished_job_is_not_shown_again_and_close_puts_one_away(
     page: Page, served, project: Path, monkeypatch
 ) -> None:

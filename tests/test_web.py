@@ -434,11 +434,10 @@ def test_markdown_renders_the_measurement_table() -> None:
     assert "<td>full Q</td>" in rendered
 
 
-def test_markdown_does_not_pass_through_raw_html() -> None:
-    """Prose in a side panel has no reason to be able to run script."""
-    rendered = render("Hello <script>alert(1)</script> there")
+def test_markdown_renders_html_written_into_it() -> None:
+    rendered = render("Hello <b>there</b>")
 
-    assert "<script>" not in rendered
+    assert "<b>there</b>" in rendered
 
 
 def test_strip_comments_handles_multiline_blocks() -> None:

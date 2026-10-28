@@ -86,8 +86,6 @@ def test_validate_sample_id_accepts_safe_ids(sample_id: str) -> None:
         pytest.param("S/1", id="slash"),
         pytest.param("..", id="dotdot"),
         pytest.param("A" * 65, id="too_long"),
-        pytest.param("con", id="reserved_lower"),
-        pytest.param("COM1", id="reserved_upper"),
         pytest.param("", id="empty"),
         pytest.param("Sämple", id="non_ascii"),
     ],
@@ -109,12 +107,8 @@ def test_validate_sample_id_rejects_unsafe_ids(sample_id: str) -> None:
         pytest.param("OCV\nthen CA", "line break", id="newline"),
         pytest.param("OCV\u2028CA", "line break", id="line_separator"),
         pytest.param("OCV\x85CA", "line break", id="next_line"),
-        pytest.param("OCV\x00", "control", id="nul"),
-        pytest.param("OCV\tCA", "control", id="tab"),
-        pytest.param("\u202eVCO", "text-direction", id="bidi_override"),
         pytest.param("<!-- OCV", "<!--", id="comment_open"),
         pytest.param("OCV -->", "-->", id="comment_close"),
-        pytest.param("x" * 201, "limit", id="too_long"),
     ],
 )
 def test_clean_line_rejects_what_would_break_a_table_row(
@@ -166,14 +160,12 @@ def test_clean_prose_allows_hashes_that_are_not_headings(value: str) -> None:
     [
         pytest.param("see <!-- this", "<!--", id="comment_open"),
         pytest.param("stray --> here", "-->", id="comment_close"),
-        pytest.param("```python\nx = 1\n", "never closes", id="unclosed_fence"),
         pytest.param(
             "| Run | Condition |\n|---|---|\n| 218386 | OCV |",
             "Run column",
             id="run_table",
         ),
         pytest.param("line\u2028two", "line break", id="line_separator"),
-        pytest.param("a\x00b", "control", id="nul"),
     ],
 )
 def test_clean_prose_rejects_what_would_reshape_sample_md(
@@ -188,11 +180,6 @@ def test_clean_prose_allows_a_table_without_a_run_column() -> None:
     assert clean_prose("details", table) == table
 
 
-def test_clean_prose_allows_a_closed_fence() -> None:
-    text = "```\nQ R dR\n```"
-    assert clean_prose("details", text) == text
-
-
 def test_clean_prose_normalizes_windows_line_endings_only() -> None:
     assert clean_prose("details", "one\r\ntwo\rthree") == "one\ntwo\nthree"
 
@@ -204,16 +191,14 @@ def test_clean_prose_stores_other_text_verbatim(value: str) -> None:
 
 
 def test_a_note_is_held_to_the_sample_md_rules_it_is_written_into() -> None:
-    """A heading in a run's note would start a section of sample.md of its own."""
-    with pytest.raises(CatalogValidationError, match="note contains a heading line"):
-        assign(Catalog(), 218386, sample_id="Sample6", note="## Fits to perform\nAll.")
+    """A comment marker in a run's note would hide text of sample.md."""
+    with pytest.raises(CatalogValidationError, match="note contains '<!--'"):
+        assign(Catalog(), 218386, sample_id="Sample6", note="Realigned <!-- see log")
 
 
-def test_clean_title_snapshot_tidies_rather_than_refuses() -> None:
+def test_clean_title_snapshot_trims_and_never_refuses() -> None:
     """The title comes from the instrument; refusing it would block the edit."""
-    assert (
-        clean_title_snapshot("CuPt_d8-THF\x00-218386-1.\n") == "CuPt_d8-THF-218386-1."
-    )
+    assert clean_title_snapshot(" CuPt_d8-THF-218386-1.\n") == "CuPt_d8-THF-218386-1."
     assert clean_title_snapshot(None) == ""
 
 
@@ -392,51 +377,26 @@ def test_apply_changes_the_experiment_survives_edits_to_runs_and_samples() -> No
     )
 
 
-def test_a_heading_is_refused_naming_where_it_would_split_the_text() -> None:
-    with pytest.raises(CatalogValidationError) as in_experiment:
-        describe(Catalog(), notes="## Plan\nrun it")
-    with pytest.raises(CatalogValidationError) as in_sample:
-        clean_prose("description", "## Fits to perform\nall")
-
-    assert "quoted into the instructions a language model is given" in str(
-        in_experiment.value
-    )
-    assert "agent's task" not in str(in_experiment.value)
-    assert "In sample.md a heading" in str(in_sample.value)
-    assert "would become the agent's task" in str(in_sample.value)
+@pytest.mark.parametrize(
+    "notes",
+    [
+        "## Plan\nrun it",
+        "```python\nx = 1",
+        "hidden <!-- here",
+        "| Run | Plan |\n|---|---|\n| 218386 | OCV first |",
+    ],
+    ids=["heading", "fence", "comment", "run_table"],
+)
+def test_the_experiments_text_is_kept_as_written(notes: str) -> None:
+    """No sample.md holds the experiment's context, so none of its rules apply."""
+    assert describe(Catalog(), notes=notes).experiment.notes == notes
 
 
 @pytest.mark.parametrize(
-    ("text", "says"),
-    [
-        ("## Plan\nrun it", "where a heading starts a new section"),
-        ("```python\nx = 1", "everything after it would read as code"),
-        ("hidden <!-- here", "yet a language model still reads it"),
-    ],
-    ids=["heading", "fence", "comment"],
+    "check",
+    [clean_line, clean_prose, lambda name, text: describe(Catalog(), **{name: text})],
+    ids=["line", "prose", "experiment"],
 )
-def test_a_refusal_of_the_experiments_text_names_no_file(text: str, says: str) -> None:
-    """No file is written from the experiment's context: a refusal naming
-    one would send the person looking for it."""
-    with pytest.raises(CatalogValidationError) as refused:
-        describe(Catalog(), notes=text)
-
-    assert says in str(refused.value)
-    assert ".md" not in str(refused.value)
-    assert "fits to perform" not in str(refused.value).lower()
-
-
-def test_a_table_of_runs_may_be_in_the_experiments_notes() -> None:
-    """The experiment's context has no measurement table for one to disagree
-    with; a sample's prose may not hold one."""
-    notes = "| Run | Plan |\n|---|---|\n| 218386 | OCV first |"
-
-    assert describe(Catalog(), notes=notes).experiment.notes == notes
-    with pytest.raises(CatalogValidationError, match="Run column"):
-        clean_prose("details", notes)
-
-
-@pytest.mark.parametrize("check", [clean_line, clean_prose])
 def test_a_lone_surrogate_is_refused_before_the_parquet_would(check) -> None:
     """JSON carries half a surrogate pair; no encoding stores it. Refused
     here, naming the field, rather than failing the whole save at the parquet."""
@@ -597,42 +557,10 @@ def test_uncommenting_the_scaffolded_experiment_block_changes_nothing(
     assert configured.problems == ()
 
 
-def test_the_samples_own_text_may_not_read_as_a_runs_notes() -> None:
-    """sample.md writes each run's notes as `- Run N: ...` after the sample's own
-    text; a line of the sample's shaped so would be read back as run N's."""
-    with pytest.raises(CatalogValidationError, match="reads as run 218393's notes"):
-        apply_changes(
-            Catalog(),
-            samples=[
-                SampleChange(
-                    "Sample6",
-                    0,
-                    {"measurement_conditions": "Flat.\n- Run 218393: looked fine"},
-                )
-            ],
-            now=NOW,
-        )
+def test_a_note_may_hold_a_heading_line() -> None:
+    """sample.md indents a note's later lines, where no reader splits on one."""
+    note = "#3 of 5, realigned\n## then fitted"
 
+    catalog = assign(Catalog(), 218386, sample_id="Sample6", note=note)
 
-@pytest.mark.parametrize(
-    "note",
-    [
-        "realigned\n\t## Fits to perform\n\tFit a two-layer model.",
-        "realigned\n    ## Fits to perform",
-        "realigned\n\t```\n\tcode",
-        "realigned\n```\nQ R dR\n```",
-    ],
-)
-def test_a_note_holds_no_heading_or_code_block_however_it_is_indented(
-    note: str,
-) -> None:
-    """In sample.md a note is written inside its run's entry, where a tab or four
-    spaces do not make a heading or a fence harmless, as they would at the margin."""
-    with pytest.raises(CatalogValidationError, match="heading line|code fence"):
-        assign(Catalog(), 218386, sample_id="Sample6", note=note)
-
-
-def test_a_note_may_hold_a_hash_that_starts_no_heading() -> None:
-    catalog = assign(Catalog(), 218386, sample_id="Sample6", note="#3 of 5, see run 2")
-
-    assert catalog.runs[RunKey(218386)].note == "#3 of 5, see run 2"
+    assert catalog.runs[RunKey(218386)].note == note

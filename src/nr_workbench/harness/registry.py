@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from nr_workbench.harness import driver
@@ -42,8 +41,6 @@ class Harness:
         binary: The executable that starts it, when it drives sessions.
         build_argv: Builds the headless command line. See
             :func:`nr_workbench.harness.driver.claude_argv`.
-        verify_guard: Raises :class:`~nr_workbench.harness.driver.GuardMissing`
-            if this project has not installed the limit this harness needs.
         read_event: Turns one decoded output event into ``(tool, target)``, or
             None for events it does not recognise.
         read_outcome: Turns a finished run's stdout into what it answered, for
@@ -62,7 +59,6 @@ class Harness:
     build_argv: Callable[..., driver.Invocation] | None = field(
         default=None, compare=False
     )
-    verify_guard: Callable[[Path], None] | None = field(default=None, compare=False)
     read_event: Callable[[dict[str, Any]], tuple[str, str] | None] | None = field(
         default=None, compare=False
     )
@@ -89,7 +85,6 @@ HARNESSES: tuple[Harness, ...] = (
         drives_sessions=True,
         binary="claude",
         build_argv=driver.claude_argv,
-        verify_guard=driver.claude_guard,
         read_event=driver.claude_event,
         read_outcome=driver.claude_outcome,
     ),
@@ -111,7 +106,6 @@ HARNESSES: tuple[Harness, ...] = (
         drives_sessions=True,
         binary="opencode",
         build_argv=driver.opencode_argv,
-        verify_guard=driver.opencode_guard,
         read_event=driver.opencode_event,
         read_outcome=driver.opencode_outcome,
     ),

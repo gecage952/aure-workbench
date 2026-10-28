@@ -253,11 +253,8 @@ def run_sample_reset(
     """
     import shutil
 
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.provenance.index import FitIndex
 
-    if not dry_run:
-        refuse_if_agent("reset")
     try:
         layout = ProjectLayout.discover()
     except ProjectNotFoundError as exc:

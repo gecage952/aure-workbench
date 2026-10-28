@@ -142,7 +142,7 @@ def talking(url: str, tiled: Library) -> Iterator[None]:
     except TiledSyncError:
         raise
     except httpx.HTTPError as exc:
-        raise TiledSyncError(f"{url} did not answer as asked: {said(exc)}") from None
+        raise TiledSyncError(f"{url} did not answer as asked: {exc}") from None
     except tiled.CannotRefresh:
         raise TiledSyncError(
             f"The login for {url} has run out: run `nrw tiled login`."
@@ -180,7 +180,7 @@ def connect(
         except RuntimeError as exc:
             # The client's own, on connecting: a server that takes keys
             # alone, or a key and a login both.
-            raise TiledSyncError(f"{chosen.url}: {said(exc)}") from None
+            raise TiledSyncError(f"{chosen.url}: {exc}") from None
 
 
 def logout(root: Path | None = None) -> str:
@@ -221,9 +221,7 @@ def whoami(client: Any) -> str:
         for identity in principal.get("identities") or ()
         if isinstance(identity, dict)
     ]
-    return ", ".join(said(text) for text in identities) or said(
-        str(principal.get("type") or "no one named")
-    )
+    return ", ".join(identities) or str(principal.get("type") or "no one named")
 
 
 def experiment_node(client: Any, ipts: str) -> Any | None:
@@ -242,11 +240,3 @@ def tags_of(node: Any) -> list[str]:
     except AttributeError:
         return []
     return [tag for tag in tags or () if isinstance(tag, str)]
-
-
-def said(value: Any) -> str:
-    """A server's text, safe to print: escaped where it holds what a terminal
-    would act on, or what no one would see."""
-    from nr_workbench.problems import one_line
-
-    return one_line(str(value))

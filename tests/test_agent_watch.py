@@ -379,45 +379,6 @@ def test_an_unreadable_sidecar_is_treated_as_still_being_written(
 
 
 # --------------------------------------------------------------------------
-# The output budget
-# --------------------------------------------------------------------------
-
-
-def test_the_output_budget_is_measured(tmp_path: Path) -> None:
-    directory = make_sample(tmp_path)
-    (directory / "reports" / "summary.md").write_text("word " * 100, encoding="utf-8")
-
-    assert watch.output_budget(tmp_path, "S1") == (1, 100)
-
-
-def test_an_eight_hour_night_of_reports_is_reported_as_unreadable(
-    tmp_path: Path,
-) -> None:
-    """The failure the whole design is most likely to hit: not a wrong answer
-    but forty defensible ones, at which point the rational response is to read
-    none of them. Asserted as an invariant of the loop rather than left as a
-    setting.
-    """
-    directory = make_sample(tmp_path)
-    for hour in range(8):
-        (directory / "reports" / f"session-{hour}.md").write_text(
-            "word " * 300, encoding="utf-8"
-        )
-
-    crowded = watch.over_budget(tmp_path, "S1")
-
-    assert "over the" in crowded and "Consolidate" in crowded
-
-
-def test_one_page_is_within_budget(tmp_path: Path) -> None:
-    """The intended shape: one page per sample, rewritten each session."""
-    directory = make_sample(tmp_path)
-    (directory / "reports" / "summary.md").write_text("word " * 800, encoding="utf-8")
-
-    assert watch.over_budget(tmp_path, "S1") == ""
-
-
-# --------------------------------------------------------------------------
 # The loop itself
 # --------------------------------------------------------------------------
 

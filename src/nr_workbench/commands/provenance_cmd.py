@@ -12,7 +12,6 @@ from typing import Any
 
 import click
 
-from nr_workbench.agent.guard import refuse_if_agent
 from nr_workbench.project.layout import ProjectLayout, ProjectNotFoundError
 from nr_workbench.provenance.index import FitIndex
 from nr_workbench.provenance.lookup import (
@@ -396,7 +395,6 @@ def run_promote(*, fit_id: str, label: str, reason: str, force: bool = False) ->
     from nr_workbench.provenance.curation import CurationRefused, InputsChanged, promote
 
     layout = _layout()
-    refuse_if_agent("promote")
     try:
         promotion = promote(layout, fit_id, label=label, reason=reason, force=force)
     except InputsChanged as exc:

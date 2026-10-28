@@ -60,12 +60,11 @@ must define a module-level `problem = FitProblem(...)`.
 `nrw` observes which files the script actually opens, so inputs are recorded
 exactly even when the path is built at runtime from a run number.
 
-### 2. Expect an identical re-run to be refused
+### 2. Expect an identical re-run to be recorded as a replicate
 
-If nothing changed — script, inputs, settings, environment — `nrw` refuses and
-points at the existing result. That is the mechanism that stops twelve
-near-identical directories accumulating. Use `--force` when you genuinely want
-a replicate; it is recorded as one.
+If nothing changed — script, inputs, settings, environment — `nrw` says so,
+names the existing result, and records the new run as a replicate of it.
+Before re-running, check whether the result you want is already there.
 
 ### 3. Trace anything with `whence`
 

@@ -223,7 +223,7 @@ def test_model_generate_leaves_a_script_that_would_not_change_as_it_is(
     project: Path, monkeypatch
 ) -> None:
     # Restamped, an unchanged script would hash differently, and a fit of it
-    # would no longer be refused as the identical run it is.
+    # would no longer be known for the identical run it is.
     run(project, monkeypatch, "model", "new", "S1", "--name", "m")
     spec = project / "samples" / "S1" / "models" / "m.yaml"
     assert run(project, monkeypatch, "model", "generate", str(spec)).exit_code == 0
@@ -841,7 +841,7 @@ def test_diff_calls_out_a_data_change_above_everything_else(
 
 def test_diff_reports_identical_runs_as_replicates(two_fits, monkeypatch) -> None:
     root, a, _ = two_fits
-    forced = run(
+    again = run(
         root,
         monkeypatch,
         "fit",
@@ -857,9 +857,8 @@ def test_diff_reports_identical_runs_as_replicates(two_fits, monkeypatch) -> Non
         # other xdist workers, as every other module's fits do.
         "--parallel",
         "1",
-        "--force",
     )
-    assert forced.exit_code == 0, forced.output
+    assert again.exit_code == 0, again.output
     replicate = json.loads(run(root, monkeypatch, "ls", "--json").stdout)[0]["fit_id"]
 
     result = run(root, monkeypatch, "diff", a, replicate, "--json")

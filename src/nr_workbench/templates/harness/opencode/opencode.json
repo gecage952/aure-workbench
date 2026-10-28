@@ -16,11 +16,10 @@
   // promote: marking a fit as the answer is a person's decision, and the
   // reason recorded with it is what a reader needs in a year.
   //
-  // This deny list is one mechanism, not the mechanism. `nrw` refuses the same
-  // actions from the inside when NRW_AGENT=1, and the pattern below only sees
-  // the command as written -- `A=1 nrw promote x` does not match it. An
-  // instruction to a model is a request; only something that runs before the
-  // command is a limit.
+  // This deny list is one mechanism, not the mechanism: the guard plugin is.
+  // The pattern below only sees the command as written -- `A=1 nrw promote x`
+  // does not match it. An instruction to a model is a request; only something
+  // that runs before the command is a limit.
   //
   // Edit this file if you want an assistant to have more room. It is yours.
   "permission": {

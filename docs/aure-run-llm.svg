@@ -63,7 +63,7 @@
     <rect width="540" height="32" rx="10" fill="#0d9488"/>
     <rect y="22" width="540" height="10" fill="#0d9488"/>
     <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">nrw aure run &lt;setup&gt;</text>
-    <text x="14" y="52" font-size="10" fill="#64748b">without --dry-run, refused under NRW_AGENT=1 and by the hook:</text>
+    <text x="14" y="52" font-size="10" fill="#64748b">without --dry-run, refused by the hook:</text>
     <text x="14" y="66" font-size="10" fill="#64748b">a run bills for as long as it takes, and would put a second</text>
     <text x="14" y="80" font-size="10" fill="#64748b">model's judgement where the harness's was wanted</text>
     <text x="14" y="98" font-size="10" fill="#64748b">needs an endpoint: AuRE is language-model driven throughout</text>

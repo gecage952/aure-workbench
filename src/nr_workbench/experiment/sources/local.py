@@ -28,7 +28,7 @@ from typing import Any
 from nr_workbench.arrival import fingerprint_entries, segment_problems
 from nr_workbench.experiment.inventory import Inventory, Probe, SourceFile, SourceRun
 from nr_workbench.experiment.model import RunKey, clean_title_snapshot
-from nr_workbench.experiment.sources import SourceChangedError, SourceFileTooLarge
+from nr_workbench.experiment.sources import SourceChangedError
 from nr_workbench.instrument.reduced import (
     STEADY_SUFFIXES,
     ReducedName,
@@ -38,9 +38,6 @@ from nr_workbench.instrument.reduced import (
 )
 from nr_workbench.problems import Problem
 from nr_workbench.project.experiment_schema import normalize_ipts
-
-#: Most files of one run whose headers a folder check reads.
-PROBE_FILES_PER_RUN = 12
 
 #: How many file headers to remember between polls. A beamtime folder holds a
 #: few thousand files; this keeps every one of them without growing forever.
@@ -137,17 +134,6 @@ class LocalDirectorySource:
         read = []
         for run in newest:
             members = sorted(files[run], key=lambda m: m[0].name)
-            if len(members) > PROBE_FILES_PER_RUN:
-                # A folder anyone on the team can write could hold a thousand
-                # files under one run number; a check reads the first few.
-                problems.append(
-                    Problem(
-                        f"source:{run}",
-                        f"run {run} lists {len(members)} files; the check read "
-                        f"the first {PROBE_FILES_PER_RUN}.",
-                    )
-                )
-                members = members[:PROBE_FILES_PER_RUN]
             read.append(self._run(run, members))
         return Probe(
             reachable=True,
@@ -356,22 +342,17 @@ class LocalDirectorySource:
     # Reading
     # ------------------------------------------------------------------
 
-    def read_bytes(self, file: SourceFile, *, max_bytes: int) -> bytes:
+    def read_bytes(self, file: SourceFile) -> bytes:
         """The exact bytes of a listed file, if it is still the same file.
 
         Raises:
             SourceChangedError: The file was rewritten, replaced or moved since
                 it was listed, or while it was being read.
-            SourceFileTooLarge: It is bigger than ``max_bytes``.
             OSError: It cannot be opened.
         """
         with self._opened(file) as (descriptor, before):
-            if before.st_size > max_bytes:
-                raise SourceFileTooLarge(
-                    f"{file.name} is {before.st_size} bytes, more than a reduced "
-                    f"file could be ({max_bytes})."
-                )
-            data = _read_up_to(descriptor, max_bytes + 1)
+            # One byte more than listed, so a file still growing is noticed.
+            data = _read_up_to(descriptor, before.st_size + 1)
             after = os.fstat(descriptor)
         if _version(after) != file.version or len(data) != before.st_size:
             raise SourceChangedError(f"{file.name} changed while it was being read.")

@@ -40,7 +40,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.mark.fit
 @pytest.mark.integration
-def test_a_page_fit_is_recorded_as_nrw_fit_run_records_it_refused_again_and_forced(
+def test_a_page_fit_is_recorded_as_nrw_fit_run_records_it_and_again_as_a_replicate(
     app, writer, project: Path
 ) -> None:
     started(create(writer, app, "S1", "oxide"))
@@ -50,9 +50,7 @@ def test_a_page_fit_is_recorded_as_nrw_fit_run_records_it_refused_again_and_forc
     started(fit(writer, app, "S1", "oxide", body))
     fitted = job_ended(writer)
     started(fit(writer, app, "S1", "oxide", body))  # nothing changed since
-    refused = job_ended(writer)
-    started(fit(writer, app, "S1", "oxide", {**body, "force": True}))
-    forced = job_ended(writer)["job"]
+    again = job_ended(writer)
 
     job, log = fitted["job"], fitted["log"]
     assert (job["status"], job["step"]) == ("ok", 2), log
@@ -66,15 +64,11 @@ def test_a_page_fit_is_recorded_as_nrw_fit_run_records_it_refused_again_and_forc
         "ok",
     )
     assert recorded["settings"]["steps"] == 3
-    # The identical fit again is refused, and links nothing.
-    assert (refused["job"]["status"], refused["job"]["fit_id"]) == ("failed", None)
-    assert "An identical run already exists" in refused["log"]
-    # Linked, so the page can say so and offer to run it again anyway.
-    assert refused["job"]["same_as"] == job["fit_id"]
-    # Forced, it is recorded as a replicate, and the job links that one.
-    assert forced["status"] == "ok"
+    # The identical fit again is recorded as a replicate, and the job links it.
+    assert again["job"]["status"] == "ok", again["log"]
+    assert "An identical run already exists" in again["log"]
     newest = index.fits(sample="S1")[0]
-    assert forced["fit_id"] == newest["fit_id"] != job["fit_id"]
+    assert again["job"]["fit_id"] == newest["fit_id"] != job["fit_id"]
 
 
 def aure_run_stands_in(monkeypatch) -> None:

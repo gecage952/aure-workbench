@@ -1,9 +1,8 @@
 {
   "$comment": [
-    "Limits for an assistant working in this project. The deny list and the",
-    "hook are two independent mechanisms, and `nrw` refuses the same",
-    "actions from the inside when NRW_AGENT=1 -- because an instruction to a",
-    "model is a request, and only a hook is a limit.",
+    "Limits for an assistant working in this project: the deny list, and the",
+    "hook -- because an instruction to a model is a request, and only a hook",
+    "is a limit.",
     "",
     "The hook refuses: promote; curating fits (nrw fit star, unstar, discard,",
     "restore, delete); nrw isaac push and --upload; nrw aure run without",

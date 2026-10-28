@@ -19,7 +19,6 @@ from nr_workbench.experiment.feeds.directory import DirectoryFeed
 from nr_workbench.experiment.model import RunKey
 from nr_workbench.experiment.sources import (
     SourceChangedError,
-    SourceFileTooLarge,
     SourceUnavailableError,
     open_source,
 )
@@ -287,7 +286,7 @@ def test_read_bytes_returns_the_exact_file(tmp_path: Path) -> None:
     source = source_for(tmp_path)
     listed = source.inventory().runs[RunKey(218386)].files[0]
 
-    data = source.read_bytes(listed, max_bytes=1 << 20)
+    data = source.read_bytes(listed)
 
     assert data == (tmp_path / listed.name).read_bytes()
 
@@ -301,16 +300,7 @@ def test_read_bytes_refuses_a_file_rewritten_since_it_was_listed(
     (tmp_path / listed.name).write_text("rewritten by the reduction\n")
 
     with pytest.raises(SourceChangedError):
-        source.read_bytes(listed, max_bytes=1 << 20)
-
-
-def test_read_bytes_refuses_a_file_too_large_to_be_reduced_data(tmp_path: Path) -> None:
-    copy_reference(tmp_path)
-    source = source_for(tmp_path)
-    listed = source.inventory().runs[RunKey(218386)].files[0]
-
-    with pytest.raises(SourceFileTooLarge):
-        source.read_bytes(listed, max_bytes=100)
+        source.read_bytes(listed)
 
 
 # --------------------------------------------------------------------------

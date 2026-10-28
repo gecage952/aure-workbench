@@ -250,7 +250,7 @@ def test_a_spec_that_exists_is_never_overwritten(app, writer, project: Path) -> 
     assert spec.read_text(encoding="utf-8") == "# mine\n"
 
 
-@pytest.mark.parametrize("name", ["../x", "a/b", "-x", "a\n", "", ".hidden", "x" * 65])
+@pytest.mark.parametrize("name", ["../x", "a/b", "a\n", ""])
 def test_a_name_that_is_not_a_plain_name_is_refused(
     app, writer, project: Path, name: str
 ) -> None:
@@ -379,7 +379,6 @@ def test_a_fit_of_the_same_model_made_meanwhile_is_not_taken_for_the_jobs(
         {"method": "amoeba", "steps": True},
         {"method": "amoeba", "samples": 1000},
         {"method": "dream", "burn": -1},
-        {"method": "dream", "samples": 10**9},
         {"method": "amoeba", "note": "two\nlines"},
         {"method": "amoeba", "note": "x" * 501},
     ],

@@ -196,7 +196,7 @@
     <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">nrw isaac push &lt;fit&gt;</text>
     <text x="14" y="66" font-size="10" fill="#64748b">sends the records this export wrote, so what was</text>
     <text x="14" y="80" font-size="10" fill="#64748b">validated is what is published: no second call.</text>
-    <text x="14" y="94" font-size="10" fill="#64748b">The final fit only. Refused under NRW_AGENT,</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">The final fit only. Refused by the hook,</text>
     <text x="14" y="108" font-size="10" fill="#64748b">as --upload is.</text>
   </g>
   <line x1="600" y1="824" x2="636" y2="824" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>

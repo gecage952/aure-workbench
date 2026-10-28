@@ -592,25 +592,3 @@ def test_init_suggests_serve_to_set_the_experiment_up(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "nrw serve" in result.output
-
-
-def test_checking_a_folder_reads_a_few_files_of_a_crowded_run(
-    app, writer, tmp_path: Path, monkeypatch
-) -> None:
-    from nr_workbench.experiment.sources.local import PROBE_FILES_PER_RUN
-    from nr_workbench.instrument import header as header_module
-
-    folder = tmp_path / "crowded"
-    write_autoreduced(folder, 234000, range(1, 31), planned=3, mtime=time.time() - 3600)
-    reads: list[str] = []
-    real = header_module.read_header_bytes
-    monkeypatch.setattr(
-        header_module,
-        "read_header_bytes",
-        lambda d, p: reads.append(p.name) or real(d, p),
-    )
-
-    body = check(writer, app, location=str(folder)).get_json()
-
-    assert len(reads) == PROBE_FILES_PER_RUN
-    assert any("30 files" in p["message"] for p in body["problems"])

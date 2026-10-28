@@ -92,20 +92,10 @@ nrw doctor
   ✓ project       ~/beamtime/cu-thf
   ✓ skills        19 installed: analysis-provenance, analyst-handoff, …
   ✓ harness       2.1.156 at ~/.local/bin/claude
-  ✓ agent limits  PreToolUse hook + 2 deny rule(s)
 ```
 
-Those last two lines are the ones that matter here, and they fail
-independently. The combination to watch for is a harness with no limits:
-
-```
-  ✓ harness       2.1.156 at ~/.local/bin/claude
-  ! agent limits  no .claude/settings.json; run `nrw init` to add the hook
-```
-
-That is worse than having neither, because `nrw agent run` works and nothing
-stops a promotion. It is also exactly the state of a project scaffolded before
-this feature existed.
+The last line is the one that matters here: `nrw agent run` needs the harness
+on `PATH`.
 
 ### 3. Say what you want fitted
 
@@ -403,8 +393,7 @@ morning, a run wrongly fitted costs the night.
 
 ## What the agent cannot do
 
-These are refused by a `PreToolUse` hook *and* by `nrw` itself under
-`NRW_AGENT=1`:
+These are refused by a `PreToolUse` hook:
 
 - `nrw promote`, and curating fits: `nrw fit star`, `unstar`, `discard`,
   `restore` and `delete`
@@ -417,7 +406,7 @@ These are refused by a `PreToolUse` hook *and* by `nrw` itself under
 - `nrw init --nested`
 - any `--force`
 
-[docs/agent.md](agent.md#the-limits-and-why-there-are-two-of-them) says why
+[docs/agent.md](agent.md#the-limits) says why
 each is a person's call, and what stays allowed.
 
 You can check any command without running it:
@@ -444,10 +433,8 @@ an agent told only "no" retries.
 | It refuses to start | `## Fits to perform` is empty. That is the design, not a bug. |
 | It refuses: the sample already holds a written report | the task looks answered. Say what is left under `## Fits to perform`, or pass `--again` for a deliberate second pass |
 | It refuses: a session is already analysing the sample | `nrw agent status` shows what is running; `nrw agent stop <sample>` ends it |
-| It refuses: no `nrw agent guard` hook | run `nrw init` to restore it — and if a session removed it, read what that session did before trusting it |
 | It refuses with OpenCode: no turn cap | pass `--timeout <seconds>`; `--turns` does nothing there |
 | `nrw agent run` says the harness is missing | `claude` is not on `PATH`; `nrw doctor` confirms |
-| `agent limits` is a `!` | run `nrw init` to add `.claude/settings.json` |
 | Everything says `arriving` | the files were just written; wait `--settle` seconds, or lower it |
 | Everything says `done` | those runs are already in a recorded fit — `nrw ls` shows which |
 | A run says `quarantined` | read the reason; it is naming a real inconsistency |

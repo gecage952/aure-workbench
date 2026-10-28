@@ -60,11 +60,6 @@ class ResolvedTarget:
 RUNNING_LINE = "Running {method} fit -> {directory}"
 RUNNING_RE = re.compile(r"^Running \S+ fit -> (?P<directory>\S.*?)\s*$", re.MULTILINE)
 
-#: How a fit refused as identical to one already recorded names that one, so
-#: the page can link it and offer to run again anyway.
-IDENTICAL_LINE = "An identical run already exists: {fit_id}"
-IDENTICAL_RE = re.compile(r"An identical run already exists: (?P<fit_id>\S+)")
-
 
 def resolve_target(
     layout: ProjectLayout, script: Path, sample: str | None
@@ -221,7 +216,6 @@ def run_fit_command(
     plots: bool = False,
     note: str | None = None,
     model_name: str | None = None,
-    force: bool = False,
     dry_run: bool = False,
     as_json: bool = False,
     verbose: bool = False,
@@ -242,7 +236,6 @@ def run_fit_command(
             taken from ``nrw.toml`` [fit], else bumps' default.
         note: Free-text note stored in the record.
         model_name: Model name. Defaults to the script stem.
-        force: Run even if an identical run already exists.
         dry_run: Report what would run, write nothing.
         as_json: Emit the record as JSON instead of prose.
 
@@ -331,14 +324,14 @@ def run_fit_command(
     )
 
     duplicates = index.find_by_run_key(identity.run_key)
-    if duplicates and not force and not dry_run:
+    if duplicates and not dry_run:
         previous = duplicates[0]
-        raise click.ClickException(
-            IDENTICAL_LINE.format(fit_id=previous["fit_id"]) + " "
-            f"(status {previous.get('status')}, chisq {previous.get('chisq')}).\n"
-            "Nothing changed: script, inputs, settings and environment all match.\n"
-            "  --force   run anyway, recorded as a replicate\n"
-            f"  nrw whence {previous['fit_id']}   show what it produced"
+        click.echo(
+            f"  ! An identical run already exists: {previous['fit_id']} (status "
+            f"{previous.get('status')}, chisq {previous.get('chisq')}). Script, "
+            "inputs, settings and environment all match; this one is recorded "
+            "as a replicate of it.",
+            err=True,
         )
 
     started = utc_now()

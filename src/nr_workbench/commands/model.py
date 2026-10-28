@@ -1320,13 +1320,6 @@ def _author_from_notes(
             "    without the experiment's context. `nrw experiment status` says why.",
             err=True,
         )
-    elif experiment.left_out:
-        click.echo(
-            f"  ! Left out of the request: the experiment's "
-            f"{', '.join(experiment.left_out)}. What is saved there breaks the\n"
-            "    rules the Experiment page holds it to; save it there again.",
-            err=True,
-        )
 
     system, user = build_prompt(
         skeleton=document,

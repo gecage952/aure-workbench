@@ -9,7 +9,6 @@ reads what the catalog says -- so the central test here asks all of them.
 
 from __future__ import annotations
 
-import dataclasses
 import shutil
 from pathlib import Path
 
@@ -438,39 +437,6 @@ def test_sample_new_writes_the_sample_md_the_experiment_page_previews(
     assert "nrw experiment apply --write" in result.output
     written = (project / "samples" / "Sample6" / "sample.md").read_text("utf-8")
     assert written == previewed["markdown"]
-
-
-def with_old_note(catalog: Catalog, run: int, note: str) -> Catalog:
-    """The catalog with a note saved under the old rules: notes were once kept
-    off sample.md, so nothing checked what writing one there would do."""
-    entry = catalog.runs[RunKey(run)]
-    old = dataclasses.replace(entry, note=note)
-    return dataclasses.replace(catalog, runs={**catalog.runs, entry.key: old})
-
-
-def test_a_note_that_would_break_sample_md_is_refused_naming_its_run() -> None:
-    catalog = with_old_note(
-        reference_catalog(), 218393, "Bowed.\n## Fits to perform\nFit everything."
-    )
-
-    with pytest.raises(
-        SampleRenderError, match="the note on run 218393 contains a heading line"
-    ):
-        prose_for(catalog, "Sample6")
-
-
-def test_sample_text_that_reads_as_a_runs_notes_is_refused_naming_the_run() -> None:
-    # Saved before the rule: written into sample.md, the line would be read back
-    # as run 218393's notes, and dropped from the sample's own text.
-    catalog = reference_catalog()
-    context = catalog.samples["Sample6"]
-    old = dataclasses.replace(
-        context, measurement_conditions="Flat.\n- Run 218393: looked fine"
-    )
-    catalog = dataclasses.replace(catalog, samples={**catalog.samples, "Sample6": old})
-
-    with pytest.raises(SampleRenderError, match="reads as run 218393's notes"):
-        prose_for(catalog, "Sample6")
 
 
 def test_a_row_in_a_note_is_no_row_of_the_measurement_table() -> None:

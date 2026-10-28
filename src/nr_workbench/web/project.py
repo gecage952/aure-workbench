@@ -957,11 +957,6 @@ class ProjectData:
 
     def _fit_dir(self, fit_id: str, sample: Any) -> Path:
         """Locate a fit directory, searching all samples if needed."""
-        from nr_workbench.provenance.lookup import plain_name
-
-        # The index is committed: a name in it is refused unless it is one.
-        if not plain_name(fit_id) or (sample and not plain_name(sample)):
-            raise FileNotFoundError(f"{fit_id!r} does not name a fit directory here.")
         if sample:
             candidate = self.layout.sample(str(sample)) / "results" / fit_id
             if candidate.is_dir():

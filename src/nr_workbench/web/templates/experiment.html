@@ -105,7 +105,7 @@
         <div id="expt-models-list" class="mb-2"></div>
         <form id="expt-model-form" class="d-flex flex-wrap gap-2 align-items-center" novalidate>
           <input class="form-control form-control-sm expt-model-name" id="expt-model-name"
-                 placeholder="model name, e.g. oxide" aria-label="new model name" maxlength="64">
+                 placeholder="model name, e.g. oxide" aria-label="new model name">
           <button type="submit" class="btn btn-sm btn-outline-primary" id="expt-model-create">New model</button>
           <span class="text-secondary">or</span>
           <select id="expt-model-run" class="form-select form-select-sm expt-model-run d-none"
@@ -156,10 +156,6 @@
           <div class="form-text" id="expt-fit-defaults"></div>
           <input id="expt-fit-note" class="form-control form-control-sm mt-2" maxlength="500"
                  placeholder="why this fit (optional; kept in its record)" aria-label="why this fit">
-          <div class="form-check mt-1">
-            <input class="form-check-input" type="checkbox" id="expt-fit-force">
-            <label class="form-check-label" for="expt-fit-force">run again even if nothing changed</label>
-          </div>
           <div class="d-flex gap-2 mt-2">
             <button type="submit" class="btn btn-sm btn-primary" id="expt-fit-run">Run fit</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="expt-fit-close">Close</button>

@@ -55,7 +55,7 @@ nrw init            # in an existing project, this is safe and idempotent
 
 That writes `.claude/settings.json`, which is where the limits live. A project
 scaffolded before this existed will not have it; `nrw init` adds it without
-touching anything you have edited. Check with:
+touching anything you have edited. Check the harness with:
 
 ```bash
 nrw doctor
@@ -63,16 +63,6 @@ nrw doctor
 
 ```
   ✓ harness       2.1.156 at ~/.local/bin/claude
-  ✓ agent limits  PreToolUse hook + 2 deny rule(s)
-```
-
-Those two lines fail independently, and the combination worth noticing is a
-harness with no limits — `nrw agent run` works and nothing stops a promotion:
-
-```
-  ✓ harness       2.1.156 at ~/.local/bin/claude
-  ! agent limits  no .claude/settings.json; run `nrw init` to add the hook
-                  that refuses promote, --upload and --force
 ```
 
 ### 2. Say what you want fitted
@@ -158,7 +148,7 @@ The prompt and the full transcript are kept under `.nrw/agent/`. Options:
 
 ---
 
-## The limits, and why there are two of them
+## The limits
 
 These are refused, and the preview beside each is not:
 
@@ -181,27 +171,19 @@ outside the project, and a validate-only push is refused too because it sends
 the records and the key off the machine. An AuRE run makes billed
 language-model calls for as long as it takes. The last is the one worth
 explaining: **every forcing flag in nr-workbench exists because a check said
-no** — drifted inputs, a hand-edited script, an identical run already recorded,
-a directory somebody else wrote. An agent reaching for `--force` has arrived at
-exactly the situation a person is meant to see.
+no** — drifted inputs, a hand-edited script, a directory somebody else
+wrote. An agent reaching for `--force` has arrived at exactly the situation a
+person is meant to see.
 
-Two independent mechanisms enforce them:
+**A `PreToolUse` hook** in `.claude/settings.json` enforces them, running
+`nrw agent guard` (for OpenCode, a plugin that calls the same command; see
+[OpenCode](#opencode)). It exits 2, which blocks the call before it runs and
+shows the model why. It splits the command line on newlines, `;`, `&`, `|`,
+parentheses and backticks first, so neither `nrw ls && nrw promote abc` nor
+`$(nrw promote abc)` slips past.
 
-1. **A `PreToolUse` hook** in `.claude/settings.json` running `nrw agent
-   guard` (for OpenCode, a plugin that calls the same command; see
-   [OpenCode](#opencode)). It exits 2, which blocks the call before it runs and
-   shows the model why. It splits the command line on newlines, `;`, `&`, `|`,
-   parentheses and backticks first, so neither `nrw ls && nrw promote abc` nor
-   `$(nrw promote abc)` slips past.
-2. **`NRW_AGENT=1`**, which `nrw agent run` sets on the session itself. Under
-   it, each of them refuses from the inside — `--force` is checked once at the top
-   of the CLI rather than in each command, so a subcommand added next year is
-   covered without anyone remembering to.
-
-Both, because a hook can be misconfigured and an environment variable can be
-unset, but both failing silently at the same time is a different order of
-accident. Neither is a sandbox — a determined process can do anything the user
-can. They stop the plausible mistake, which is the one that actually happens.
+It is not a sandbox — a determined process can do anything the user can. It
+stops the plausible mistake, which is the one that actually happens.
 
 The guard reads the whole command line, not its first few words. These are all
 refused, and every one of them was allowed by the first version:
@@ -232,11 +214,9 @@ nrw agent guard --command "nrw promote abc123 --reason 'best chisq'"
 
 ### Giving it more room
 
-`.claude/settings.json` is yours to edit. Removing the hook entry removes the
-first mechanism; unsetting `NRW_AGENT` would remove the second, but `nrw agent
-run` sets it deliberately, so the honest way to allow promotion is to promote
-by hand after reading what the session did. That is the workflow this is built
-for.
+`.claude/settings.json` is yours to edit: removing the hook entry removes the
+limit. The workflow this is built for is to promote by hand, after reading what
+the session did.
 
 ---
 
@@ -353,9 +333,9 @@ assess` asks whether fitted values look physically sensible, `nrw model new
 --from-notes` proposes a stack, `nrw isaac export` writes condition
 sentences, and `nrw aure run` hands AuRE the whole fit.
 
-**None of them consults it while an agent is driving.** Under `NRW_AGENT=1`
-`nrw aure run` is refused (see [the limits](#the-limits-and-why-there-are-two-of-them)),
-and the other three hand the work to the harness instead:
+**None of them consults it while an agent is driving.** The hook refuses
+`nrw aure run` (see [the limits](#the-limits)), and under `NRW_AGENT=1` the
+other three hand the work to the harness instead:
 
 | Command | Endpoint configured, no agent | Agent driving |
 |---|---|---|
@@ -610,12 +590,9 @@ shape it does not recognise rather than failing. The transcript, the fits and
 the records are unaffected, because those come from `nrw` commands, not from
 the harness's output.
 
-**The two limits do not depend on the harness.** `NRW_AGENT=1` is set on the
-session whatever runs it. The `PreToolUse` hook is Claude Code's mechanism, so
-a different harness must provide its own equivalent — if yours cannot, the
-environment variable is the only layer left, and `nrw agent run` will still
-refuse to start without a configured hook. That refusal is deliberate; read it
-as "this harness is not yet set up safely", not as a bug.
+**The limit depends on the harness.** The `PreToolUse` hook is Claude Code's
+mechanism, so a different harness must provide its own equivalent; without
+one, nothing refuses these commands to it.
 
 ### OpenCode
 
@@ -630,18 +607,18 @@ nrw agent run Sample4 --harness opencode --timeout 7200 \
     --model anthropic/claude-sonnet-4-5
 ```
 
-**The limits are three, not two.** `.opencode/plugins/nrw-guard.js` hooks
+**The limits are two.** `.opencode/plugins/nrw-guard.js` hooks
 `tool.execute.before` and shells out to `nrw agent guard`, so every bash command
 is judged before it runs by the same code the Claude Code hook calls — no
 refusal logic is duplicated in JavaScript. The deny rules in `opencode.json` are
-the second, and `NRW_AGENT=1` the third. That is one more than Claude Code gets,
-because `--auto` auto-approves only what is *not* explicitly denied, whereas
+the second. That is one more than Claude Code gets, because `--auto`
+auto-approves only what is *not* explicitly denied, whereas
 `--permission-mode bypassPermissions` drops the deny list entirely.
 
 Measured against opencode 1.18.18, not assumed: a `--force` command that the
 deny rules do **not** match was refused by the plugin under `--auto`, and with
 the plugin disabled via `--pure` the deny rules refused `nrw promote` on their
-own. `nrw agent run` refuses to start if either is missing.
+own.
 
 **OpenCode 2 needs its own plugin file, and its own server.** Measured on
 2.0.22:
@@ -703,23 +680,17 @@ approve — and then tried to write itself a `.claude/settings.local.json` to
 get out. Not one `nrw` command ran.
 
 Bypassing turns off Claude Code's permission layer, including the `deny` rules
-in `.claude/settings.json`. It does **not** turn off the two mechanisms this
-package relies on, which was verified under that exact flag:
+in `.claude/settings.json`. It does **not** turn off the hook, which was
+verified under that exact flag:
 
 ```
 CALL:   Bash {"command": "nrw promote abc123 --reason test"}
 RESULT: PreToolUse:Bash hook error: Refused by nr-workbench (promote): …
 ```
 
-Hooks are independent of permissions, and `NRW_AGENT=1` refuses from inside
-`nrw` regardless. The `deny` list was always the weakest of the three layers,
-and the only one that needed a person at a keyboard to mean anything.
-
-Because the hook is now load-bearing, `nrw agent run` **checks it before every
-session** and refuses to start without it. A session can edit
-`.claude/settings.json`; checking once would leave the next session
-unprotected, and a previous session having removed it is worth knowing before
-you trust what it wrote.
+Hooks are independent of permissions. The `deny` list is the weaker of the
+two layers, and the only one that needs a person at a keyboard to mean
+anything.
 
 ---
 

@@ -89,13 +89,9 @@ def plan_sample_files(
     return planned
 
 
-#: A plain name: never a path, never read as an option. Matched whole, with
-#: :func:`re.fullmatch` -- ``$`` would also match before a trailing newline.
-PLAIN_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-
-#: A model name becomes a filename three times over: the spec, its generated
-#: script, and the model its fits are recorded under.
-MAX_MODEL_NAME = 64
+#: A plain name: never a path. Matched whole, with :func:`re.fullmatch` --
+#: ``$`` would also match before a trailing newline.
+PLAIN_NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def validate_model_name(name: object) -> str:
@@ -110,14 +106,9 @@ def validate_model_name(name: object) -> str:
     Raises:
         ValueError: With the reason.
     """
-    if (
-        not isinstance(name, str)
-        or len(name) > MAX_MODEL_NAME
-        or not PLAIN_NAME_RE.fullmatch(name)
-    ):
+    if not isinstance(name, str) or not PLAIN_NAME_RE.fullmatch(name):
         raise ValueError(
-            f"model name {name!r} must be a plain name: start with a letter or "
-            "digit, then letters, digits, '.', '-' or '_', at most "
-            f"{MAX_MODEL_NAME} characters."
+            f"model name {name!r} must be a plain name: letters, digits, '.', "
+            "'-' or '_', not a path."
         )
     return name

@@ -99,10 +99,10 @@ def test_a_fitters_table_applies_to_that_fitter_only() -> None:
         ("[fit]\nsteps = 100", "no setting 'steps'"),
         ("[fit.amoeba]\nsamples = 100", "amoeba takes no 'samples'"),
         ("[fit.de]\nburn = 10", "de takes no 'burn'"),
-        ("[fit.dream]\nsamples = 0", "from 1 to"),
+        ("[fit.dream]\nsamples = 0", "at least 1"),
         ("[fit.dream]\nsamples = true", "whole number"),
         ('[fit.dream]\nsamples = "10000"', "whole number"),
-        ("[fit]\nparallel = -1", "from 0 to"),
+        ("[fit]\nparallel = -1", "at least 0"),
         ("[fit]\ndream = 1", "must be a table"),
     ],
 )

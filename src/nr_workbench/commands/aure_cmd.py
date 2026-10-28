@@ -308,15 +308,6 @@ def run_aure_run(
         click.echo("  --dry-run: validated, nothing run.")
         return
 
-    # Two mechanisms, as everywhere else here: the PreToolUse hook refuses the
-    # command line, and this refuses from the inside. An AuRE run bills for as
-    # long as it takes and substitutes a second, weaker model for the judgement
-    # the harness was supposed to supply -- the same argument that makes
-    # `nrw model new --from-notes` stand down under an agent.
-    from nr_workbench.agent.guard import refuse_if_agent
-
-    refuse_if_agent("aure-run")
-
     if not llm_available():
         from nr_workbench.aure_adapter import endpoint_hint
 

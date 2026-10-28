@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Container, Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import Any
 
 #: A steady-state measurement: a set of angle segments reduced from one run.
 STEADY = "steady"
@@ -50,38 +50,13 @@ MOUNTINGS = ("unknown", "once", "remounted")
 #: intersection of what every one of those accepts, plus a length cap.
 _SAMPLE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", re.ASCII)
 
-#: Names Windows refuses as files or directories, in any case.
-_RESERVED_NAMES = frozenset(
-    {"con", "prn", "aux", "nul"}
-    | {f"com{i}" for i in range(1, 10)}
-    | {f"lpt{i}" for i in range(1, 10)}
-)
-
-#: Longest single-line value (a title, a condition).
-MAX_LINE = 200
-
-#: Longest prose value (a description, the fits to perform).
-MAX_PROSE = 20_000
-
 #: Characters that end a line for *some* reader. ``str.splitlines`` honours all
 #: of these; markdown honours only ``\n`` and ``\r``. A cell containing U+2028
 #: is one row to the browser and two to ``conditions.from_table``.
 _LINE_BREAKS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
 
-#: Bidirectional overrides: they make displayed text differ from stored text.
-_BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-
 #: An ATX heading, as CommonMark reads one.
 _HEADING_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)", re.MULTILINE)
-
-#: The opening line of a fenced code block.
-_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-
-#: The same two in a run's notes, which sample.md writes inside the run's entry,
-#: every line after the first indented: there either takes effect after any
-#: indentation, a tab included, that at the margin would make it code instead.
-_NOTE_HEADING_RE = re.compile(r"^[ \t]*#{1,6}(?:[ \t]|$)", re.MULTILINE)
-_NOTE_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})", re.MULTILINE)
 
 
 class CatalogValidationError(ValueError):
@@ -181,11 +156,6 @@ def validate_sample_id(sample_id: Any) -> str:
             f"{sample_id!r} is not a usable sample id: start with a letter or "
             "digit, then use letters, digits, '-' or '_', at most 64 characters."
         )
-    if sample_id.casefold() in _RESERVED_NAMES:
-        raise CatalogValidationError(
-            f"{sample_id!r} is a reserved device name on Windows and cannot be "
-            "a directory there."
-        )
     return sample_id
 
 
@@ -194,45 +164,36 @@ def validate_sample_id(sample_id: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _invisible_trouble(value: str, *, allow: str) -> str | None:
-    """Name the first character that is not safe to store, or ``None``."""
+def _invisible_trouble(value: str, *, allow: Container[str]) -> str | None:
+    """Name the first line break not in *allow*, or lone surrogate, in *value*."""
     for char in value:
         if char in allow:
             continue
         if char in _LINE_BREAKS:
             return f"a line break ({unicodedata.name(char, repr(char))})"
-        if char in _BIDI_CONTROLS:
-            return f"a text-direction control ({unicodedata.name(char)})"
-        category = unicodedata.category(char)
-        if category == "Cc":
-            return f"a control character ({char!r})"
-        if category == "Cs":
+        if unicodedata.category(char) == "Cs":
             # Half of a surrogate pair: JSON carries it, no encoding stores
             # it, and left in it would fail the whole save at the parquet.
             return f"a lone surrogate ({char!r}), which no encoding can store"
     return None
 
 
-#: Where a person's prose is read, which decides how each refusal explains
-#: itself: a section of ``sample.md``, or the experiment's context. No file is
-#: written from that; it is quoted into the instructions a language model is
-#: given.
-Where = Literal["sample.md", "experiment"]
-
-
-def _check_comment_markers(label: str, value: str, where: Where = "sample.md") -> None:
+def _check_comment_markers(label: str, value: str) -> None:
     for marker in ("<!--", "-->"):
         if marker in value:
-            reason = (
-                "sample.md keeps its guidance in HTML comments, and every "
-                "reader that strips them would take this as the start or end "
-                "of one -- hiding the text between here and the next comment."
-                if where == "sample.md"
-                else "That starts or ends an HTML comment: wherever this text is "
-                "shown as Markdown, what is inside one is hidden, yet a language "
-                "model still reads it."
+            raise CatalogValidationError(
+                f"{label} contains {marker!r}. sample.md keeps its guidance in "
+                "HTML comments, and every reader that strips them would take "
+                "this as the start or end of one -- hiding the text between "
+                "here and the next comment."
             )
-            raise CatalogValidationError(f"{label} contains {marker!r}. {reason}")
+
+
+def _text(label: str, value: Any) -> str:
+    """*value* with Windows line endings normalized and the ends trimmed."""
+    if not isinstance(value, str):
+        raise CatalogValidationError(f"{label} must be text, not {value!r}")
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
@@ -254,10 +215,6 @@ def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
     text = value.strip()
     if not text and not allow_empty:
         raise CatalogValidationError(f"{label} must not be empty")
-    if len(text) > MAX_LINE:
-        raise CatalogValidationError(
-            f"{label} is {len(text)} characters; the limit is {MAX_LINE}"
-        )
     trouble = _invisible_trouble(text, allow="")
     if trouble:
         raise CatalogValidationError(f"{label} contains {trouble}; it must be one line")
@@ -270,16 +227,17 @@ def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
     return text
 
 
-def clean_prose(label: str, value: Any, *, where: Where = "sample.md") -> str:
-    """Validate a multi-line value: a description, the fits to perform, a
-    section of the experiment's context.
+def clean_prose(label: str, value: Any, *, headings: bool = True) -> str:
+    """Validate a multi-line value written into ``sample.md``: a description,
+    the fits to perform, a run's notes.
 
     Args:
         label: The field's name, for the message.
         value: The proposed value.
-        where: Where it is read: in ``sample.md``, or as the experiment's
-            context, which is quoted into a language model's instructions and
-            has no measurement table for a table of runs to disagree with.
+        headings: Whether a heading line is refused. Not for a run's notes:
+            sample.md writes them after ``- Run <n>:``, every later line
+            indented, so none of their lines reads as a heading to a reader
+            that splits the file into sections.
 
     Returns:
         The text with Windows line endings normalized and the ends trimmed.
@@ -289,61 +247,22 @@ def clean_prose(label: str, value: Any, *, where: Where = "sample.md") -> str:
     Raises:
         CatalogValidationError: With the reason.
     """
-    if not isinstance(value, str):
-        raise CatalogValidationError(f"{label} must be text, not {value!r}")
-    text = value.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if len(text) > MAX_PROSE:
-        raise CatalogValidationError(
-            f"{label} is {len(text)} characters; the limit is {MAX_PROSE}"
-        )
-    trouble = _invisible_trouble(text, allow="\n\t")
+    text = _text(label, value)
+    trouble = _invisible_trouble(text, allow="\n")
     if trouble:
         raise CatalogValidationError(f"{label} contains {trouble}")
-    _check_comment_markers(label, text, where)
-    heading = _HEADING_RE.search(text)
+    _check_comment_markers(label, text)
+    heading = _HEADING_RE.search(text) if headings else None
     if heading:
         line = text[heading.start() :].split("\n", 1)[0]
-        effect = (
-            "In sample.md a heading starts a new section, so this would read as "
-            "a section of its own -- a '## Fits to perform' here would become "
-            "the agent's task."
-            if where == "sample.md"
-            else "The experiment's context is quoted into the instructions a "
-            "language model is given, where a heading starts a new section, so "
-            "this would read as a section of its own."
-        )
         raise CatalogValidationError(
-            f"{label} contains a heading line ({line.strip()!r}). {effect} "
-            "Use **bold** for emphasis instead."
+            f"{label} contains a heading line ({line.strip()!r}). In sample.md a "
+            "heading starts a new section, so this would read as a section of "
+            "its own -- a '## Fits to perform' here would become the agent's "
+            "task. Use **bold** for emphasis instead."
         )
-    _check_fences(label, text, where)
-    if where == "sample.md":
-        _check_tables(label, text)
+    _check_tables(label, text)
     return text
-
-
-def _check_fences(label: str, text: str, where: Where) -> None:
-    open_fence: str | None = None
-    for line in text.split("\n"):
-        match = _FENCE_RE.match(line)
-        if not match:
-            continue
-        fence = match.group(1)
-        if open_fence is None:
-            open_fence = fence
-        elif fence[0] == open_fence[0] and len(fence) >= len(open_fence):
-            open_fence = None
-    if open_fence is not None:
-        effect = (
-            "Everything after it in sample.md -- the measurement table and the "
-            "fits to perform -- would render as code."
-            if where == "sample.md"
-            else "Quoted into a language model's instructions, everything after "
-            "it would read as code."
-        )
-        raise CatalogValidationError(
-            f"{label} opens a code block ({open_fence}) and never closes it. {effect}"
-        )
 
 
 def _check_tables(label: str, text: str) -> None:
@@ -365,22 +284,11 @@ def _check_tables(label: str, text: str) -> None:
 
 
 def clean_title_snapshot(value: Any) -> str:
-    """Tidy a run title read from a file header, for display only.
+    """A run title or start time read from a file header, its ends trimmed.
 
-    Unlike the functions above this never rejects: the title comes from the
-    instrument, not from the person editing, and refusing their edit over it
-    would make an odd header impossible to organize around.
+    Never refused: it comes from the instrument, not from the person editing.
     """
-    if not isinstance(value, str):
-        return ""
-    kept = "".join(
-        char
-        for char in value
-        if char not in _LINE_BREAKS
-        and char not in _BIDI_CONTROLS
-        and unicodedata.category(char) != "Cc"
-    )
-    return kept.strip()[:MAX_LINE]
+    return value.strip() if isinstance(value, str) else ""
 
 
 # ---------------------------------------------------------------------------
@@ -528,14 +436,24 @@ EXPERIMENT_FIELDS = ("summary", "hypotheses", "notes")
 
 
 def clean_experiment_field(name: str, value: Any) -> str:
-    """Hold one of the experiment's fields to the page's rules.
+    """Check one of the experiment's fields.
+
+    No ``sample.md`` holds it, so none of that file's rules apply: only a lone
+    surrogate, which no file can store, is refused.
+
+    Returns:
+        The text with Windows line endings normalized and the ends trimmed.
 
     Raises:
         CatalogValidationError: With the reason, or for a field it has not.
     """
-    if name in EXPERIMENT_FIELDS:
-        return clean_prose(name, value, where="experiment")
-    raise CatalogValidationError(f"the experiment has no field {name!r}")
+    if name not in EXPERIMENT_FIELDS:
+        raise CatalogValidationError(f"the experiment has no field {name!r}")
+    text = _text(name, value)
+    trouble = _invisible_trouble(text, allow=_LINE_BREAKS)
+    if trouble:
+        raise CatalogValidationError(f"{name} contains {trouble}")
+    return text
 
 
 #: Run fields a person may change, and how each is checked.
@@ -571,11 +489,7 @@ def _clean_run_field(name: str, value: Any) -> Any:
             )
         return value
     if name == "note":
-        # Rendered into sample.md, so held to the rules of the prose there: no
-        # heading, comment marker, fence or second table to change how it reads.
-        text = clean_prose("note", value)
-        _check_note_structure(text)
-        return text
+        return clean_prose("note", value, headings=False)
     if name == "title":
         return clean_title_snapshot(value)
     if name == "start_time":
@@ -593,53 +507,8 @@ def _clean_sample_field(name: str, value: Any) -> Any:
             )
         return value
     if name in _PROSE_FIELDS:
-        text = clean_prose(name.replace("_", " "), value)
-        if name == "measurement_conditions":
-            refuse_run_note_lines(text)
-        return text
+        return clean_prose(name.replace("_", " "), value)
     raise CatalogValidationError(f"a sample has no field {name!r}")
-
-
-def refuse_run_note_lines(text: str) -> None:
-    """Refuse the sample's own *Measurement conditions* a line like a run's notes.
-
-    sample.md writes each run's notes after the sample's text, each opening
-    ``- Run <n>:``. A line of the sample's own that opens so would be read back
-    as that run's notes -- and, for a run left out, dropped.
-
-    Args:
-        text: The sample's measurement conditions.
-
-    Raises:
-        CatalogValidationError: Naming the run, and where the line belongs.
-    """
-    from nr_workbench.sample_md import RUN_NOTE_RE
-
-    for line in text.split("\n"):
-        match = RUN_NOTE_RE.match(line)
-        if match:
-            run = match.group(1)
-            raise CatalogValidationError(
-                f"measurement conditions has a line that reads as run {run}'s "
-                f"notes ({line.strip()[:60]!r}). Put it in run {run}'s notes, "
-                "under Measurements, where it is kept with the run -- or word it "
-                f"another way, such as 'Run {run} was ...'."
-            )
-
-
-def _check_note_structure(text: str) -> None:
-    for regex, what in (
-        (_NOTE_HEADING_RE, "a heading line"),
-        (_NOTE_FENCE_RE, "a code fence"),
-    ):
-        match = regex.search(text)
-        if match:
-            line = text[match.start() :].split("\n", 1)[0].strip()
-            raise CatalogValidationError(
-                f"note contains {what} ({line[:60]!r}). sample.md writes a note "
-                "inside its run's entry, where this would start a section or a "
-                "code block of its own, however it is indented."
-            )
 
 
 # ---------------------------------------------------------------------------

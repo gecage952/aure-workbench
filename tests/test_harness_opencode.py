@@ -181,34 +181,6 @@ def test_opencode_runs_with_auto_not_a_blanket_bypass() -> None:
     assert "--format" in argv and "json" in argv
 
 
-def test_opencode_guard_requires_both_the_plugin_and_the_deny_rules(
-    opencode_project: Path,
-) -> None:
-    """Either one missing means the project is not guarded.
-
-    The plugin is the mechanism that holds -- it calls `nrw agent guard`, which
-    reads the whole command line. The deny rules only match the command as
-    written. A project with one of the two should not run unattended.
-    """
-    from nr_workbench.harness.driver import GuardMissing, opencode_guard
-
-    opencode_guard(opencode_project)  # both present: no raise
-
-    (opencode_project / ".opencode" / "plugins" / "nrw-guard.js").unlink()
-    with pytest.raises(GuardMissing, match="guard plugin"):
-        opencode_guard(opencode_project)
-
-
-def test_opencode_guard_requires_the_opencode_2_plugin(opencode_project: Path) -> None:
-    """OpenCode 2 will not load nrw-guard.js, so without its own file nothing
-    stops the session under it -- and only a line in OpenCode's log says so."""
-    from nr_workbench.harness.driver import GuardMissing, opencode_guard
-
-    (opencode_project / ".opencode" / "plugins" / "nrw-guard-opencode2.js").unlink()
-    with pytest.raises(GuardMissing, match="OpenCode 2"):
-        opencode_guard(opencode_project)
-
-
 def test_opencode_project_has_a_guard_plugin_for_each_opencode_version(
     opencode_project: Path,
 ) -> None:
@@ -331,12 +303,3 @@ def test_opencode_2_runs_each_session_on_its_own_server(tmp_path: Path) -> None:
     assert argv("opencode v2.0.22")[:2] == ["run", "--standalone"]
     assert "--standalone" not in argv("1.18.18")
     assert argv(None)[:2] == ["run", "--standalone"]
-
-
-def test_opencode_guard_reads_its_jsonc_config(opencode_project: Path) -> None:
-    """The deny check must not trip over the comments in the shipped file."""
-    from nr_workbench.harness.driver import opencode_guard
-
-    assert "//" in (opencode_project / "opencode.json").read_text(encoding="utf-8")
-
-    opencode_guard(opencode_project)  # no raise

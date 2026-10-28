@@ -32,7 +32,7 @@ from nr_workbench.experiment.inventory import (
     SourceRun,
 )
 from nr_workbench.experiment.model import RunKey
-from nr_workbench.experiment.sources import SourceChangedError, SourceFileTooLarge
+from nr_workbench.experiment.sources import SourceChangedError
 
 REFERENCE_STEADY = Path(__file__).parent / "data" / "reference" / "steady"
 
@@ -269,15 +269,13 @@ class InMemorySource:
             )
         return Inventory(runs=runs)
 
-    def read_bytes(self, file: SourceFile, *, max_bytes: int) -> bytes:
+    def read_bytes(self, file: SourceFile) -> bytes:
         self.reads += 1
         if self.fail_reads_after is not None and self.reads > self.fail_reads_after:
             raise OSError("simulated failure mid-copy")
         entry = self.files.get(file.name)
         if entry is None or f"v{entry.version}:{entry.mtime}" != file.version:
             raise SourceChangedError(f"{file.name} changed")
-        if len(entry.data) > max_bytes:
-            raise SourceFileTooLarge(file.name)
         return entry.data
 
 

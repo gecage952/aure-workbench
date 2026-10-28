@@ -113,8 +113,8 @@ locally hosted model, want OpenCode: it takes a provider and model in its own
 `opencode.json` rather than being tied to one vendor.
 
 Two things to know. **`nrw agent run` drives Claude Code or OpenCode**
-(`--harness opencode`), and checks each one's limit before a session starts:
-Claude Code's `PreToolUse` hook, or OpenCode's guard plugin and deny rules.
+(`--harness opencode`), each limited by its own guard: Claude Code's
+`PreToolUse` hook, or OpenCode's guard plugin and deny rules.
 OpenCode has no turn cap, so a session there needs `--timeout`, and refuses to
 start without one rather than run unbounded. And **narrowing the set never
 deletes anything**: files for an assistant you drop stay on disk, and nrw stops
@@ -290,8 +290,9 @@ the tree was dirty), and the bumps output. `nrw whence` traces a figure back to
 that record even after it has been copied out of the project, because the
 figures a fit writes are stamped with its id when it finishes.
 
-Re-running an identical fit is refused by default, and a result whose data has
-changed underneath it is reported as `STALE` everywhere it appears.
+Re-running an identical fit is recorded as a replicate of the first, and a
+result whose data has changed underneath it is reported as `STALE` everywhere
+it appears.
 
 Fits are curated on the fit pages of `nrw serve` — star, finalize, discard,
 restore and delete — or with `nrw fit star`, `unstar`, `discard`, `restore`
@@ -330,9 +331,8 @@ package supplies what has to exist around it: the offline checks it reads
 first, limits it cannot talk past, a bounded session, and a transcript.
 Promoting or curating fits, publishing to ISAAC, `nrw aure run`, organizing the
 experiment, `nrw sample reset`, `init --nested` and any `--force` are refused by
-the harness's hook *and* by `nrw` itself under `NRW_AGENT=1`; the full list,
-with what stays allowed, is in
-[docs/agent.md](docs/agent.md#the-limits-and-why-there-are-two-of-them).
+the harness's hook; the full list, with what stays allowed, is in
+[docs/agent.md](docs/agent.md#the-limits).
 
 A session refuses to start unless `## Fits to perform` in the sample's notes
 says what you want. Deciding that is the one thing it must not do for itself.
