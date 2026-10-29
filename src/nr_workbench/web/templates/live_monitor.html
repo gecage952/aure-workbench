@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Live Monitor — nr-workbench{% endblock %}
+
+{% block content %}
+<h1 class="h4 mb-3">Live Monitor</h1>
+{% if not current_user %}
+<div class="alert alert-secondary">
+  {% if oauth_login %}<a href="{{ url_for('auth.login') }}">Log in</a> to see your IPTS projects.
+  {% else %}No identity provider is configured, so there are no IPTS projects to show.{% endif %}
+</div>
+{% elif not current_user.ipts_projects %}
+<div class="alert alert-secondary">You are not a member of any IPTS projects.</div>
+{% else %}
+<ul class="list-group">
+  {% for ipts in current_user.ipts_projects %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <span class="mono">{{ ipts }}</span>
+    <button type="button" class="btn btn-sm btn-outline-primary">Monitor</button>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

@@ -17,6 +17,7 @@ from flask import Blueprint, current_app, jsonify, request
 from werkzeug.exceptions import HTTPException
 
 from nr_workbench.web.project import ProjectData
+from nr_workbench.web.user_session import refuse_unless_logged_in
 
 
 def data() -> ProjectData:
@@ -25,6 +26,10 @@ def data() -> ProjectData:
 
 
 api = Blueprint("api", __name__, url_prefix="/api")
+
+# Once an identity provider is configured, every route here needs a logged-in
+# user; without one, the API stays open as the local tool it was.
+api.before_request(refuse_unless_logged_in)
 
 
 @api.errorhandler(FileNotFoundError)

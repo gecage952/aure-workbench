@@ -33,8 +33,9 @@ from flask import (
     url_for,
 )
 
-from nr_workbench.web import security
+from nr_workbench.web import security, user_session
 from nr_workbench.web.api import api
+from nr_workbench.web.auth import OAUTH_PROVIDER, auth, init_oauth
 from nr_workbench.web.curation import CurationData
 from nr_workbench.web.experiment import ExperimentData
 from nr_workbench.web.experiment_api import experiment_api
@@ -43,6 +44,15 @@ from nr_workbench.web.llm_settings import LlmSettingsData
 from nr_workbench.web.models import ModelsData
 from nr_workbench.web.project import ProjectData
 from nr_workbench.web.settings import SettingsData
+
+#: Settings never taken from the project's ``.env``: the identity provider and
+#: its secret, and the directory whose groups a login is given.
+PERSONAL_VARS = (
+    "AURE_OAUTH_WELL_KNOWN_URL",
+    "AURE_OAUTH_CLIENT_SECRET",
+    "AURE_LDAP_URL",
+    "AURE_LDAP_BASE_DN",
+)
 
 
 def create_app(
@@ -137,8 +147,56 @@ def create_app(
         watching=experiment.watching,
         on_saved=experiment.reload,
     )
+
+    # OAuth configuration for AuRE
+    # authlib keeps the login's `state` in Flask's session, which cannot sign
+    # anything without a key. It only has to outlive one round trip to the
+    # identity provider, so a fresh key per process is enough -- restarting
+    # the server abandons a half-finished login, nothing more.
+    app.secret_key = secrets.token_hex(32)
+    # Lax, not Strict: the identity provider's redirect back to /auth/callback
+    # is a cross-site navigation, and must carry the cookie holding `state`.
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # Where a logged-in user is kept between requests (web/user_session.py).
+    user_session.install(app)
+    # Read as an nrw command run in the project would -- the shell, then its
+    # .env, then ~/.nrw and ~/.aure -- but without loading any of it into this
+    # process, which would hand every job it starts the values as though the
+    # shell had set them (see `where_set`).
+    from nr_workbench.env import where_set
+
+    oauth = where_set(root)
+    # The provider and the secret come from the person's own settings only,
+    # as ISAAC's portal and key do: the project's .env is written by anyone
+    # who can write the project, and a provider named there would choose
+    # where every login is sent.
+    own = where_set(root, skip_project=True)
+    app.config["NRW_PERSONAL_IGNORED"] = [
+        name for name in PERSONAL_VARS if name in oauth and oauth[name] != own.get(name)
+    ]
+    app.config["AURE_OAUTH_WELL_KNOWN_URL"] = _setting(own, "AURE_OAUTH_WELL_KNOWN_URL")
+    # authlib looks these up as f"{name}_{key}".upper(), so the prefix must be
+    # upper-cased too: "aure_CLIENT_ID" is silently never read.
+    prefix = OAUTH_PROVIDER.upper()
+    app.config[f"{prefix}_CLIENT_ID"] = _setting(oauth, "AURE_OAUTH_CLIENT_ID")
+    app.config[f"{prefix}_CLIENT_SECRET"] = _setting(own, "AURE_OAUTH_CLIENT_SECRET")
+    app.config[f"{prefix}_CLIENT_KWARGS"] = {
+        "scope": _setting(oauth, "AURE_OAUTH_SCOPES")
+    }
+    if app.config["AURE_OAUTH_WELL_KNOWN_URL"]:
+        init_oauth(app)
+    # The directory a logged-in user's groups are looked up in (web/ldap.py).
+    # Personal too: a server named in the project's .env could put whoever it
+    # liked in whichever group it liked.
+    app.config["AURE_LDAP_URL"] = _setting(own, "AURE_LDAP_URL")
+    app.config["AURE_LDAP_BASE_DN"] = _setting(own, "AURE_LDAP_BASE_DN")
+    # Whether a logged-in user may change the project's settings without the
+    # link `nrw serve` prints (security.refuse_unless_writer).
+    app.config["USER_ALLOW_SETTINGS"] = _flag(_setting(oauth, "USER_ALLOW_SETTINGS"))
+
     app.register_blueprint(api)
     app.register_blueprint(experiment_api)
+    app.register_blueprint(auth)
 
     @app.before_request
     def _only_the_experiment_blueprint_writes() -> None:
@@ -161,9 +219,23 @@ def create_app(
     from nr_workbench.provenance.summary import FIRST_RUN
 
     app.jinja_env.globals["first_run"] = FIRST_RUN
+    # Without a provider to send them to, a "Log in" link would only lead to
+    # an error page, so the navbar offers it only when one is configured.
+    app.jinja_env.globals["oauth_login"] = bool(app.config["AURE_OAUTH_WELL_KNOWN_URL"])
 
     _register_views(app)
     return app
+
+
+def _setting(settings: dict[str, Any], name: str) -> str | None:
+    """A variable's value from :func:`~nr_workbench.env.where_set`, if set."""
+    setting = settings.get(name)
+    return setting.value if setting else None
+
+
+def _flag(value: str | None) -> bool:
+    """A yes/no setting: ``1``, ``true``, ``yes`` or ``on``, in any case."""
+    return (value or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def _inert(response: Any) -> Any:
@@ -223,8 +295,45 @@ def _register_views(app: Flask) -> None:
 
     @app.get("/")
     def index() -> str:
+        """Home: the way into the live monitor and into getting data."""
+        return render_template("index.html")
+
+    @app.get("/samples")
+    def samples() -> str:
         """Project overview: one card per sample."""
-        return render_template("index.html", overview=data().overview())
+        return render_template("samples.html", overview=data().overview())
+
+    @app.get("/live-monitor")
+    def live_monitor() -> str:
+        """The live monitor (placeholder)."""
+        return render_template("live_monitor.html")
+
+    @app.get("/get-data")
+    def get_data() -> str:
+        """Getting data (placeholder)."""
+        return render_template("get_data.html")
+
+    @app.get("/profile")
+    def profile() -> Any:
+        """The logged-in user: their IPTS projects and every group they are in."""
+        user = user_session.current_user()
+        if user is None:
+            if not user_session.login_required_enabled():
+                abort(404, "Nobody can log in: no identity provider is configured.")
+            return redirect(url_for("auth.login"))
+        from ldap3.core.exceptions import LDAPException
+
+        from nr_workbench.web import ldap
+
+        # Looked up live rather than kept from the login: a user can be in
+        # more groups than a session cookie holds, and this page is the one
+        # place they are all wanted.
+        groups: list[str] | None = None
+        try:
+            groups = sorted(ldap.posix_groups_for(user.user_id))
+        except (RuntimeError, LDAPException) as exc:
+            app.logger.error("Group lookup for %s failed: %s", user.user_id, exc)
+        return render_template("profile.html", user=user, groups=groups)
 
     @app.get("/s/<sample_id>")
     def sample(sample_id: str) -> str:
@@ -399,7 +508,7 @@ def _register_views(app: Flask) -> None:
     def settings_page() -> Any:
         """The IPTS, where the data is, and how new runs are noticed."""
         nonce = secrets.token_urlsafe(16)
-        writer = security.can_write()
+        writer = security.can_write(for_settings=True)
         page = render_template(
             "settings.html",
             payload=app.config["NRW_SETTINGS"].settings(),

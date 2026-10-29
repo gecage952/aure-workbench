@@ -233,21 +233,64 @@ def has_session() -> bool:
     return bool(presented) and current_app.extensions["nrw_sessions"].valid(presented)
 
 
-def can_write() -> bool:
-    """Whether this request may be shown write controls."""
+def user_may_change_settings() -> bool:
+    """Whether a logged-in user stands in for the link, for settings only.
+
+    ``USER_ALLOW_SETTINGS`` opts in; without it, settings need the link like
+    every other write. Even then, only a member of the project's own IPTS
+    qualifies -- or of the ``data_access`` group, which counts as membership
+    of every IPTS. A project with no IPTS has no members: setting one up still
+    takes the link.
+    """
+    if not current_app.config.get("USER_ALLOW_SETTINGS"):
+        return False
+    from nr_workbench.web.user_session import current_user
+
+    user = current_user()
+    if user is None:
+        return False
+    from nr_workbench.experiment.config import experiment_config_for
+    from nr_workbench.project.experiment_schema import normalize_ipts
+
+    # Read on every request, not once at startup: saving the settings can
+    # change the IPTS, and the next request must be judged against the new one.
+    ipts = experiment_config_for(current_app.config["NRW_ROOT"]).ipts
+    if ipts is None:
+        return False
+    return user.data_access or ipts in {
+        normalize_ipts(project) for project in user.ipts_projects
+    }
+
+
+def _authorized(for_settings: bool) -> bool:
+    return has_session() or (for_settings and user_may_change_settings())
+
+
+def can_write(*, for_settings: bool = False) -> bool:
+    """Whether this request may be shown write controls.
+
+    Args:
+        for_settings: The controls change only the project's settings, which
+            a logged-in user may when ``USER_ALLOW_SETTINGS`` is set.
+    """
     return (
         bool(current_app.config.get("NRW_WRITABLE"))
         and is_loopback(request.remote_addr)
-        and has_session()
+        and _authorized(for_settings)
     )
 
 
-def refuse_unless_writer() -> None:
+def refuse_unless_writer(*, for_settings: bool = False) -> None:
     """The write gate: abort unless every condition for a write holds.
 
     Called before every request that is not a safe method on the write
     blueprint, and -- as a second mechanism -- application-wide for any
     unsafe method on any other route.
+
+    Args:
+        for_settings: The request changes only the project's settings. A
+            logged-in user may then stand in for the link when
+            ``USER_ALLOW_SETTINGS`` is set; every other check still applies.
     """
     if request.method in SAFE_METHODS:
         return
@@ -256,7 +299,7 @@ def refuse_unless_writer() -> None:
         abort(403, config.get("NRW_READ_ONLY_REASON") or "This server is read-only.")
     if not is_loopback(request.remote_addr):
         abort(403, "Writes are accepted only from this machine.")
-    if not has_session():
+    if not _authorized(for_settings):
         abort(
             403,
             "This browser has not opened the link `nrw serve` printed, so it "

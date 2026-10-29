@@ -758,3 +758,190 @@ def test_checking_a_folder_reads_a_few_files_of_a_crowded_run(
 
     assert len(reads) == PROBE_FILES_PER_RUN
     assert any("30 files" in p["message"] for p in body["problems"])
+
+
+# --------------------------------------------------------------------------
+# USER_ALLOW_SETTINGS: a logged-in user in place of the link
+# --------------------------------------------------------------------------
+
+
+def log_in_as(app, *ipts_projects: str, data_access: bool = False):
+    """A client logged in as a user in *ipts_projects*, without the link."""
+    from nr_workbench.web.user_session import FlaskSessionStore
+
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session[FlaskSessionStore.KEY] = {
+            "user_id": "gzi",
+            "ipts_projects": list(ipts_projects),
+            "data_access": data_access,
+        }
+    return client
+
+
+@pytest.fixture
+def logged_in(app):
+    """A member of the project's IPTS, which never opened the one-time link."""
+    return log_in_as(app, "IPTS-99999", "IPTS-00001")
+
+
+def test_a_logged_in_user_saves_settings_when_user_allow_settings_is_set(
+    app, logged_in, expt: Path
+) -> None:
+    app.config["USER_ALLOW_SETTINGS"] = True
+
+    response = put(
+        logged_in, app, revision=revision(expt), changes={"feed.poll_seconds": 40}
+    )
+
+    assert response.status_code == 200
+    assert load_config(expt).raw["experiment"]["feed"]["poll_seconds"] == 40
+
+
+def test_a_logged_in_user_without_user_allow_settings_still_needs_the_link(
+    app, logged_in, expt: Path
+) -> None:
+    """Off is the behavior before the setting existed."""
+    before = revision(expt)
+
+    response = put(logged_in, app, revision=before, changes={"feed.poll_seconds": 40})
+
+    assert response.status_code == 403
+    assert revision(expt) == before
+
+
+def test_user_allow_settings_without_a_login_still_needs_the_link(
+    app, expt: Path
+) -> None:
+    app.config["USER_ALLOW_SETTINGS"] = True
+    before = revision(expt)
+
+    response = put(
+        app.test_client(), app, revision=before, changes={"feed.poll_seconds": 40}
+    )
+
+    assert response.status_code == 403
+    assert revision(expt) == before
+
+
+def test_user_allow_settings_opens_only_the_settings_to_a_logged_in_user(
+    app, logged_in
+) -> None:
+    """Every write other than the Settings page's still needs the link."""
+    app.config["USER_ALLOW_SETTINGS"] = True
+
+    response = logged_in.put(
+        "/api/experiment/runs", json={"runs": []}, headers=write_headers(app)
+    )
+
+    assert response.status_code == 403
+
+
+def test_the_settings_page_gives_an_allowed_logged_in_user_the_write_token(
+    app, logged_in
+) -> None:
+    app.config["USER_ALLOW_SETTINGS"] = True
+
+    html = logged_in.get("/settings").get_data(as_text=True)
+
+    assert app.config["NRW_PAGE_TOKEN"] in html
+
+
+def test_the_settings_page_withholds_the_write_token_when_not_allowed(
+    app, logged_in
+) -> None:
+    html = logged_in.get("/settings").get_data(as_text=True)
+
+    assert app.config["NRW_PAGE_TOKEN"] not in html
+
+
+def test_user_allow_settings_refuses_a_user_outside_the_projects_ipts(
+    app, expt: Path
+) -> None:
+    app.config["USER_ALLOW_SETTINGS"] = True
+    outsider = log_in_as(app, "IPTS-99999")
+    before = revision(expt)
+
+    response = put(outsider, app, revision=before, changes={"feed.poll_seconds": 40})
+
+    assert response.status_code == 403
+    assert revision(expt) == before
+    assert app.config["NRW_PAGE_TOKEN"] not in outsider.get("/settings").get_data(
+        as_text=True
+    )
+
+
+def test_user_allow_settings_refuses_everyone_when_the_project_has_no_ipts(
+    app, logged_in, expt: Path
+) -> None:
+    """No IPTS, no members: setting the project up still takes the link."""
+    app.config["USER_ALLOW_SETTINGS"] = True
+    toml = expt / "nrw.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('ipts = "IPTS-00001"\n', ""),
+        encoding="utf-8",
+    )
+    before = revision(expt)
+
+    response = put(logged_in, app, revision=before, changes={"feed.poll_seconds": 40})
+
+    assert response.status_code == 403
+    assert revision(expt) == before
+
+
+def test_user_allow_settings_judges_against_the_ipts_as_saved(
+    app, logged_in, expt: Path
+) -> None:
+    """Moving the project to another IPTS ends access for those outside it."""
+    app.config["USER_ALLOW_SETTINGS"] = True
+
+    moved = put(logged_in, app, revision=revision(expt), changes={"ipts": "IPTS-5"})
+    again = put(
+        logged_in, app, revision=revision(expt), changes={"feed.poll_seconds": 40}
+    )
+
+    assert (moved.status_code, again.status_code) == (200, 403)
+
+
+def test_user_allow_settings_lets_data_access_stand_in_for_the_ipts(
+    app, expt: Path
+) -> None:
+    """The data_access group counts as membership of every IPTS."""
+    app.config["USER_ALLOW_SETTINGS"] = True
+    staff = log_in_as(app, "IPTS-99999", data_access=True)
+
+    response = put(
+        staff, app, revision=revision(expt), changes={"feed.poll_seconds": 40}
+    )
+
+    assert response.status_code == 200
+    assert app.config["NRW_PAGE_TOKEN"] in staff.get("/settings").get_data(as_text=True)
+
+
+def test_data_access_without_user_allow_settings_still_needs_the_link(
+    app, expt: Path
+) -> None:
+    staff = log_in_as(app, data_access=True)
+    before = revision(expt)
+
+    response = put(staff, app, revision=before, changes={"feed.poll_seconds": 40})
+
+    assert response.status_code == 403
+    assert revision(expt) == before
+
+
+def test_data_access_does_not_open_a_project_with_no_ipts(app, expt: Path) -> None:
+    """Membership of every IPTS is still membership of none, without one."""
+    app.config["USER_ALLOW_SETTINGS"] = True
+    staff = log_in_as(app, data_access=True)
+    toml = expt / "nrw.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('ipts = "IPTS-00001"\n', ""),
+        encoding="utf-8",
+    )
+    before = revision(expt)
+
+    response = put(staff, app, revision=before, changes={"feed.poll_seconds": 40})
+
+    assert response.status_code == 403
+    assert revision(expt) == before

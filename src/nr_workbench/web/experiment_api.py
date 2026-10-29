@@ -67,9 +67,21 @@ def isaac_data() -> IsaacData:
     return current_app.config["NRW_ISAAC"]  # type: ignore[no-any-return]
 
 
+#: The writes the Settings page makes, which ``USER_ALLOW_SETTINGS`` opens to a
+#: logged-in user. Nothing else here changes with it.
+SETTINGS_ENDPOINTS = frozenset(
+    {
+        "experiment_api.save_settings",
+        "experiment_api.check_folder",
+        "experiment_api.save_llm",
+        "experiment_api.check_llm",
+    }
+)
+
+
 @experiment_api.before_request
 def _gate() -> None:
-    security.refuse_unless_writer()
+    security.refuse_unless_writer(for_settings=request.endpoint in SETTINGS_ENDPOINTS)
 
 
 def _body() -> dict[str, Any]:

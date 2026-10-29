@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -475,10 +476,444 @@ def test_create_app_refuses_a_directory_that_is_not_a_project(
         create_app(tmp_path)
 
 
+def test_navbar_with_oauth_configured_links_to_login(
+    populated: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configured identity provider puts a "Log in" link on every page."""
+    from nr_workbench.web.app import create_app
+
+    monkeypatch.setenv(
+        "AURE_OAUTH_WELL_KNOWN_URL",
+        "https://idp.example/.well-known/openid-configuration",
+    )
+    client = create_app(populated).test_client()
+
+    html = client.get("/").get_data(as_text=True)
+
+    assert 'href="/auth/login"' in html
+    assert "Log in" in html
+
+
+def test_create_app_sets_a_session_key_unique_to_the_process(populated: Path) -> None:
+    """authlib's login `state` lives in Flask's session, which needs a key."""
+    from nr_workbench.web.app import create_app
+
+    first = create_app(populated).secret_key
+    second = create_app(populated).secret_key
+
+    assert first
+    assert first != second
+
+
+def test_create_app_with_oauth_configured_gives_each_app_its_own_client(
+    populated: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each app's client carries that app's client id, read under authlib's key.
+
+    Guards two silent failures: a registry shared between apps caches the
+    first app's client for all of them, and a lower-case config prefix means
+    authlib never sees the id at all.
+    """
+    from nr_workbench.web.app import create_app
+    from nr_workbench.web.auth import OAUTH_PROVIDER
+
+    monkeypatch.setenv(
+        "AURE_OAUTH_WELL_KNOWN_URL",
+        "https://idp.example/.well-known/openid-configuration",
+    )
+    clients = []
+    for client_id in ("first-id", "second-id"):
+        monkeypatch.setenv("AURE_OAUTH_CLIENT_ID", client_id)
+        app = create_app(populated)
+        oauth = app.extensions["authlib.integrations.flask_client"]
+        clients.append(oauth.create_client(OAUTH_PROVIDER))
+
+    assert [client.client_id for client in clients] == ["first-id", "second-id"]
+
+
+def test_create_app_reads_oauth_settings_from_the_env_files(
+    populated: Path,
+) -> None:
+    """~/.nrw names the provider and the project's .env the client: login works.
+
+    Read without being loaded, so the server's environment -- and so every
+    job it starts -- is left as the shell made it.
+    """
+    import os
+
+    from nr_workbench import env as env_module
+    from nr_workbench.web.app import create_app
+
+    env_module.USER_ENV_PATH.write_text(
+        "AURE_OAUTH_WELL_KNOWN_URL=https://idp.example/.well-known/openid-configuration\n"
+        "AURE_OAUTH_CLIENT_SECRET=from-user-file\n",
+        encoding="utf-8",
+    )
+    (populated / ".env").write_text(
+        "AURE_OAUTH_CLIENT_ID=from-dotenv\n", encoding="utf-8"
+    )
+
+    app = create_app(populated)
+    html = app.test_client().get("/").get_data(as_text=True)
+
+    assert 'href="/auth/login"' in html
+    assert app.config["AURE_CLIENT_ID"] == "from-dotenv"
+    assert app.config["AURE_CLIENT_SECRET"] == "from-user-file"
+    assert app.config["NRW_PERSONAL_IGNORED"] == []
+    assert "AURE_OAUTH_CLIENT_ID" not in os.environ
+
+
+def test_create_app_ignores_the_provider_and_secret_in_the_project_env_file(
+    populated: Path,
+) -> None:
+    """Anyone who can write the project writes its .env: it may not pick the
+    provider every login is sent to, nor hold the secret."""
+    from nr_workbench.web.app import create_app
+
+    (populated / ".env").write_text(
+        "AURE_OAUTH_WELL_KNOWN_URL=https://hostile.example/.well-known/openid-configuration\n"
+        "AURE_OAUTH_CLIENT_SECRET=from-dotenv\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(populated)
+    html = app.test_client().get("/").get_data(as_text=True)
+
+    assert app.config["AURE_OAUTH_WELL_KNOWN_URL"] is None
+    assert app.config["AURE_CLIENT_SECRET"] is None
+    assert app.config["NRW_PERSONAL_IGNORED"] == [
+        "AURE_OAUTH_WELL_KNOWN_URL",
+        "AURE_OAUTH_CLIENT_SECRET",
+    ]
+    assert "/auth/login" not in html
+
+
+def test_create_app_ignores_the_ldap_directory_in_the_project_env_file(
+    populated: Path,
+) -> None:
+    """A directory named in the project's .env would decide which groups every
+    login is given: only the person's own settings may name it."""
+    from nr_workbench.web.app import create_app
+
+    (populated / ".env").write_text(
+        "AURE_LDAP_URL=ldaps://hostile.example\n"
+        "AURE_LDAP_BASE_DN=dc=hostile,dc=example\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(populated)
+
+    assert app.config["AURE_LDAP_URL"] is None
+    assert app.config["AURE_LDAP_BASE_DN"] is None
+    assert app.config["NRW_PERSONAL_IGNORED"] == [
+        "AURE_LDAP_URL",
+        "AURE_LDAP_BASE_DN",
+    ]
+
+
+def test_create_app_reads_the_ldap_directory_from_the_user_file(
+    populated: Path,
+) -> None:
+    """~/.nrw is the person's own, so the directory is taken from there."""
+    from nr_workbench import env as env_module
+    from nr_workbench.web.app import create_app
+
+    env_module.USER_ENV_PATH.write_text(
+        "AURE_LDAP_URL=ldaps://snsldap-vip.ornl.gov\n"
+        "AURE_LDAP_BASE_DN=dc=sns,dc=ornl,dc=gov\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(populated)
+
+    assert app.config["AURE_LDAP_URL"] == "ldaps://snsldap-vip.ornl.gov"
+    assert app.config["AURE_LDAP_BASE_DN"] == "dc=sns,dc=ornl,dc=gov"
+    assert app.config["NRW_PERSONAL_IGNORED"] == []
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("true", True), ("1", True), ("Yes", True), ("false", False), ("", False)],
+)
+def test_create_app_reads_user_allow_settings_from_the_project_env_file(
+    populated: Path, value: str, expected: bool
+) -> None:
+    from nr_workbench.web.app import create_app
+
+    (populated / ".env").write_text(f"USER_ALLOW_SETTINGS={value}\n", encoding="utf-8")
+
+    assert create_app(populated).config["USER_ALLOW_SETTINGS"] is expected
+
+
+def test_create_app_without_user_allow_settings_keeps_it_off(populated: Path) -> None:
+    from nr_workbench.web.app import create_app
+
+    assert create_app(populated).config["USER_ALLOW_SETTINGS"] is False
+
+
+def test_create_app_prefers_the_shell_over_the_project_env_file(
+    populated: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The documented precedence: the shell wins over .env."""
+    from nr_workbench.web.app import create_app
+
+    (populated / ".env").write_text(
+        "AURE_OAUTH_CLIENT_ID=from-dotenv\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("AURE_OAUTH_CLIENT_ID", "from-shell")
+
+    app = create_app(populated)
+
+    assert app.config["AURE_CLIENT_ID"] == "from-shell"
+
+
+def test_login_without_oauth_configured_returns_404(
+    populated: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A login with no provider to go to is a clear 404, not a server error."""
+    from nr_workbench.web.app import create_app
+
+    monkeypatch.delenv("AURE_OAUTH_WELL_KNOWN_URL", raising=False)
+    client = create_app(populated).test_client()
+
+    response = client.get("/auth/login")
+
+    assert response.status_code == 404
+
+
+def test_navbar_without_oauth_configured_has_no_login_link(
+    populated: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With nowhere to send the browser, the link would only lead to an error."""
+    from nr_workbench.web.app import create_app
+
+    monkeypatch.delenv("AURE_OAUTH_WELL_KNOWN_URL", raising=False)
+    client = create_app(populated).test_client()
+
+    html = client.get("/").get_data(as_text=True)
+
+    assert "/auth/login" not in html
+
+
+class _FakeOAuthClient:
+    """Stands in for authlib's client: the provider has already said yes."""
+
+    def __init__(self, userinfo: dict[str, str]) -> None:
+        self.userinfo = userinfo
+
+    def authorize_access_token(self) -> dict[str, Any]:
+        return {"userinfo": self.userinfo}
+
+
+@pytest.fixture
+def oauth_client(populated: Path, monkeypatch: pytest.MonkeyPatch):
+    """A test client with a provider configured, whose callback logs in
+    ``gzi@ornl.gov`` and finds them in IPTS-1234 and IPTS-5678."""
+    from nr_workbench.web import auth as auth_module
+    from nr_workbench.web.app import create_app
+
+    monkeypatch.setenv(
+        "AURE_OAUTH_WELL_KNOWN_URL",
+        "https://idp.example/.well-known/openid-configuration",
+    )
+    monkeypatch.setattr(
+        auth_module, "_client", lambda: _FakeOAuthClient({"user_id": "gzi@ornl.gov"})
+    )
+    monkeypatch.setattr(
+        auth_module, "posix_groups_for", lambda uid: ["users", "IPTS-1234", "IPTS-5678"]
+    )
+    return create_app(populated).test_client()
+
+
+def test_api_without_oauth_configured_needs_no_login(client) -> None:
+    """With no provider there is no way to log in, so the API stays open."""
+    response = client.get("/api/overview")
+
+    assert response.status_code == 200
+
+
+def test_api_with_oauth_configured_refuses_a_browser_not_logged_in(
+    oauth_client,
+) -> None:
+    """A 401 as JSON, since the API's consumers are scripts."""
+    response = oauth_client.get("/api/overview")
+
+    assert response.status_code == 401
+    assert "log in" in response.get_json()["error"]
+
+
+def test_callback_stores_the_user_and_their_ipts_projects(oauth_client) -> None:
+    """The login round trip: stored, then the API answers and the navbar says who."""
+    from nr_workbench.web.user_session import FlaskSessionStore
+
+    response = oauth_client.get("/auth/callback")
+
+    assert response.status_code == 302
+    with oauth_client.session_transaction() as stored:
+        assert stored[FlaskSessionStore.KEY] == {
+            "user_id": "gzi",
+            "ipts_projects": ["IPTS-1234", "IPTS-5678"],
+            "data_access": False,
+        }
+    assert oauth_client.get("/api/overview").status_code == 200
+    html = oauth_client.get("/").get_data(as_text=True)
+    assert 'href="/auth/logout"' in html
+    assert 'href="/auth/login"' not in html
+
+
+def test_callback_records_membership_of_the_data_access_group(
+    oauth_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nr_workbench.web import auth as auth_module
+    from nr_workbench.web.user_session import FlaskSessionStore
+
+    monkeypatch.setattr(
+        auth_module, "posix_groups_for", lambda uid: ["data_access", "IPTS-1234"]
+    )
+
+    oauth_client.get("/auth/callback")
+
+    with oauth_client.session_transaction() as stored:
+        assert stored[FlaskSessionStore.KEY]["data_access"] is True
+        assert stored[FlaskSessionStore.KEY]["ipts_projects"] == ["IPTS-1234"]
+
+
+def test_logout_refuses_the_api_again(oauth_client) -> None:
+    oauth_client.get("/auth/callback")
+
+    oauth_client.get("/auth/logout")
+
+    assert oauth_client.get("/api/overview").status_code == 401
+
+
+def test_callback_when_the_ipts_lookup_fails_does_not_log_in(
+    oauth_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreachable directory refuses the login rather than granting it with
+    no projects, which would look exactly like a user who has none."""
+    from ldap3.core.exceptions import LDAPSocketOpenError
+
+    from nr_workbench.web import auth as auth_module
+
+    def unreachable(uid: str) -> list[str]:
+        raise LDAPSocketOpenError("unreachable")
+
+    monkeypatch.setattr(auth_module, "posix_groups_for", unreachable)
+
+    response = oauth_client.get("/auth/callback")
+
+    assert response.status_code == 503
+    assert oauth_client.get("/api/overview").status_code == 401
+
+
+def test_callback_without_a_user_id_claim_returns_403(
+    oauth_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nr_workbench.web import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "_client", lambda: _FakeOAuthClient({}))
+
+    response = oauth_client.get("/auth/callback")
+
+    assert response.status_code == 403
+    assert oauth_client.get("/api/overview").status_code == 401
+
+
+def test_home_links_to_the_live_monitor_and_get_data(client) -> None:
+    html = client.get("/").get_data(as_text=True)
+
+    assert 'href="/live-monitor"' in html
+    assert "Live Monitor" in html
+    assert 'href="/get-data"' in html
+    assert "Get Data" in html
+
+
+def test_live_monitor_lists_the_logged_in_users_ipts_projects(oauth_client) -> None:
+    oauth_client.get("/auth/callback")
+
+    html = oauth_client.get("/live-monitor").get_data(as_text=True)
+
+    assert "IPTS-1234" in html
+    assert "IPTS-5678" in html
+    assert html.count(">Monitor</button>") == 2
+
+
+def test_live_monitor_not_logged_in_offers_the_login(oauth_client) -> None:
+    html = oauth_client.get("/live-monitor").get_data(as_text=True)
+
+    assert 'href="/auth/login"' in html
+    assert "IPTS-1234" not in html
+
+
+def test_profile_lists_the_users_ipts_projects_and_all_their_groups(
+    oauth_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nr_workbench.web import ldap as ldap_module
+
+    oauth_client.get("/auth/callback")
+    monkeypatch.setattr(
+        ldap_module, "posix_groups_for", lambda uid: ["users", "IPTS-1234", "sns"]
+    )
+
+    html = oauth_client.get("/profile").get_data(as_text=True)
+
+    assert "IPTS-5678" in html  # from the session
+    assert "users" in html and "sns" in html  # from the live lookup
+    assert 'href="/profile"' in html  # the navbar's user id
+
+
+def test_profile_when_the_group_lookup_fails_still_shows_the_ipts_projects(
+    oauth_client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ldap3.core.exceptions import LDAPSocketOpenError
+
+    from nr_workbench.web import ldap as ldap_module
+
+    def unreachable(uid: str) -> list[str]:
+        raise LDAPSocketOpenError("unreachable")
+
+    oauth_client.get("/auth/callback")
+    monkeypatch.setattr(ldap_module, "posix_groups_for", unreachable)
+
+    response = oauth_client.get("/profile")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "IPTS-1234" in html
+    assert "Could not look up your groups" in html
+
+
+def test_profile_not_logged_in_redirects_to_the_login(oauth_client) -> None:
+    response = oauth_client.get("/profile")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/auth/login")
+
+
+def test_profile_without_oauth_configured_returns_404(client) -> None:
+    assert client.get("/profile").status_code == 404
+
+
+def test_get_data_links_to_the_samples_page(client) -> None:
+    html = client.get("/get-data").get_data(as_text=True)
+
+    assert 'href="/samples"' in html
+
+
+def test_samples_page_shows_a_card_per_sample(client) -> None:
+    """The overview moved off the home page, intact."""
+    html = client.get("/samples").get_data(as_text=True)
+
+    assert 'href="/s/Sample1"' in html
+
+
 @pytest.mark.parametrize(
     "url",
     [
         "/",
+        "/samples",
+        "/live-monitor",
+        "/get-data",
         "/fits",
         "/s/Sample1",
         "/api/overview",

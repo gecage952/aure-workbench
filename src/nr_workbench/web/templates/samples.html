@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ overview.name }} — nr-workbench{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-baseline gap-3 mb-1">
+  <h1 class="h4 mb-0">{{ overview.name }}</h1>
+  <span class="text-secondary small">
+    {% if overview.instrument %}{{ overview.facility }} {{ overview.instrument }}{% endif %}
+    {% if overview.beamtime %} · {{ overview.beamtime }}{% endif %}
+    {% if overview.ipts %} · {{ overview.ipts }}{% endif %}
+  </span>
+</div>
+<p class="text-secondary small mono mb-3">{{ overview.root }}</p>
+
+{% if not overview.samples %}
+<div class="alert alert-secondary">
+  No samples yet. Create one with <code>nrw sample new &lt;id&gt;</code>.
+</div>
+{% endif %}
+
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+{% for card in overview.samples %}
+  <div class="col">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 card-title">
+          <a href="{{ url_for('sample', sample_id=card.id) }}">{{ card.title }}</a>
+        </h2>
+        <p class="card-text small text-secondary mb-2 mono">{{ card.id }}</p>
+        <div class="small">
+          <span class="badge text-bg-light">{{ card.n_steady }} steady</span>
+          <span class="badge text-bg-light">{{ card.n_series }} series</span>
+          <span class="badge text-bg-light">{{ card.n_fits }} fits</span>
+          {% for label in card.assessments %}
+          <span class="badge text-bg-info">{{ label }}</span>
+          {% endfor %}
+        </div>
+        {% if card.latest_fit %}
+        <div class="small text-secondary mt-2">
+          latest
+          <a class="mono" href="{{ url_for('fit', fit_id=card.latest_fit) }}">{{ card.latest_fit[:17] }}</a>
+          {% if card.latest_chisq is not none %}χ² {{ '%.4g'|format(card.latest_chisq) }}{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

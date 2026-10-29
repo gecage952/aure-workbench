@@ -17,11 +17,21 @@
     <a class="navbar-brand" href="{{ url_for('index') }}">nr-workbench</a>
     <div class="navbar-nav me-auto">
       <a class="nav-link" href="{{ url_for('experiment') }}">Experiment</a>
-      <a class="nav-link" href="{{ url_for('index') }}">Samples</a>
+      <a class="nav-link" href="{{ url_for('samples') }}">Samples</a>
       <a class="nav-link" href="{{ url_for('fits') }}">Fits</a>
       <a class="nav-link" href="{{ url_for('settings_page') }}">Settings</a>
     </div>
     {% block navextra %}{% endblock %}
+    {% if current_user %}
+    <div class="navbar-nav ms-2">
+      <a class="nav-link" href="{{ url_for('profile') }}">{{ current_user.user_id }}</a>
+      <a class="nav-link" href="{{ url_for('auth.logout') }}">Log out</a>
+    </div>
+    {% elif oauth_login %}
+    <div class="navbar-nav ms-2">
+      <a class="nav-link" href="{{ url_for('auth.login') }}">Log in</a>
+    </div>
+    {% endif %}
   </div>
 </nav>
 

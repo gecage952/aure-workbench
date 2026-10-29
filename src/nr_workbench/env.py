@@ -52,13 +52,26 @@ KNOWN_VARS = (
     # with -- read by nr-isaac-format, which nrw passes its environment.
     "ISAAC_URL",
     "ISAAC_KEY",
+    # The identity provider behind `nrw serve`'s "Log in" (web/auth.py), read
+    # by `create_app` through `where_set`.
+    "AURE_OAUTH_WELL_KNOWN_URL",
+    "AURE_OAUTH_CLIENT_ID",
+    "AURE_OAUTH_CLIENT_SECRET",
+    "AURE_OAUTH_SCOPES",
+    # The directory `nrw serve` looks a logged-in user's groups up in
+    # (web/ldap.py), read by `create_app` through `where_set`.
+    "AURE_LDAP_URL",
+    "AURE_LDAP_BASE_DN",
+    # Lets a user logged in to `nrw serve` change the project's settings
+    # without its one-time link, read by `create_app` through `where_set`.
+    "USER_ALLOW_SETTINGS",
 )
 
 #: Variables whose value must never be printed.
 #: The language model's keys: one of these set is "a key is set" for it.
 LLM_KEYS = ("LLM_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "ALCF_ACCESS_TOKEN")
 
-SECRET_VARS = frozenset({*LLM_KEYS, "ISAAC_KEY"})
+SECRET_VARS = frozenset({*LLM_KEYS, "ISAAC_KEY", "AURE_OAUTH_CLIENT_SECRET"})
 
 #: Set once loading has run, so repeated calls are free.
 _loaded = False

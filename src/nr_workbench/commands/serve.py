@@ -115,6 +115,14 @@ def run_serve(
             "  Without it the pages are view-only."
             + ("\n  It opens Settings." if needs_setup else "")
         )
+    ignored = app.config["NRW_PERSONAL_IGNORED"]
+    if ignored:
+        click.echo(
+            f"\n  ! The project's .env sets {', '.join(ignored)}, which it may "
+            "not:\n    anyone who can write the project writes that file. "
+            "Set them in ~/.nrw or your shell.",
+            err=True,
+        )
     if not loopback:
         click.echo(
             f"\n  ! Bound to {host}. There is no authentication for reading, so "

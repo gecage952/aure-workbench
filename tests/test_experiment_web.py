@@ -659,6 +659,22 @@ def test_serve_under_an_agent_accepts_no_edits(expt: Path, monkeypatch) -> None:
     assert "does not accept edits" in result.output
 
 
+def test_serve_says_when_the_project_env_names_the_oauth_provider(
+    expt: Path, monkeypatch
+) -> None:
+    """Ignoring a setting someone wrote down must not be silent."""
+    (expt / ".env").write_text(
+        "AURE_OAUTH_WELL_KNOWN_URL=https://idp.example/.well-known/openid-configuration\n",
+        encoding="utf-8",
+    )
+
+    result = _serve(expt, monkeypatch=monkeypatch)
+
+    assert result.exit_code == 0, result.output
+    assert "sets AURE_OAUTH_WELL_KNOWN_URL, which it may not" in result.output
+    assert "~/.nrw" in result.output
+
+
 def test_serve_debug_beyond_loopback_is_refused(expt: Path, monkeypatch) -> None:
     """The Werkzeug debugger runs whatever it is sent."""
     result = _serve(expt, "--debug", "--host", "0.0.0.0", monkeypatch=monkeypatch)

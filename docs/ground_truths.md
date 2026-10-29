@@ -4086,3 +4086,31 @@ two flaws, and `[agent.limits.<fitter>]` replaces it:
 The limits are off unless `nrw.toml` sets them, as the compute guidance in
 docs/agent.md has always argued. Limits are a site's or a scientist's decision
 about unattended work, not nrw's.
+
+### 2026-10-21: authlib's Flask client fails silently two ways under an app factory
+
+The navbar's "Log in" goes through authlib (`web/auth.py`), and two of its
+behaviours break without raising anything:
+
+- **Config keys are upper-cased.** authlib reads `f"{name}_{key}".upper()`
+  from `app.config`, so the provider `"aure"` reads `AURE_CLIENT_ID`. Setting
+  `f"{OAUTH_PROVIDER}_CLIENT_ID"` wrote `aure_CLIENT_ID`, which authlib never
+  read: the client reached the identity provider with no id at all.
+- **A registry caches its clients.** `OAuth.create_client` stores each client
+  on the registry, with the config of whichever app was current then. A
+  module-level `OAuth()` shared by every `create_app` hands all later apps the
+  first one's client. Each app gets its own registry now, which authlib files
+  on `app.extensions`, and the routes look the client up there.
+
+`create_app` registers the client only when `AURE_OAUTH_WELL_KNOWN_URL` is set.
+`nrw serve` runs `commands/serve.py`, not `web.app.serve()`, so anything that
+only `serve()` sets up never runs. Flask's `secret_key` is random for each
+process: the session only has to carry authlib's `state` through one round
+trip. A test in `tests/test_web.py` guards both traps.
+
+The settings are read with `where_set`, never `load_env`, so nothing reaches
+the server's own environment. `AURE_OAUTH_WELL_KNOWN_URL` and
+`AURE_OAUTH_CLIENT_SECRET` are not read from the project's `.env`, for the same
+reason as `ISAAC_URL` and `ISAAC_KEY`: whoever can write the project could
+otherwise choose where every login is sent. `nrw serve` says when it ignores
+one.

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ user.user_id }} — nr-workbench{% endblock %}
+
+{% block content %}
+<h1 class="h4 mb-3">{{ user.user_id }}</h1>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <h2 class="h6">IPTS projects</h2>
+    {% if user.ipts_projects %}
+    <ul class="list-group">
+      {% for ipts in user.ipts_projects %}
+      <li class="list-group-item mono">{{ ipts }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="alert alert-secondary">You are not a member of any IPTS projects.</div>
+    {% endif %}
+    <p class="small text-secondary mt-2">As of when you logged in.</p>
+  </div>
+
+  <div class="col-md-6">
+    <h2 class="h6">All groups</h2>
+    {% if groups is none %}
+    <div class="alert alert-warning">Could not look up your groups; try again later.</div>
+    {% elif groups %}
+    <ul class="list-group">
+      {% for group in groups %}
+      <li class="list-group-item mono">{{ group }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="alert alert-secondary">You are not in any groups.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
