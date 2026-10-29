@@ -315,19 +315,24 @@ def stage(
         sample_markdown=sample_markdown,
         use_llm=use_llm,
     )
+    # A state with nothing is named, unless no state has anything: then once.
+    unstated = []
     for state in states:
         found = described.get(state.name)
         if found and found.text:
             state.condition = found.text
-            problems.extend(
-                []
-                if found.source != "none"
-                else [f"No condition found for {state.name}."]
-            )
-    if not any(s.condition for s in states):
+        elif not state.condition:
+            unstated.append(state.name)
+    if len(unstated) == len(states):
         problems.append(
             "No experimental conditions found in sample.md or the spec, so the "
             "records will not say what each measurement was measured under."
+        )
+    else:
+        problems.extend(
+            f"No condition found for {name}, so its record will not say what it "
+            "was measured under."
+            for name in unstated
         )
 
     manifest = _read_json(fit_dir / "manifest.json")
@@ -487,11 +492,12 @@ def _states_from_inputs(
     file belongs to, and inventing that from filenames would be a guess
     presented as provenance.
     """
+    from nr_workbench.provenance.hashing import MODEL_ROLES
     from nr_workbench.provenance.record import FitDirectory
 
     files = []
     for entry in FitDirectory(fit_dir).read_inputs():
-        if entry.get("role") == "script":
+        if entry.get("role") in MODEL_ROLES:
             continue
         path = (root / str(entry.get("path", ""))).resolve()
         if path.is_file():

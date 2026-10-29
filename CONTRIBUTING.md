@@ -22,10 +22,15 @@ pre-commit install        # enable the lint / format / secret-scan hooks
   `pytest -n0 -s tests/test_x.py::test_y` — under xdist there is no stdout to
   attach to, so `-s` and `pdb` need `-n0`. A single small file is also faster
   serially (0.85s against 3.9s), since 20 workers each import the world.
+- **The default run fits nothing.** A test that needs a fit's record gets the
+  optimizer's answer from a recording in `tests/data/fits/`, and nrw's own runner
+  still writes the record from it (`tests/fit_replay.py`). `pytest -m fit` runs
+  the 33 tests that fit for real: run them when you change fitting code. A test
+  whose fit no recording answers fails, with the command that records it:
+  `pytest --record-fits <that test>`. A new test that must run the optimizer
+  itself is marked `@pytest.mark.fit`.
 - Add or update tests for any behavior change. Favor real, integration-style tests
   over heavy mocking — see the standard in [skills/review-test/SKILL.md](skills/review-test/SKILL.md).
-- Record non-obvious decisions, API quirks, or constraints in
-  [docs/ground_truths.md](docs/ground_truths.md) so they persist across sessions.
 - Changed `nr_workbench/spec/models.py`? Run `python tools/regen_schema_asset.py`
   and commit the result. The bundled JSON Schema is generated from those models,
   and a stale copy does not merely go out of date — every object in it is closed,
@@ -33,9 +38,10 @@ pre-commit install        # enable the lint / format / secret-scan hooks
 
 ## Reviews
 
-For significant changes, run the reviewer subagents (design / security / test).
-They apply the shared standards in [skills/](skills/); to change a standard, edit
-its `SKILL.md`, not the dispatcher agent.
+For significant changes, run the reviewer subagents (design / security), and
+review the tests yourself against `skills/review-test`. The subagents apply the
+shared standards in [skills/](skills/); to change a standard, edit its
+`SKILL.md`, not the dispatcher agent.
 
 ## Code style
 

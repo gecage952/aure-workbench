@@ -10,12 +10,9 @@ exists because some check said no, and each either records that it was forced
 or backs up what it displaced. An agent reaching for one has hit exactly the
 situation a human is supposed to see.
 
-This runs as a Claude Code ``PreToolUse`` hook, so the refusal happens before
-the command executes and does not depend on the model agreeing. ``nrw`` itself
-refuses the same set under ``NRW_AGENT=1``, which is a second mechanism rather
-than a belt-and-braces flourish: a hook can be misconfigured and an
-environment variable can be unset, but both failing silently at once is a
-different order of accident.
+This runs as a ``PreToolUse`` hook in Claude Code, and from a plugin in
+OpenCode, so the refusal happens before the command executes and does not
+depend on the model agreeing.
 
 The refusal always names what to do instead. An agent that is only told "no"
 retries; one that is told "write it in ESCALATIONS.md and stop" has somewhere
@@ -37,9 +34,7 @@ BLOCK = 2
 AGENT_ENV = "NRW_AGENT"
 
 
-#: Why each action is refused, and what to do instead. One source, because
-#: the parser reaches these from two directions --- tokenised and raw --- and
-#: two copies of a refusal drift into two different pieces of advice.
+#: Why each action is refused, and what to do instead.
 _REASONS = {
     "promote": (
         "Marking a fit as the answer is a person's decision, and the reason "
@@ -55,8 +50,8 @@ _REASONS = {
     ),
     "force": (
         "Every --force in nr-workbench exists because a check said no: "
-        "drifted inputs, a hand-edited script, an identical run, a directory "
-        "somebody else wrote. Reaching for one is exactly the situation a "
+        "drifted inputs, a hand-edited script, a directory somebody else "
+        "wrote. Reaching for one is exactly the situation a "
         "person is meant to see. Record what was refused and why you think it "
         "should be overridden in ESCALATIONS.md."
     ),
@@ -96,7 +91,29 @@ _REASONS = {
         "new <ID>` adds one to the existing project. If a nested project is "
         "genuinely correct here, say so in ESCALATIONS.md and stop."
     ),
+    "tiled": (
+        "Tiled is reached with the person's own login: a push publishes this "
+        "project's claims to everyone on the experiment, a login or a logout "
+        "acts as the person, and a read could reach any experiment they may "
+        "read. Say in ESCALATIONS.md what you would push or fetch, and stop."
+    ),
 }
+
+#: The commands of Tiled's own command line: each one either acts with the
+#: person's login, or serves data. `tiled` before anything else -- `grep
+#: tiled` -- is no call of it.
+_TILED_CLI = (
+    "login",
+    "logout",
+    "whoami",
+    "tree",
+    "register",
+    "api_key",
+    "admin",
+    "profile",
+    "serve",
+    "catalog",
+)
 
 
 @dataclass(frozen=True)
@@ -126,19 +143,32 @@ def judge(command: str) -> Verdict:
         otherwise would give false confidence.
     """
     for piece in _segments(command):
-        try:
-            tokens = shlex.split(piece)
-        except ValueError:
-            # `shlex` is not bash: unbalanced quotes here may still be a
-            # command bash runs happily. Fall back to reading the raw text
-            # rather than waving it through -- failing open on a parse error
-            # is only defensible when nothing refusable is in the text.
-            verdict = _judge_text(piece)
-        else:
-            verdict = _judge_one(tokens)
-        if not verdict.allowed:
-            return verdict
+        for words in _words(piece):
+            verdict = _judge_one(words)
+            if not verdict.allowed:
+                return verdict
     return Verdict(allowed=True)
+
+
+def _words(piece: str) -> list[list[str]]:
+    """The words of *piece*, a list for each command in it.
+
+    ``shlex`` is not bash: it cannot split ``$'...'`` quoting, nor the text
+    after a quote opened in a here-document's body, and bash runs both. Such a
+    piece is judged line by line, and a line ``shlex`` still cannot split is
+    split on whitespace, so a refused command in it is found all the same.
+    """
+    try:
+        return [shlex.split(piece)]
+    except ValueError:
+        pass
+    words: list[list[str]] = []
+    for line in piece.split("\n"):
+        try:
+            words.append(shlex.split(line))
+        except ValueError:
+            words.append(line.split())
+    return words
 
 
 #: Characters that end one command and begin another. Split on these *in the
@@ -154,8 +184,8 @@ def _segments(command: str) -> list[str]:
     """Split a command line into the commands it will actually run.
 
     Quote-aware, because `echo 'a;b'` is one command and splitting inside the
-    quotes would invent a second. Comments are dropped: bash will not run
-    them, so judging them produces refusals nobody can act on.
+    quotes would invent a second. A comment is dropped to the end of its line:
+    bash will not run it, so judging it produces refusals nobody can act on.
 
     Args:
         command: The raw shell text.
@@ -167,8 +197,13 @@ def _segments(command: str) -> list[str]:
     current: list[str] = []
     quote: str | None = None
     escaped = False
+    comment = False
 
     for index, char in enumerate(command):
+        if comment:
+            if char != "\n":
+                continue
+            comment = False  # the newline ends it, and the piece below
         if escaped:
             current.append(char)
             escaped = False
@@ -187,7 +222,8 @@ def _segments(command: str) -> list[str]:
             current.append(char)
             continue
         if char == "#" and (index == 0 or command[index - 1].isspace()):
-            break  # a comment runs to end of line, and we split on newlines
+            comment = True
+            continue
         if char in SEPARATORS:
             pieces.append("".join(current))
             current = []
@@ -200,44 +236,6 @@ def _segments(command: str) -> list[str]:
 
 #: What `nrw fit` does to a fit rather than with it: each is a person's call.
 _CURATION = ("star", "unstar", "discard", "restore", "delete")
-
-
-def _judge_text(piece: str) -> Verdict:
-    """Judge raw text that could not be tokenised.
-
-    The floor under the parser. It cannot tell a flag from a filename, so it
-    only fires when the text names this tool *and* one of the refused things
-    --- which is enough to stop a quoting accident from being a hole.
-    """
-    if not re.search(r"(?<![\w./-])(nrw|nr-workbench)(?![\w-])", piece):
-        return Verdict(allowed=True)
-    # The two whose preview stays allowed: `--dry-run` anywhere in the text
-    # lets them through here, as it does in the parser.
-    previewed = re.search(r"--dry-run(?![\w-])", piece)
-    for pattern, rule in (
-        (r"(?<![\w-])sample\s+reset(?![\w-])", "reset"),
-        (r"(?<![\w-])aure\s+run(?![\w-])", "aure-run"),
-    ):
-        if re.search(pattern, piece) and not previewed:
-            return Verdict(allowed=False, rule=rule, reason=_REASONS[rule])
-    experiment = re.search(r"(?<![\w-])experiment(?![\w-])", piece)
-    if experiment and re.search(
-        r"(?<![\w-])(assign|release)(?![\w-])|--write(?![\w-])",
-        piece[experiment.end() :],
-    ):
-        return Verdict(allowed=False, rule="experiment", reason=_REASONS["experiment"])
-    if re.search(r"(?<![\w-])isaac\s+push(?![\w-])", piece):
-        return Verdict(allowed=False, rule="upload", reason=_REASONS["upload"])
-    for pattern, rule in (
-        (r"(?<![\w-])promote(?![\w-])", "promote"),
-        (r"(?<![\w-])fit\s+(?:" + "|".join(_CURATION) + r")(?![\w-])", "curate"),
-        (r"--upload(?![\w-])", "upload"),
-        (r"--force(?![\w-])", "force"),
-        (r"--nested(?![\w-])", "nested"),
-    ):
-        if re.search(pattern, piece):
-            return Verdict(allowed=False, rule=rule, reason=_REASONS[rule])
-    return Verdict(allowed=True)
 
 
 def _judge_one(tokens: list[str]) -> Verdict:
@@ -253,6 +251,12 @@ def _judge_one(tokens: list[str]) -> Verdict:
         if not inner.allowed:
             return inner
 
+    # Tiled's own command line, `tiled` or `python -m tiled`, then one of its
+    # commands: the person's login, used by another program.
+    for place, word in enumerate(words[:-1]):
+        if word.rsplit("/", 1)[-1] == "tiled" and words[place + 1] in _TILED_CLI:
+            return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
+
     # Reached through `nrw`, `nr-workbench`, or `python -m nr_workbench.cli`.
     # Every token, not the first few: an env-var prefix (`NRW_AGENT= nrw
     # promote x`), a `cd` first, or a `then`/`do` keyword all push the real
@@ -266,6 +270,9 @@ def _judge_one(tokens: list[str]) -> Verdict:
 
     if "promote" in subcommands:
         return Verdict(allowed=False, rule="promote", reason=_REASONS["promote"])
+
+    if "tiled" in subcommands:
+        return Verdict(allowed=False, rule="tiled", reason=_REASONS["tiled"])
 
     if "experiment" in subcommands and (
         {"assign", "release"} & set(subcommands)
@@ -398,40 +405,3 @@ def agent_is_driving() -> bool:
     import os
 
     return bool(os.environ.get(AGENT_ENV))
-
-
-def reason_for(action: str) -> str:
-    """Why *action* is refused unattended, and what to do instead.
-
-    Raises:
-        KeyError: An action with no recorded reason -- a programming error.
-    """
-    return _REASONS[action]
-
-
-def refuse_if_agent(action: str) -> None:
-    """Refuse an action when running unattended.
-
-    The second of two independent mechanisms. The hook stops the command
-    before it runs; this stops it from inside, so a project with no hook
-    configured is still protected and a hook that was bypassed still is.
-
-    Args:
-        action: ``promote``, ``upload``, ``force``, ``nested``,
-            ``aure-run``, ``experiment``, ``curate`` or ``reset``.
-
-    Raises:
-        click.ClickException: When ``NRW_AGENT`` is set.
-        KeyError: If asked about an action with no recorded reason, which is a
-            programming error rather than a refusal.
-    """
-    import os
-
-    if not os.environ.get(AGENT_ENV):
-        return
-
-    import click
-
-    raise click.ClickException(
-        f"{AGENT_ENV} is set, so this is running unattended. {_REASONS[action]}"
-    )

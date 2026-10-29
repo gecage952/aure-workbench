@@ -45,7 +45,7 @@
 {% endif %}
 
 {# What a person has said about this fit, and -- for a browser that opened the
-   link `nrw serve` printed -- what they can still say: curation.js draws it
+   writer -- what they can still say: curation.js draws it
    from the server's answer. #}
 <div id="curate" class="curate mb-3">
   <p id="curate-discarded" class="alert alert-secondary py-2 small mb-2 d-none"></p>
@@ -315,18 +315,18 @@
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
-  window.NRW_CURATION = {{ said|nrwjson|safe }};
-  window.NRW_WRITE_TOKEN = {{ page_token|nrwjson|safe }};
+<script>
+  window.NRW_CURATION = {{ said|tojson }};
+  window.NRW_WRITER = {{ writer|tojson }};
 </script>
 <script src="{{ url_for('static', filename='nrwpage.js') }}"></script>
 <script src="{{ url_for('static', filename='curation.js') }}"></script>
 <script src="{{ url_for('static', filename='isaac.js') }}"></script>
-<script nonce="{{ csp_nonce }}">
+<script>
 (function () {
-  NRW.fitPanel("plot-fit", "plot-residual", {{ fit.curves|nrwjson|safe }});
+  NRW.fitPanel("plot-fit", "plot-residual", {{ fit.curves|tojson }});
 
-  const traces = {{ ((trajectory or {}).get('traces') or [])|nrwjson|safe }};
+  const traces = {{ ((trajectory or {}).get('traces') or [])|tojson }};
   if (traces.length) {
     NRW.trajectoryPanel("plot-trajectory", traces);
     const toggle = document.getElementById("traj-all");
@@ -336,7 +336,7 @@
       });
     }
   }
-  const profiles = {{ fit.profiles|nrwjson|safe }};
+  const profiles = {{ fit.profiles|tojson }};
   NRW.sldPanel("plot-sld", profiles);
   const rawToggle = document.getElementById("sld-raw");
   if (rawToggle) {

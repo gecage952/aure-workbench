@@ -43,8 +43,7 @@ classifiers = [
 # between releases and we track it. Because this is a PEP 508 direct
 # reference, nr-workbench is install-from-git, not PyPI -- and it will stay
 # that way: the PyPI name `aure` is taken by an unrelated project, so there is
-# no version of this that ends in `pip install nr-workbench`. See
-# docs/ground_truths.md.
+# no version of this that ends in `pip install nr-workbench`.
 #
 # Currently 487a31d, which is the v1.0.2 release (reports 1.0.2). A SHA
 # rather than the tag, for the reason above -- main moves between releases
@@ -106,6 +105,9 @@ dependencies = [
 
 [project.optional-dependencies]
 nexus = ["h5py>=3.9"]
+# `nrw tiled`: the official client, without the array and table stacks. It pins
+# pydantic-settings below 2.12, which nothing else here needs.
+tiled = ["tiled[minimal-client]>=0.2.18,<0.3"]
 # The ISAAC schema mapping lives upstream: data-assembler produces neutral
 # typed records, nr-isaac-format maps them and talks to the Portal. Both are
 # git references, so this extra cannot go to PyPI -- which nr-workbench cannot
@@ -123,7 +125,7 @@ dev = [
   "pip-audit>=2.7",
 ]
 docs = ["mkdocs-material>=9.5", "sphinx>=7.2", "myst-parser>=2.0"]
-all = ["nr-workbench[nexus,isaac,dev,docs]"]
+all = ["nr-workbench[nexus,isaac,tiled,dev,docs]"]
 
 [project.urls]
 Homepage = "https://github.com/neutrons-ai/aure-workbench"
@@ -195,12 +197,19 @@ addopts = [
   "auto",
   "--dist",
   "loadscope",
+  # Real fits only when asked: `pytest -m fit`. Every other test's fit is
+  # replayed from a recording; see tests/fit_replay.py. A real Tiled server
+  # only when asked too: `pytest -m tiled_server`.
+  "-m",
+  "not fit and not tiled_server",
   "--cov=src/nr_workbench",
   "--cov-report=term-missing",
 ]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "integration: marks tests as integration tests",
+  "fit: runs a real refl1d/bumps fit; left out by default, run with `pytest -m fit`",
+  "tiled_server: runs against a real Tiled server; left out by default, run with `pytest -m tiled_server`",
   "unit: marks tests as unit tests",
   "needs_aure: requires the optional aure extra to be installed",
 ]
@@ -261,7 +270,7 @@ ignore = [
 # The tNR modules hold numerics moved byte-for-byte from experiments-2025.
 # Adding `strict=` to those zips would change behaviour -- raising instead of
 # truncating -- in code the characterization tests pin exactly. Left alone
-# deliberately; see docs/ground_truths.md.
+# deliberately.
 "src/nr_workbench/tnr/ascii.py" = ["B905"]
 "src/nr_workbench/tnr/plots.py" = ["B905"]
 # ConstraintForm's classmethods define the interface subclasses implement; a

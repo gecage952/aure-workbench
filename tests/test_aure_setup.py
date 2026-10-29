@@ -16,6 +16,7 @@ import pytest
 
 from nr_workbench.aure_setup import (
     SetupError,
+    back_reflection_stated,
     compose,
     describe_sample,
     measurement_context,
@@ -110,11 +111,21 @@ def test_describe_sample_reads_an_untouched_template_as_empty() -> None:
         "this is a back reflection geometry",
         "back-reflection, as usual for the cell",
         "beam enters the back of the sample",
+        # A negation of something else, near the phrase, rules nothing out.
+        "not deuterated, and measured through the silicon substrate",
+        "the film has no oxide and is measured through the substrate",
+        "No adhesion layer. Measured through the silicon substrate.",
+        "no oxide—measured through the substrate",
+        "- no adhesion layer\n- measured through the silicon substrate",
+        "not in air but through the substrate",
+        "Not from the air side: measured through the silicon substrate",
+        "measured not only through the substrate",
     ],
 )
 def test_back_reflection_is_read_from_the_notes(phrase: str) -> None:
     """Each phrase a scientist actually writes for the same geometry."""
     assert reads_as_back_reflection(phrase) is True
+    assert back_reflection_stated(phrase) is True
 
 
 @pytest.mark.parametrize(
@@ -129,6 +140,65 @@ def test_back_reflection_is_read_from_the_notes(phrase: str) -> None:
 def test_front_reflection_notes_do_not_set_back_reflection(phrase: str) -> None:
     """A film in air must not be flipped, and the pattern must not over-reach."""
     assert reads_as_back_reflection(phrase) is False
+    assert back_reflection_stated(phrase) is None
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        # Written by nr-watcher's assessment for every sample of a beamtime of
+        # films in air; each one's setup came out in back reflection.
+        "Ambient medium is air, SLD 0, no deuteration. The beam enters from the "
+        "air side, not through the substrate.",
+        # Wrapped as notes are: a line break is not the end of the clause.
+        "The beam enters from the air side, not\nthrough the substrate.",
+        "the beam enters from the air side (not through the substrate)",
+        "air side—not through the silicon",
+        "this is not a back reflection geometry",
+        "no back-reflection: a film in air",
+        "measured without back reflection",
+        "the beam does not arrive at the sample through the substrate",
+        "it isn't measured through the wafer",
+        "measured from the air side rather than through the substrate",
+        "neither in air nor through the substrate",
+    ],
+)
+def test_a_negated_phrase_rules_back_reflection_out(phrase: str) -> None:
+    """Notes rule a geometry out in the same words that would state it."""
+    assert reads_as_back_reflection(phrase) is False
+    assert back_reflection_stated(phrase) is False
+
+
+def test_the_critical_edge_is_read_for_back_reflection_only_in_it() -> None:
+    """``nrw model new --from-notes`` reads the geometry the same way: a film
+    in air whose notes rule the substrate side out is not told to add one."""
+    from nr_workbench.commands.model import _edge_reading
+
+    def reading(probe: dict[str, bool], notes: str) -> str:
+        return "\n".join(_edge_reading({"probe": probe}, notes))
+
+    added = "add the SLD of the substrate the notes name"
+    assert added in reading({}, "Measured in D2O through the silicon substrate.")
+    assert added not in reading(
+        {}, "The beam enters from the air side, not through the substrate."
+    )
+    # A spec that says so needs no notes to.
+    assert added in reading({"back_reflection": True}, "")
+
+
+def test_long_notes_are_read_in_linear_time() -> None:
+    """Each match rescanned the whole note before it for a negation: 21 s on a
+    160 KB note built for it. The look-back is bounded now."""
+    import time
+
+    from nr_workbench.spec.authoring import extract_json
+
+    crafted = "not through the si " * 8400
+    started = time.monotonic()
+    back_reflection_stated(crafted)
+    # And a reply of unclosed fences: 19.5 s through the lazy fence regex.
+    extract_json("```{" * 40000)
+    assert time.monotonic() - started < 5
 
 
 # --------------------------------------------------------------------------
@@ -225,6 +295,27 @@ def test_compose_warns_when_back_reflection_was_not_stated(project: Path) -> Non
 
     assert "back_reflection" not in composed.document["states"][0]
     assert any("back_reflection" in w for w in composed.warnings)
+
+
+def test_compose_says_when_the_notes_rule_back_reflection_out(project: Path) -> None:
+    """Notes that rule the substrate side out are evidence, not silence."""
+    notes = (
+        "# S\n\n## Description\n\n30 nm polystyrene on silicon, in air. The beam "
+        "enters from the air side, not through the substrate.\n"
+    )
+    _sample_with_data(project, notes=notes)
+    scan = scan_sample(project, "Sample1")
+
+    composed = compose(
+        sample="Sample1", scan=scan, notes=notes, root=project, run=218386
+    )
+
+    assert "back_reflection" not in composed.document["states"][0]
+    assert (
+        "back_reflection: False -- the notes say the beam does not arrive through "
+        "the substrate"
+    ) in composed.from_notes
+    assert not any("back_reflection" in w for w in composed.warnings)
 
 
 def test_compose_refuses_an_unfilled_description(project: Path) -> None:

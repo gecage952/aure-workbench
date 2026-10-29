@@ -141,7 +141,8 @@ Then ask, in order:
 The list is not fixed at intake. Specific evidence promotes a candidate:
 
 - `nrw data features` reporting a critical edge whose implied SLD contradicts
-  the top layer → promote a reinterpretation of the ambient.
+  the top layer, once read as the step it is (plus the substrate's SLD in back
+  reflection) → promote a reinterpretation of the ambient.
 - `nrw tnr assess` reporting `oscillatory -> thickness change` → promote
   thickness-change hypotheses over contrast-change ones.
 - A systematic residual at one Q range → promote a candidate that has structure

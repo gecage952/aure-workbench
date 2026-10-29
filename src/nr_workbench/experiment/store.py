@@ -1,12 +1,13 @@
-"""Where the catalog is kept: two parquet tables and a manifest, in ``experiment/``.
+"""Where the catalog is kept: parquet tables in ``experiment/``.
 
 ``runs.parquet`` holds one row per run and ``samples.parquet`` one row per
 sample -- the split data-assembler's lakehouse uses, where a measurement row
-carries a nullable sample id and samples are their own table. ``catalog.json``
-records the sha256 of both, is written *last* on every save, and is how an
-interrupted save is told apart from a complete one.
+carries a nullable sample id and samples are their own table.
+``experiment.parquet`` holds the experiment's own context, one row, once it
+has been written. Each table is replaced atomically, and its metadata records
+the schema version it was written with.
 
-Four failure modes decide how this is written, each of them silent if handled
+Two failure modes decide how this is written, each of them silent if handled
 the obvious way:
 
 **A file that exists but will not parse is not an empty catalog.** It raises
@@ -15,19 +16,10 @@ pyarrow's ``ArrowInvalid`` is one, and the house pattern ``except (OSError,
 ValueError)`` would turn a damaged catalog into an empty one -- whose next save
 would then replace every decision the experimenter made with nothing.
 
-**A binary merge conflict has no conflict markers.** Git leaves "ours" in the
-working tree, which loads perfectly. Load and save are refused while git
-reports ``experiment/`` unmerged.
-
 **Two writers.** A browser tab and a terminal can edit at once. Every update is
 a read-modify-write under a lock, and checks each edited record's revision, so
 a concurrent edit to a *different* record is merged and one to the *same*
 record is refused.
-
-**An interrupted save.** The two tables are replaced one after the other; a
-crash between them leaves a pair that parses. The manifest catches that, and
-the previous complete pair is kept under ``.nrw/cache/experiment/`` to recover
-from.
 
 pyarrow is imported inside the functions that use it: it costs about a second,
 and ``nrw --help`` must stay instant.
@@ -35,9 +27,6 @@ and ``nrw --help`` must stay instant.
 
 from __future__ import annotations
 
-import hashlib
-import json
-import shutil
 import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -47,6 +36,8 @@ from typing import Any, Protocol
 
 from nr_workbench.experiment.model import (
     Catalog,
+    ExperimentChange,
+    ExperimentContext,
     RunChange,
     RunEntry,
     RunKey,
@@ -55,10 +46,8 @@ from nr_workbench.experiment.model import (
     apply_changes,
 )
 from nr_workbench.fsutil import advisory_lock, atomic_write_bytes
-from nr_workbench.problems import Problem
-from nr_workbench.provenance.hashing import sha256_file_or_none
 
-#: Written into every table and the manifest.
+#: Written into every table's metadata.
 SCHEMA_ID = "nrw-experiment/1"
 
 #: Bumped when a change would make an older nrw misread the tables. An older
@@ -67,7 +56,15 @@ SCHEMA_VERSION = 1
 
 RUNS_FILE = "runs.parquet"
 SAMPLES_FILE = "samples.parquet"
-MANIFEST_FILE = "catalog.json"
+EXPERIMENT_FILE = "experiment.parquet"
+
+#: The catalog's files.
+CATALOG_FILES = (RUNS_FILE, SAMPLES_FILE, EXPERIMENT_FILE)
+
+#: The digests of the tables an older nrw writes beside them, and checks. Left
+#: describing tables since replaced, it would make that nrw refuse them, so a
+#: save removes it.
+_OLD_MANIFEST = "catalog.json"
 
 #: Columns this version reads. Anything else is preserved, untouched.
 _RUN_COLUMNS = (
@@ -94,6 +91,7 @@ _SAMPLE_COLUMNS = (
     "rev",
     "updated_at",
 )
+_EXPERIMENT_COLUMNS = ("summary", "hypotheses", "notes", "rev", "updated_at")
 
 
 class CatalogError(Exception):
@@ -107,10 +105,6 @@ class CatalogError(Exception):
 
 class CatalogCorruptError(CatalogError):
     """A catalog file exists but cannot be read."""
-
-
-class CatalogUnmergedError(CatalogError):
-    """Git reports the catalog as unmerged."""
 
 
 class CatalogVersionError(CatalogError):
@@ -134,20 +128,12 @@ class CatalogStore(Protocol):
         """The current catalog; empty when none has been written yet."""
         ...
 
-    def load_report(self) -> tuple[Catalog, tuple[Problem, ...]]:
-        """The catalog and what reading it recovered from, together.
-
-        Returned together, not kept on the store: the web server shares one
-        store across request threads, and a problem remembered from "the last
-        load" would be another thread's load by the time it was asked for.
-        """
-        ...
-
     def update(
         self,
         *,
         runs: Iterable[RunChange] = (),
         samples: Iterable[SampleChange] = (),
+        experiment: ExperimentChange | None = None,
         now: str | None = None,
     ) -> Catalog:
         """Apply edits against the latest catalog and store the result."""
@@ -162,19 +148,13 @@ def open_store(root: Path, kind: str = "parquet") -> ParquetCatalogStore:
     """The catalog store ``[experiment.catalog] kind`` names.
 
     Raises:
-        CatalogUnavailableError: For a planned or unknown kind. Deliberately not
-            a fallback to the local parquet store: edits meant for a facility
-            service would be written into the project instead, where nobody
-            else would see them.
+        CatalogUnavailableError: For an unknown kind. Deliberately not a
+            fallback to the local parquet store: edits meant for somewhere
+            else would be written into the project instead, where nobody else
+            would see them.
     """
     if kind == "parquet":
         return ParquetCatalogStore.for_project(root)
-    if kind == "api":
-        raise CatalogUnavailableError(
-            '[experiment.catalog] kind = "api" is planned but not implemented '
-            "yet; see docs/experiment-sources.md. The catalog is not editable "
-            'until it is, or until kind = "parquet".'
-        )
     raise CatalogUnavailableError(
         f'[experiment.catalog] kind = {kind!r} is not known. Known: "parquet".'
     )
@@ -197,17 +177,13 @@ class ParquetCatalogStore:
 
     Args:
         directory: The committed catalog directory, ``<root>/experiment``.
-        cache_dir: Where temp files, the lock and the recovery copies go.
-            Must be gitignored and on the same filesystem as ``directory``.
-        git_root: The project root, for the unmerged check. ``None`` skips it.
+        cache_dir: Where temp files and the lock go. Must be gitignored and on
+            the same filesystem as ``directory``.
     """
 
-    def __init__(
-        self, directory: Path, cache_dir: Path, *, git_root: Path | None = None
-    ) -> None:
+    def __init__(self, directory: Path, cache_dir: Path) -> None:
         self.directory = Path(directory)
         self.cache_dir = Path(cache_dir)
-        self.git_root = git_root
 
     @classmethod
     def for_project(cls, root: Path) -> ParquetCatalogStore:
@@ -215,9 +191,7 @@ class ParquetCatalogStore:
         from nr_workbench.project.layout import ProjectLayout
 
         layout = ProjectLayout(root=Path(root))
-        return cls(
-            layout.experiment_dir, layout.experiment_cache_dir, git_root=layout.root
-        )
+        return cls(layout.experiment_dir, layout.experiment_cache_dir)
 
     # ------------------------------------------------------------------
     # Reading
@@ -233,36 +207,20 @@ class ParquetCatalogStore:
 
     def exists(self) -> bool:
         """Whether any catalog file has been written."""
-        return any(
-            (self.directory / name).exists()
-            for name in (RUNS_FILE, SAMPLES_FILE, MANIFEST_FILE)
-        )
+        return any((self.directory / name).exists() for name in CATALOG_FILES)
 
     def load(self) -> Catalog:
-        """Read the catalog.
+        """Read the catalog, under the same locks as a save: a save replaces
+        its tables one after another, and a read between two of them would see
+        some of each.
 
         Returns:
             The catalog. Empty when nothing has been written yet -- and only
             then.
 
         Raises:
-            CatalogCorruptError: A file exists but cannot be read, and no
-                complete earlier version could be recovered.
-            CatalogUnmergedError: Git reports ``experiment/`` unmerged.
+            CatalogCorruptError: A file exists but cannot be read.
             CatalogVersionError: The catalog was written by a newer nrw.
-        """
-        return self.load_report()[0]
-
-    def load_report(self) -> tuple[Catalog, tuple[Problem, ...]]:
-        """Read the catalog, and say what reading it recovered from.
-
-        Taken under the same locks as a save. A save replaces three files one
-        after another, and a read landing between two of them would see a
-        manifest that does not match its tables -- and report an interrupted
-        save that is merely in progress.
-
-        Raises:
-            CatalogError: As for :meth:`load`.
         """
         with self._reading():
             return self._load_unlocked()
@@ -287,54 +245,19 @@ class ParquetCatalogStore:
             finally:
                 context.__exit__(None, None, None)
 
-    def _load_unlocked(self) -> tuple[Catalog, tuple[Problem, ...]]:
-        problems: list[Problem] = []
-        self._refuse_if_unmerged()
+    def _load_unlocked(self) -> Catalog:
         if not self.exists():
-            return (Catalog(), ())
-
-        manifest = self._read_manifest(self.directory / MANIFEST_FILE)
-        runs_path = self.directory / RUNS_FILE
-        samples_path = self.directory / SAMPLES_FILE
-
-        if manifest is not None and not _matches(manifest, runs_path, samples_path):
-            recovered = self._recover(manifest)
-            if recovered is None:
-                raise CatalogCorruptError(
-                    f"{self.directory.name}/ does not match its own manifest, "
-                    "and no complete earlier version is available. A save was "
-                    "probably interrupted, or a file was replaced by hand. "
-                    f"Restore it from git (`git checkout -- {self.directory.name}/`) "
-                    "or from a backup; nrw will not save over it until then."
-                )
-            runs_path, samples_path = recovered
-            problems.append(
-                Problem(
-                    "catalog",
-                    "The last save of the catalog was interrupted. Showing the "
-                    "last complete version; the next save replaces the partial "
-                    "files.",
-                )
-            )
-        elif manifest is None:
-            problems.append(
-                Problem(
-                    "catalog",
-                    f"{self.directory.name}/{MANIFEST_FILE} is missing, so an "
-                    "interrupted save could not be detected. The tables are used "
-                    "as they are; the next save writes the manifest.",
-                )
-            )
-
-        runs = _read_table(runs_path, "runs")
-        samples = _read_table(samples_path, "samples")
-        catalog = Catalog(
+            return Catalog()
+        runs = _read_table(self.directory / RUNS_FILE)
+        samples = _read_table(self.directory / SAMPLES_FILE)
+        experiment = _read_table(self.directory / EXPERIMENT_FILE)
+        return Catalog(
             runs={entry.key: entry for entry in map(_run_from_row, runs)},
             samples={
                 entry.sample_id: entry for entry in map(_sample_from_row, samples)
             },
+            experiment=_experiment_from_rows(experiment),
         )
-        return (catalog, tuple(problems))
 
     # ------------------------------------------------------------------
     # Writing
@@ -345,6 +268,7 @@ class ParquetCatalogStore:
         *,
         runs: Iterable[RunChange] = (),
         samples: Iterable[SampleChange] = (),
+        experiment: ExperimentChange | None = None,
         now: str | None = None,
     ) -> Catalog:
         """Apply edits to the latest catalog, under the lock, and store it.
@@ -352,6 +276,7 @@ class ParquetCatalogStore:
         Args:
             runs: Edits to run records.
             samples: Edits to sample records.
+            experiment: An edit to the experiment's context.
             now: Timestamp for changed records; the current UTC time if omitted.
 
         Returns:
@@ -366,147 +291,45 @@ class ParquetCatalogStore:
         run_changes, sample_changes = list(runs), list(samples)
 
         with _thread_lock(self.directory), advisory_lock(self.cache_dir / "catalog"):
-            current, _ = self._load_unlocked()
+            current = self._load_unlocked()
             updated = apply_changes(
-                current, runs=run_changes, samples=sample_changes, now=stamp
+                current,
+                runs=run_changes,
+                samples=sample_changes,
+                experiment=experiment,
+                now=stamp,
             )
             if _same(current, updated):
                 return current
-            self._write(updated, stamp)
+            self._write(updated)
             return updated
 
-    def _write(self, catalog: Catalog, stamp: str) -> None:
-        """Write both tables and then the manifest, keeping the last good set."""
-        runs_bytes = _table_bytes(
-            "runs",
-            _RUN_COLUMNS,
-            [_run_row(entry) for key, entry in sorted(catalog.runs.items())],
-        )
-        samples_bytes = _table_bytes(
-            "samples",
-            _SAMPLE_COLUMNS,
-            [_sample_row(catalog.samples[k]) for k in sorted(catalog.samples)],
-        )
-        manifest = {
-            "schema": SCHEMA_ID,
-            "schema_version": SCHEMA_VERSION,
-            "updated": stamp,
-            "tables": {
-                "runs": {
-                    "file": RUNS_FILE,
-                    "sha256": _sha(runs_bytes),
-                    "rows": len(catalog.runs),
-                },
-                "samples": {
-                    "file": SAMPLES_FILE,
-                    "sha256": _sha(samples_bytes),
-                    "rows": len(catalog.samples),
-                },
-            },
+    def _write(self, catalog: Catalog) -> None:
+        """Replace each table, and remove an older nrw's digests of them."""
+        tables = {
+            RUNS_FILE: _table_bytes(
+                "runs",
+                _RUN_COLUMNS,
+                [_run_row(entry) for key, entry in sorted(catalog.runs.items())],
+            ),
+            SAMPLES_FILE: _table_bytes(
+                "samples",
+                _SAMPLE_COLUMNS,
+                [_sample_row(catalog.samples[k]) for k in sorted(catalog.samples)],
+            ),
         }
-
+        if catalog.experiment.rev:
+            # Only once written: a project that never says anything about its
+            # experiment keeps exactly the files it had.
+            tables[EXPERIMENT_FILE] = _table_bytes(
+                "experiment",
+                _EXPERIMENT_COLUMNS,
+                [_experiment_row(catalog.experiment)],
+            )
         self.directory.mkdir(parents=True, exist_ok=True)
-        self._keep_previous()
-        for name, data in ((RUNS_FILE, runs_bytes), (SAMPLES_FILE, samples_bytes)):
-            _replace(self.directory / name, data, self.cache_dir)
-        _replace(
-            self.directory / MANIFEST_FILE,
-            (json.dumps(manifest, indent=2) + "\n").encode("utf-8"),
-            self.cache_dir,
-        )
-
-    def _keep_previous(self) -> None:
-        """Copy the current complete set aside, for :meth:`_recover`.
-
-        Only a set that matches its own manifest is worth keeping: copying a
-        half-written one over the last good copy would destroy the one thing
-        recovery needs.
-        """
-        manifest = self._read_manifest(self.directory / MANIFEST_FILE)
-        runs_path = self.directory / RUNS_FILE
-        samples_path = self.directory / SAMPLES_FILE
-        if manifest is None or not _matches(manifest, runs_path, samples_path):
-            return
-        previous = self.cache_dir / "previous"
-        previous.mkdir(parents=True, exist_ok=True)
-        for path in (runs_path, samples_path, self.directory / MANIFEST_FILE):
-            if path.exists():
-                shutil.copy2(path, previous / path.name)
-
-    def _recover(self, manifest: dict[str, Any]) -> tuple[Path, Path] | None:
-        """The kept pair, but only if it is exactly what *manifest* describes.
-
-        Being internally consistent is not enough: the kept copy could be from
-        an older save, and restoring that silently would undo edits nobody
-        was told about. The manifest in ``experiment/`` is written last, so
-        when it still names the kept pair's hashes, that pair is precisely the
-        last complete catalog -- and when it does not, nobody can say which
-        version is right, and a person has to.
-        """
-        previous = self.cache_dir / "previous"
-        try:
-            kept = self._read_manifest(previous / MANIFEST_FILE)
-        except CatalogError:
-            return None
-        if kept is None:
-            return None
-        runs_path, samples_path = previous / RUNS_FILE, previous / SAMPLES_FILE
-        if not _matches(kept, runs_path, samples_path):
-            return None
-        if _hashes(kept) != _hashes(manifest):
-            return None
-        return (runs_path, samples_path)
-
-    # ------------------------------------------------------------------
-    # Checks
-    # ------------------------------------------------------------------
-
-    def _read_manifest(self, path: Path) -> dict[str, Any] | None:
-        if not path.exists():
-            return None
-        try:
-            manifest = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise CatalogCorruptError(
-                f"{path.name} cannot be read ({exc}). Restore it from git."
-            ) from exc
-        if not isinstance(manifest, dict) or manifest.get("schema") != SCHEMA_ID:
-            raise CatalogCorruptError(f"{path.name} is not an nrw experiment manifest.")
-        version = manifest.get("schema_version")
-        if isinstance(version, bool) or not isinstance(version, int):
-            raise CatalogCorruptError(f"{path.name} has no usable schema_version.")
-        if version > SCHEMA_VERSION:
-            raise CatalogVersionError(
-                f"The catalog was written by a newer nr-workbench (schema "
-                f"version {version}; this one reads {SCHEMA_VERSION}). Upgrade "
-                "before editing it -- an older version would drop what it "
-                "cannot read."
-            )
-        return manifest
-
-    def _refuse_if_unmerged(self) -> None:
-        if self.git_root is None:
-            return
-        from nr_workbench.project.vcs import run_git
-
-        try:
-            relative = self.directory.resolve().relative_to(
-                Path(self.git_root).resolve()
-            )
-        except ValueError:
-            return
-        output = run_git(
-            Path(self.git_root), ["ls-files", "-u", "--", relative.as_posix()]
-        )
-        if output and output.strip():
-            raise CatalogUnmergedError(
-                f"Git reports {relative.as_posix()}/ as unmerged. Parquet files "
-                "cannot be merged line by line, so git leaves one side in place "
-                "without conflict markers -- it would load as if nothing had "
-                "happened. Pick one side (`git checkout --ours` or `--theirs`), "
-                "re-apply the other side's edits on the experiment page, and "
-                "commit, before editing here."
-            )
+        for name, data in tables.items():
+            atomic_write_bytes(self.directory / name, data, scratch=self.cache_dir)
+        (self.directory / _OLD_MANIFEST).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -516,49 +339,54 @@ class ParquetCatalogStore:
 
 def _same(before: Catalog, after: Catalog) -> bool:
     """Whether an update changed any record's revision (and so its content)."""
-    return {k: e.rev for k, e in before.runs.items()} == {
-        k: e.rev for k, e in after.runs.items()
-    } and {k: e.rev for k, e in before.samples.items()} == {
-        k: e.rev for k, e in after.samples.items()
-    }
+    return (
+        {k: e.rev for k, e in before.runs.items()}
+        == {k: e.rev for k, e in after.runs.items()}
+        and {k: e.rev for k, e in before.samples.items()}
+        == {k: e.rev for k, e in after.samples.items()}
+        and before.experiment.rev == after.experiment.rev
+    )
 
 
 def _run_row(entry: RunEntry) -> dict[str, Any]:
-    row = dict(entry.extra)
-    row.update(
-        {
-            "run": entry.key.run,
-            "kind": entry.key.kind,
-            "sample_id": entry.sample_id,
-            "measurement": entry.measurement,
-            "condition": entry.condition,
-            "include": entry.include,
-            "note": entry.note,
-            "title": entry.title,
-            "start_time": entry.start_time,
-            "rev": entry.rev,
-            "updated_at": entry.updated_at,
-        }
-    )
-    return row
+    return {**entry.extra, **run_fields(entry)}
+
+
+def run_fields(entry: RunEntry) -> dict[str, Any]:
+    """A run's fields nrw keeps, without those it does not know: what a push
+    to Tiled writes."""
+    return {
+        "run": entry.key.run,
+        "kind": entry.key.kind,
+        "sample_id": entry.sample_id,
+        "measurement": entry.measurement,
+        "condition": entry.condition,
+        "include": entry.include,
+        "note": entry.note,
+        "title": entry.title,
+        "start_time": entry.start_time,
+        "rev": entry.rev,
+        "updated_at": entry.updated_at,
+    }
 
 
 def _sample_row(entry: SampleContext) -> dict[str, Any]:
-    row = dict(entry.extra)
-    row.update(
-        {
-            "sample_id": entry.sample_id,
-            "title": entry.title,
-            "description": entry.description,
-            "details": entry.details,
-            "mounting": entry.mounting,
-            "measurement_conditions": entry.measurement_conditions,
-            "fits_to_perform": entry.fits_to_perform,
-            "rev": entry.rev,
-            "updated_at": entry.updated_at,
-        }
-    )
-    return row
+    return {**entry.extra, **sample_fields(entry)}
+
+
+def sample_fields(entry: SampleContext) -> dict[str, Any]:
+    """A sample's fields nrw keeps, as :func:`run_fields` a run's."""
+    return {
+        "sample_id": entry.sample_id,
+        "title": entry.title,
+        "description": entry.description,
+        "details": entry.details,
+        "mounting": entry.mounting,
+        "measurement_conditions": entry.measurement_conditions,
+        "fits_to_perform": entry.fits_to_perform,
+        "rev": entry.rev,
+        "updated_at": entry.updated_at,
+    }
 
 
 def _run_from_row(row: dict[str, Any]) -> RunEntry:
@@ -602,6 +430,41 @@ def _sample_from_row(row: dict[str, Any]) -> SampleContext:
         ) from exc
 
 
+def _experiment_row(entry: ExperimentContext) -> dict[str, Any]:
+    return {
+        **entry.extra,
+        "summary": entry.summary,
+        "hypotheses": entry.hypotheses,
+        "notes": entry.notes,
+        "rev": entry.rev,
+        "updated_at": entry.updated_at,
+    }
+
+
+def _experiment_from_rows(rows: list[dict[str, Any]]) -> ExperimentContext:
+    """The experiment's context from its table: empty when there is none."""
+    if not rows:
+        return ExperimentContext()
+    if len(rows) > 1:
+        raise CatalogCorruptError(
+            f"{EXPERIMENT_FILE} holds {len(rows)} rows; an experiment has one."
+        )
+    (row,) = rows
+    try:
+        return ExperimentContext(
+            summary=_text(row, "summary"),
+            hypotheses=_text(row, "hypotheses"),
+            notes=_text(row, "notes"),
+            rev=_int(row, "rev"),
+            updated_at=_text(row, "updated_at"),
+            extra=_extra(row, _EXPERIMENT_COLUMNS),
+        )
+    except (TypeError, ValueError) as exc:
+        raise CatalogCorruptError(
+            f"{EXPERIMENT_FILE}: its row cannot be read ({exc})."
+        ) from exc
+
+
 def _int(row: dict[str, Any], name: str) -> int:
     value = row.get(name)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -636,7 +499,7 @@ def _extra(row: dict[str, Any], known: tuple[str, ...]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _read_table(path: Path, name: str) -> list[dict[str, Any]]:
+def _read_table(path: Path) -> list[dict[str, Any]]:
     """Read one table as rows, or refuse loudly."""
     if not path.exists():
         return []
@@ -651,13 +514,13 @@ def _read_table(path: Path, name: str) -> list[dict[str, Any]]:
             "replace every decision recorded in it. Restore it from git "
             f"(`git checkout -- {path.parent.name}/{path.name}`)."
         ) from exc
-
-    metadata = table.schema.metadata or {}
-    if (
-        metadata.get(b"nrw.schema") != SCHEMA_ID.encode()
-        or metadata.get(b"nrw.table") != name.encode()
-    ):
-        raise CatalogCorruptError(f"{path.name} is not the nrw {name} table.")
+    version = (table.schema.metadata or {}).get(b"nrw.schema_version", b"1")
+    if version.isdigit() and int(version) > SCHEMA_VERSION:
+        raise CatalogVersionError(
+            f"The catalog was written by a newer nr-workbench (schema version "
+            f"{int(version)}; this one reads {SCHEMA_VERSION}). Upgrade before "
+            "editing it -- an older version would drop what it cannot read."
+        )
     return table.to_pylist()
 
 
@@ -693,39 +556,3 @@ def _table_bytes(
     sink = io.BytesIO()
     pq.write_table(table, sink)
     return sink.getvalue()
-
-
-def _sha(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def _hashes(manifest: dict[str, Any]) -> tuple[Any, Any]:
-    tables = manifest.get("tables") if isinstance(manifest.get("tables"), dict) else {}
-    return tuple(
-        (tables.get(key) or {}).get("sha256")
-        if isinstance(tables.get(key), dict)
-        else None
-        for key in ("runs", "samples")
-    )
-
-
-def _matches(manifest: dict[str, Any], runs_path: Path, samples_path: Path) -> bool:
-    tables = manifest.get("tables")
-    if not isinstance(tables, dict):
-        return False
-    for key, path in (("runs", runs_path), ("samples", samples_path)):
-        entry = tables.get(key)
-        if not isinstance(entry, dict) or entry.get("sha256") != sha256_file_or_none(
-            path
-        ):
-            return False
-    return True
-
-
-def _replace(target: Path, data: bytes, scratch: Path) -> None:
-    """Write ``data`` to ``target`` atomically, with the temp file in *scratch*.
-
-    Its own function so that a test can fail the second of a save's three
-    replacements and check what a reader finds.
-    """
-    atomic_write_bytes(target, data, scratch=scratch)

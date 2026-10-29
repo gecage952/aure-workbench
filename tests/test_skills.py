@@ -110,6 +110,38 @@ def test_bundled_skill_body_stays_readable(skill) -> None:
     )
 
 
+@pytest.mark.parametrize("skill", discover_skills(), ids=lambda s: s.name)
+def test_no_bundled_skill_reads_the_critical_edge_as_the_top_layers_sld(
+    skill,
+) -> None:
+    """A critical edge measures a step from the medium the beam enters through:
+    d8-THF at 6.35, through silicon, is a step of 4.28. Three skills read the
+    step as the top layer's SLD, and the one sent with every `nrw model new
+    --from-notes` request called a model at 6.2 wrong against an edge of 4.3."""
+    text = " ".join((skill.directory / "SKILL.md").read_text(encoding="utf-8").split())
+
+    for claim in ("topmost SLD", "top-layer SLD", "your model says 6.2"):
+        assert claim not in text, f"{skill.name}: {claim!r}"
+
+
+@pytest.mark.parametrize(
+    ("name", "reading"),
+    [
+        ("refl-bl4b-instrument", "Through the substrate, add the substrate's SLD"),
+        ("metal-oxide-interfaces", "the solvent is the step plus the substrate's SLD"),
+        ("solvent-contrast-matching", "The implied SLD is the step from the silicon"),
+        ("structural-hypothesis-ranking", "once read as the step it is"),
+    ],
+)
+def test_the_critical_edge_checks_add_the_substrate_in_back_reflection(
+    name: str, reading: str
+) -> None:
+    (skill,) = [skill for skill in discover_skills() if skill.name == name]
+    text = " ".join((skill.directory / "SKILL.md").read_text(encoding="utf-8").split())
+
+    assert reading in text
+
+
 # --------------------------------------------------------------------------
 # parse_skill
 # --------------------------------------------------------------------------

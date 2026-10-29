@@ -60,12 +60,11 @@ must define a module-level `problem = FitProblem(...)`.
 `nrw` observes which files the script actually opens, so inputs are recorded
 exactly even when the path is built at runtime from a run number.
 
-### 2. Expect an identical re-run to be refused
+### 2. Expect an identical re-run to be recorded as a replicate
 
-If nothing changed — script, inputs, settings, environment — `nrw` refuses and
-points at the existing result. That is the mechanism that stops twelve
-near-identical directories accumulating. Use `--force` when you genuinely want
-a replicate; it is recorded as one.
+If nothing changed — script, inputs, settings, environment — `nrw` says so,
+names the existing result, and records the new run as a replicate of it.
+Before re-running, check whether the result you want is already there.
 
 ### 3. Trace anything with `whence`
 
@@ -191,7 +190,7 @@ arithmetic layered on top of it (§7).
 | "The data only changed slightly, the fit is still basically right." | Then re-running is cheap. "Basically right" is not a claim the hashes can support, and STALE is not a warning to reason around. |
 | "I'll just edit the generated script, it's quicker than the spec." | Use `nrw model fork`. It gives you a hand-owned script that still has a full record. Escaping the generator must not mean escaping provenance. |
 | "`--reason` is obvious from the chi-squared." | Chi-squared says which fit was numerically best, not why it is the answer. The reason is what a reader in a year needs. |
-| "I'll re-run with `--force` to get a cleaner number." | Running until you like the answer is not a method. If a re-run is warranted, say why in `--note`. |
+| "I'll re-run it to get a cleaner number." | Running until you like the answer is not a method. If a re-run is warranted, say why in `--note`. |
 | "It is a subtraction, I did it in my head." | Then nobody can check it — and if the endpoints are correlated it is also wrong, because a difference of correlated parameters needs the joint posterior rather than two medians. Write the script (§7). |
 | "The derived number is in the report, that is the record." | The report says what the number is, not how it was obtained. Nobody can re-derive a stoichiometry from the stoichiometry, including you in six months. |
 | "I will paste the fitted values into the script so it runs standalone." | Then it is a transcript, not a derivation, and it keeps reporting the old answer after the fit is re-run. Load from `results/<fit_id>/`. |

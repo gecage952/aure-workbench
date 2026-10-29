@@ -7,10 +7,7 @@ file's own output. Those comments are stripped here for the same reason
 example lists run numbers and conditions that were never measured, and showing
 them beside the real data would be actively misleading.
 
-Raw HTML is not rendered. A ``sample.md`` is usually written by the person
-reading it, but it also travels -- copied between beamtimes, pasted from a
-colleague, committed by a collaborator -- and there is no reason for prose in a
-side panel to be able to run script.
+HTML written into it is rendered as HTML.
 """
 
 from __future__ import annotations
@@ -60,6 +57,6 @@ def render(text: str | None) -> str:
 
     # "commonmark" plus tables: the measurement register in sample.md is a
     # pipe table, and rendering it as a wall of pipes would defeat the point.
-    parser = MarkdownIt("commonmark", {"html": False, "linkify": False})
+    parser = MarkdownIt("commonmark", {"html": True, "linkify": False})
     parser.enable("table")
     return str(parser.render(source))

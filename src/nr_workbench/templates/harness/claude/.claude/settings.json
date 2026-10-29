@@ -1,28 +1,36 @@
 {
   "$comment": [
-    "Limits for an assistant working in this project. The deny list and the",
-    "hook are two independent mechanisms, and `nrw` refuses the same",
-    "actions from the inside when NRW_AGENT=1 -- because an instruction to a",
-    "model is a request, and only a hook is a limit.",
+    "Limits for an assistant working in this project: the deny list, and the",
+    "hook -- because an instruction to a model is a request, and only a hook",
+    "is a limit.",
     "",
     "The hook refuses: promote; curating fits (nrw fit star, unstar, discard,",
     "restore, delete); nrw isaac push and --upload; nrw aure run without",
     "--dry-run; nrw experiment assign, release, and --write; nrw sample reset",
-    "without --dry-run; init --nested; and any --force. `nrw agent guard",
-    "--command '...'` says what it would do with any command.",
+    "without --dry-run; init --nested; any --force; and every nrw tiled",
+    "command, and Tiled's own command line. `nrw agent guard --command",
+    "'...'` says what it would do with any command.",
     "",
     "promote and curation: which fit is the answer, and which are good, are",
     "a person's decisions, and the reason recorded is what a reader needs.",
     "push and --upload: a record on a shared portal is not straightforwardly",
     "retractable.",
     "--force: every forcing flag here exists because a check said no.",
+    "Tiled: every command acts with the person's login, which the Tiled",
+    "client keeps in its own cache. Claude's file tools may not read that",
+    "cache, and `nrw agent run` gives each session no login at all: no",
+    "TILED_API_KEY, and an empty cache of the session's own.",
     "",
     "Edit this file if you want an assistant to have more room. It is yours."
   ],
   "permissions": {
     "deny": [
       "Bash(nrw promote:*)",
-      "Bash(nr-workbench promote:*)"
+      "Bash(nr-workbench promote:*)",
+      "Bash(nrw tiled:*)",
+      "Bash(tiled:*)",
+      "Read(~/Library/Caches/tiled/**)",
+      "Read(~/.cache/tiled/**)"
     ]
   },
   "hooks": {

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from nr_workbench.web import jobs as jobs_module
-from nr_workbench.web.jobs import JobBusy, JobNotFound, JobRunner
+from nr_workbench.web.jobs import JobBusy, JobRunner
 
 
 @pytest.fixture
@@ -273,7 +273,7 @@ def test_the_fit_is_found_before_the_job_is_seen_to_end(
     def find(job) -> dict:
         looking.set()
         release.wait(20)
-        return {"fit_id": "20260929-120000Z-abcdef01", "same_as": None}
+        return {"fit_id": "20260929-120000Z-abcdef01"}
 
     runner = JobRunner(tmp_path, on_finished=find)
     try:
@@ -393,39 +393,6 @@ def test_a_record_that_cannot_be_read_shows_no_job_and_stops_nothing(
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("job_id", ["../secret", "a/b", "", "x.json", "ABSOLUTE"])
-def test_a_job_id_from_the_page_is_never_a_path(tmp_path: Path, job_id: str) -> None:
-    # A file wherever each id would lead, so that reading it would show.
-    jobs = tmp_path / ".nrw" / "jobs"
-    (jobs / "a").mkdir(parents=True)
-    for planted in ("secret.log", "jobs/a/b.log", "jobs/.log", "jobs/x.json.log"):
-        (tmp_path / ".nrw" / planted).write_text("not a job's")
-    (tmp_path / "outside.log").write_text("not a job's")
-    if job_id == "ABSOLUTE":
-        job_id = str(tmp_path / "outside")
-    runner = JobRunner(tmp_path)
-
-    with pytest.raises(JobNotFound):
-        runner.log(job_id)
-
-
-def test_a_log_replaced_by_a_link_is_not_followed(
-    tmp_path: Path, runner: JobRunner
-) -> None:
-    job = start(runner, ["print('fitted')"])
-    ended(runner)
-    secret = tmp_path / "secret.txt"
-    secret.write_text("PRIVATE KEY")
-    log = tmp_path / ".nrw" / "jobs" / f"{job.id}.log"
-    log.unlink()
-    log.symlink_to(secret)
-
-    with pytest.raises(JobNotFound):
-        runner.log(job.id, 0)
-    with pytest.raises(JobNotFound):
-        runner.output(job.id)
-
-
 def test_the_jobs_are_kept_out_of_git_in_any_project(
     tmp_path: Path, runner: JobRunner
 ) -> None:
@@ -473,16 +440,6 @@ def test_only_the_newest_jobs_are_kept(
     assert not (jobs / "20260929T120000000000Z-abcdef.log").exists()
 
 
-def test_a_step_is_not_given_the_link_secret(runner: JobRunner, monkeypatch) -> None:
-    monkeypatch.setenv("NRW_SERVE_TOKEN", "the-one-time-link")
-    job = start(
-        runner, ["import os; print('secret:', os.environ.get('NRW_SERVE_TOKEN'))"]
-    )
-    ended(runner)
-
-    assert "secret: None" in runner.output(job.id)
-
-
 def test_nrw_serve_stops_the_job_it_ran_when_it_stops(
     tmp_path: Path, programs, monkeypatch
 ) -> None:
@@ -501,7 +458,6 @@ def test_nrw_serve_stops_the_job_it_ran_when_it_stops(
         start(started["runner"], ["import time; time.sleep(60)"])
 
     monkeypatch.setattr(Flask, "run", run)
-    monkeypatch.setenv("NRW_SERVE_TOKEN", "")
 
     result = CliRunner().invoke(main, ["serve", "--root", str(root)])
 

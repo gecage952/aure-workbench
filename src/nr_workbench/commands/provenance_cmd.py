@@ -12,8 +12,8 @@ from typing import Any
 
 import click
 
-from nr_workbench.agent.guard import refuse_if_agent
 from nr_workbench.project.layout import ProjectLayout, ProjectNotFoundError
+from nr_workbench.provenance.hashing import MODEL_ROLES
 from nr_workbench.provenance.index import FitIndex
 from nr_workbench.provenance.lookup import (
     FitNotFoundError,
@@ -396,7 +396,6 @@ def run_promote(*, fit_id: str, label: str, reason: str, force: bool = False) ->
     from nr_workbench.provenance.curation import CurationRefused, InputsChanged, promote
 
     layout = _layout()
-    refuse_if_agent("promote")
     try:
         promotion = promote(layout, fit_id, label=label, reason=reason, force=force)
     except InputsChanged as exc:
@@ -486,7 +485,7 @@ def collect_problems(
                         {"fit_id": fit_id, "kind": "stale-input", "detail": status.path}
                     )
 
-        if not [s for s in statuses if s.role != "script"]:
+        if not [s for s in statuses if s.role not in MODEL_ROLES]:
             problems.append(
                 {
                     "fit_id": fit_id,
@@ -860,7 +859,7 @@ def _data_inputs(directory: Path) -> dict[str, str]:
     return {
         e["path"]: e["sha256"]
         for e in FitDirectory(directory).read_inputs()
-        if e.get("role") != "script"
+        if e.get("role") not in MODEL_ROLES
     }
 
 

@@ -58,6 +58,51 @@ _GENERATED = re.compile(
 )
 
 
+#: An HTML comment, as the scaffolded templates write their guidance.
+_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def strip_comments(text: str) -> str:
+    """The text with its HTML comments removed.
+
+    The scaffolded ``sample.md`` and ``NOTES.md`` put their guidance, examples
+    included, in comments. Read as the scientist's words, the ``sample.md``
+    examples ("~30 nm ionomer on 20 nm copper ... in D2O") chose every
+    material's skills for every sample, and reached a model as a description
+    of the sample.
+
+    Args:
+        text: Any markdown.
+
+    Returns:
+        The text without its comments.
+    """
+    return _COMMENT.sub("", text or "")
+
+
+def inert(text: object, limit: int = 600) -> str:
+    """Text from outside nr-workbench, as one line safe to file in a note.
+
+    A language model's verdict is written inside a generated fence, and the
+    fence ends at the first close marker: a reply carrying one, and a newline,
+    would close it early, and what followed would count as the scientist's own
+    note. So the text becomes one line, loses every control character (an
+    escape sequence would otherwise drive the terminal it is printed to), and
+    cannot open or close a comment.
+
+    Args:
+        text: Anything; it is read as text.
+        limit: The longest result, in characters.
+
+    Returns:
+        One printable line, at most *limit* long.
+    """
+    flat = " ".join(str(text).split())
+    printable = "".join(ch for ch in flat if ch.isprintable())
+    defused = printable.replace("<!--", "&lt;!--").replace("-->", "--&gt;")
+    return defused[:limit]
+
+
 def human_text(text: str) -> str:
     """The note with every machine-written region removed.
 
@@ -76,7 +121,7 @@ def human_text(text: str) -> str:
 
 def _first_prose(text: str) -> str:
     """The first line that is neither blank, a heading, nor a comment."""
-    for line in re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL).splitlines():
+    for line in strip_comments(text).splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith(("#", "-", "*", "|", ">")):
             return stripped[:120]
@@ -209,7 +254,7 @@ def read_section(text: str, heading: str) -> str:
     following = re.compile(r"^##\s+", re.MULTILINE).search(body_text)
     section = body_text[: following.start()] if following else body_text
 
-    without_comments = re.sub(r"<!--.*?-->", "", section, flags=re.DOTALL)
+    without_comments = strip_comments(section)
     paragraphs = [
         " ".join(line.strip() for line in block.splitlines() if line.strip())
         for block in re.split(r"\n\s*\n", without_comments)
@@ -280,7 +325,7 @@ def is_blank(text: str | None) -> bool:
     """
     if not text:
         return True
-    without_comments = re.sub(r"<!--.*?-->", "", human_text(text), flags=re.DOTALL)
+    without_comments = strip_comments(human_text(text))
     for line in without_comments.splitlines():
         stripped = line.strip()
         # Headings, comments and the quoted run note are all scaffolding the

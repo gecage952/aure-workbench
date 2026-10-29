@@ -552,7 +552,7 @@ def test_an_ipts_is_saved_in_one_form(project: Path, value, expected: str) -> No
         ("feed.poll_seconds", float("nan"), "number of seconds"),
         ("feed.poll_seconds", "30", "number of seconds"),
         ("feed.kind", "monitor", "not available yet"),
-        ("source.kind", "tiled", "not available yet"),
+        ("source.kind", "tiled", "not known"),
         ("source.kind", "s3", "not known"),
         ("colour", "blue", "not a setting"),
     ],

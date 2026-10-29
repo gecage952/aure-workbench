@@ -14,9 +14,9 @@ which is how a script blocked by the pages' new policy would show.
 
 from __future__ import annotations
 
-import secrets
 import threading
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -49,19 +49,15 @@ def project(tmp_path: Path) -> Path:
     return root
 
 
-@pytest.fixture
-def site(project: Path) -> Iterator[Site]:
+@contextmanager
+def serving(app) -> Iterator[Site]:
+    """*app* served on a free port, for as long as the block runs."""
     from werkzeug.serving import make_server
 
-    from nr_workbench.web.app import create_app
-
-    token = secrets.token_urlsafe(24)
-    app = create_app(project, token=token, autostart=False)
     server = make_server("127.0.0.1", 0, app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    url = f"http://127.0.0.1:{server.server_port}"
     try:
-        yield Site(url=url, link=f"{url}/auth/{token}")
+        yield Site(url=f"http://127.0.0.1:{server.server_port}")
     finally:
         server.shutdown()
         # A test that failed mid-job leaves nothing running to slow the next.
@@ -69,8 +65,15 @@ def site(project: Path) -> Iterator[Site]:
         app.config["NRW_EXPERIMENT"].reload()
 
 
-def open_as_writer(page: Page, site: Site, path: str) -> None:
-    page.goto(site.link)
+@pytest.fixture
+def site(project: Path) -> Iterator[Site]:
+    from nr_workbench.web.app import create_app
+
+    with serving(create_app(project, autostart=False)) as served:
+        yield served
+
+
+def open_page(page: Page, site: Site, path: str) -> None:
     page.goto(f"{site.url}{path}")
 
 
@@ -83,7 +86,7 @@ def text(page: Page, element_id: str) -> str:
 def test_a_fit_is_starred_and_finalized_and_the_answer_cannot_be_set_aside(
     page: Page, site: Site, project: Path
 ) -> None:
-    open_as_writer(page, site, f"/f/{A}")
+    open_page(page, site, f"/f/{A}")
     page.wait_for("document.getElementById('curate-star') !== null", what="the bar")
 
     page.click("curate-star")
@@ -109,7 +112,7 @@ def test_a_fit_is_starred_and_finalized_and_the_answer_cannot_be_set_aside(
 def test_a_fit_is_discarded_restored_and_its_files_go_only_when_confirmed(
     page: Page, site: Site, project: Path
 ) -> None:
-    open_as_writer(page, site, f"/f/{B}")
+    open_page(page, site, f"/f/{B}")
     page.wait_for("document.getElementById('curate-discard') !== null", what="the bar")
 
     page.click("curate-discard")
@@ -155,7 +158,7 @@ def test_the_fits_list_stars_and_keeps_the_discarded_behind_a_toggle(
     page: Page, site: Site, project: Path
 ) -> None:
     curation.discard(ProjectLayout(root=project), B, reason="diverged")
-    open_as_writer(page, site, "/fits")
+    open_page(page, site, "/fits")
     hidden = (
         "document.querySelector('tbody[data-discarded]').classList.contains('d-none')"
     )
@@ -173,14 +176,16 @@ def test_the_fits_list_stars_and_keeps_the_discarded_behind_a_toggle(
     assert [e["fit_id"] for e in events(project, "star")] == [A]
 
 
-def test_a_page_opened_without_the_link_offers_nothing(
-    page: Page, site: Site, project: Path
-) -> None:
-    page.goto(f"{site.url}/f/{A}")
-    page.wait_for("document.readyState === 'complete'", what="the page")
+def test_a_view_only_page_offers_nothing(page: Page, project: Path) -> None:
+    from nr_workbench.web.app import create_app
 
-    assert page.js("document.getElementById('curate-buttons').children.length") == 0
-    assert page.js("window.NRW_WRITE_TOKEN") == ""
+    read_only = create_app(project, autostart=False, writable=False)
+    with serving(read_only) as site:
+        page.goto(f"{site.url}/f/{A}")
+        page.wait_for("document.readyState === 'complete'", what="the page")
+
+        assert page.js("document.getElementById('curate-buttons').children.length") == 0
+        assert page.js("window.NRW_WRITER") is False
 
 
 def test_the_isaac_panel_is_for_the_final_fit_and_asks_before_it_pushes(
@@ -210,7 +215,7 @@ def test_the_isaac_panel_is_for_the_final_fit_and_asks_before_it_pushes(
     records = project / "samples" / "S1" / "results" / A / "isaac" / "records"
     records.mkdir(parents=True)
     (records / "isaac_record_state0.json").write_text("{}")
-    open_as_writer(page, site, f"/f/{A}")
+    open_page(page, site, f"/f/{A}")
     page.wait_for("document.getElementById('curate-finalize') !== null", what="the bar")
     # Its own answer first: hidden because it said so, not because it was slow.
     page.wait_for(
@@ -251,44 +256,7 @@ def test_the_isaac_panel_is_for_the_final_fit_and_asks_before_it_pushes(
         "document.getElementById('isaac-log').textContent.includes('isaac push')",
         what="the push's job",
     )
-    assert f"isaac push --yes --expect-host=isaac.example.org -- {A}" in text(
-        page, "isaac-log"
-    )
-
-
-def test_a_push_that_never_reported_back_is_shown_as_one_that_may_have(
-    page: Page, site: Site, project: Path, tmp_path: Path, monkeypatch
-) -> None:
-    from nr_workbench import env as env_module
-    from nr_workbench.provenance.index import FitIndex
-    from nr_workbench.web import isaac as isaac_module
-
-    monkeypatch.setattr(isaac_module, "_installed", lambda name: True)
-    settings = tmp_path / "nrw-settings"
-    settings.write_text(
-        "ISAAC_URL=https://isaac.example.org/api\nISAAC_KEY=k-1234567\n"
-    )
-    monkeypatch.setattr(env_module, "USER_ENV_PATH", settings)
-    records = project / "samples" / "S1" / "results" / A / "isaac" / "records"
-    records.mkdir(parents=True)
-    (records / "isaac_record_state0.json").write_text("{}")
-    curation.promote(ProjectLayout(root=project), A, reason="the answer")
-    index = FitIndex(project / ".nrw" / "index.jsonl")
-    curation.record_publish_attempt(
-        index,
-        index.find(A),
-        portal="https://isaac.example.org/api",
-        files=sorted(records.iterdir()),
-    )
-
-    open_as_writer(page, site, f"/f/{A}")
-    page.wait_for(
-        "document.getElementById('isaac-published').textContent.length > 0",
-        what="the pushes listed",
-    )
-
-    shown = text(page, "isaac-published")
-    assert "may have made records" in shown and "0 record" not in shown
+    assert f"isaac push --yes -- {A}" in text(page, "isaac-log")
 
 
 def test_a_fit_pushed_while_final_still_says_so_once_it_is_not(
@@ -301,12 +269,17 @@ def test_a_fit_pushed_while_final_still_says_so_once_it_is_not(
     layout = ProjectLayout(root=project)
     curation.promote(layout, A, reason="the answer")
     index = FitIndex(project / ".nrw" / "index.jsonl")
-    curation.record_publish_attempt(
-        index, index.find(A), portal="https://isaac.example.org/api", files=[]
+    curation.record_publish(
+        index,
+        index.find(A),
+        portal="https://isaac.example.org/api",
+        files=[],
+        records=[],
+        complete=True,
     )
     curation.promote(layout, B, reason="a better answer")
 
-    open_as_writer(page, site, f"/f/{A}")
+    open_page(page, site, f"/f/{A}")
     page.wait_for(
         "document.getElementById('isaac-published').textContent.length > 0",
         what="the push, still listed",

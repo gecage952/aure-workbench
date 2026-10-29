@@ -168,12 +168,23 @@ def _what_is_modelled(table: ParameterTable) -> str:
 
 def _the_stack(table: ParameterTable) -> str:
     """The layer structure and its starting values."""
+    from nr_workbench.spec.geometry import read_geometry
+
     spec = table.spec
+    # Which end the beam enters, from the order itself: "ambient first,
+    # substrate last" is true only of back reflection.
+    geometry = read_geometry(spec)
+    order = (
+        f"The beam enters through {geometry.incident}, the last entry; "
+        f"{geometry.backing}, the first, is the backing."
+        if geometry is not None
+        else "The beam enters through the last entry."
+    )
     lines = [
         "## The layer stack",
         "",
-        "Ambient first, substrate last. Thicknesses and roughnesses are "
-        "starting values; whether each is fitted is in the next section.",
+        f"{order} Thicknesses and roughnesses are starting values; whether each "
+        "is fitted is in the next section.",
         "",
         "| Layer | Material | SLD (10⁻⁶ Å⁻²) | Thickness (Å) | Roughness (Å) |",
         "|---|---|---|---|---|",

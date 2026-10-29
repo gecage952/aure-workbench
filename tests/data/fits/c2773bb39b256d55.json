@@ -1,0 +1,13 @@
+{
+ "method": "amoeba",
+ "labels": [
+  "all states Film thickness"
+ ],
+ "x": [
+  198.75
+ ],
+ "fun": 1054226958.0402935,
+ "dx": [
+  0.0008854076269745835
+ ]
+}

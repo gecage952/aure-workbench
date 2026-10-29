@@ -6,14 +6,13 @@
  * Every value that came from a file or a person is set with textContent. Run
  * titles are typed by an operator at the instrument, and will later come from
  * a remote source; a title containing markup must render as text. The one
- * exception is the sample.md preview, which the server renders with raw HTML
- * disabled -- exactly as the sample page renders sample.md.
+ * exception is the sample.md preview, which the server renders as HTML,
+ * exactly as the sample page renders sample.md.
  */
 "use strict";
 
 (function () {
   const initial = window.NRW_EXPERIMENT;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
   const POLL_MS = 10000;
   const MAX_QUICK = 8;
 
@@ -52,14 +51,18 @@
     editing: null,
     // The open sample's id, rev and the values the editor was filled with.
     editorBase: null,
-    writable: Boolean(initial.writable && TOKEN),
+    // The experiment's own context, and the rev and values its panel was
+    // filled with.
+    experiment: initial.experiment || {},
+    contextBase: null,
+    writable: Boolean(initial.writable),
     confirmed: new Set(),
     plan: null,
   };
 
   const $ = window.NRWPage.$;
   const el = window.NRWPage.el;
-  const api = window.NRWPage.client(TOKEN);
+  const api = window.NRWPage.client();
 
   function message(text, kind) {
     window.NRWPage.show($("expt-message"), text, kind);
@@ -84,9 +87,13 @@
       return [row.key, row];
     }));
     state.samples = payload.samples;
+    state.experiment = payload.experiment || {};
     state.cursor = payload.cursor;
+    // Only a load sets this, never a save's answer: the catalog a save wrote
+    // can hold what someone else saved since the last poll, so the poll after
+    // a save always reloads, and shows it.
     state.catalogVersion = payload.catalog.version;
-    state.writable = Boolean(payload.writable && TOKEN);
+    state.writable = Boolean(payload.writable);
     for (const key of Array.from(state.selected)) {
       if (!state.rows.has(key)) state.selected.delete(key);
     }
@@ -154,9 +161,7 @@
       banner.classList.add("d-none");
     } else {
       banner.classList.remove("d-none");
-      banner.textContent = payload.read_only_reason ||
-        "View only. To edit the experiment, open the link `nrw serve` printed " +
-        "when it started, then reload this page.";
+      banner.textContent = payload.read_only_reason || "View only.";
     }
     renderScan(payload.scan);
   }
@@ -305,7 +310,6 @@
         state.rows.set(row.key, row);
       });
       state.samples = result.samples;
-      state.catalogVersion = result.catalog_version;
       state.selected.clear();
       renderRuns();
       renderBulk();
@@ -382,6 +386,97 @@
     if (typeof NRW === "undefined" || typeof Plotly === "undefined") return;
     if (!quick) quick = NRW.reflPanel("plot-quick", curves, { toggleId: "rq4-toggle" });
     else quick.setCurves(curves);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* What both editors share                                            */
+  /* ---------------------------------------------------------------- */
+
+  /* Fill each box (field name to element id) from the server's values, except
+   * one typed in since it was last filled: its value differs from what it was
+   * filled with, in *shown*, and a reload -- after a conflict, or a save made
+   * elsewhere -- must not overwrite it. Says whether any box was kept. */
+  function fillKeepingTyped(fields, fresh, shown, disabled) {
+    let typed = false;
+    Object.entries(fields).forEach(function ([name, id]) {
+      if (shown && $(id).value !== shown[name]) typed = true;
+      else $(id).value = fresh[name];
+      $(id).disabled = disabled;
+    });
+    return typed;
+  }
+
+  /* The boxes whose value differs from the record's: all a save sends. */
+  function changedFields(fields, record) {
+    const changed = {};
+    Object.entries(fields).forEach(function ([name, id]) {
+      const value = $(id).value;
+      if ((record[name] || "") !== value) changed[name] = value;
+    });
+    return changed;
+  }
+
+  function savedElsewhere(what) {
+    return what + " was saved somewhere else while you were editing. What you " +
+      "typed is kept; saving puts your version of the fields you changed over " +
+      "the saved ones.";
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* The experiment                                                     */
+  /* ---------------------------------------------------------------- */
+
+  const CONTEXT_FIELDS = {
+    summary: "c-summary", hypotheses: "c-hypotheses", notes: "c-notes",
+  };
+
+  function renderContext() {
+    const record = state.experiment;
+    const base = state.contextBase;
+    const values = {};
+    Object.keys(CONTEXT_FIELDS).forEach(function (name) {
+      values[name] = record[name] || "";
+    });
+    const typed = fillKeepingTyped(
+      CONTEXT_FIELDS, values, base ? base.values : null, !state.writable
+    );
+    $("expt-context-save").disabled = !state.writable;
+    if (typed && base.rev !== (record.rev || 0)) {
+      $("expt-context-status").textContent = savedElsewhere("The experiment");
+    } else if (!base) {
+      $("expt-context-status").textContent = "";
+    }
+    // Written means something is in it: a record saved empty is not written.
+    const texts = Object.values(values).filter(Boolean);
+    $("expt-context-state").textContent = texts.length
+      ? texts[0].split("\n")[0]
+      : "not written yet";
+    // Open on a new experiment, to be filled in; folded away once it is.
+    if (!base && !texts.length && state.writable) $("expt-context").open = true;
+    state.contextBase = { rev: record.rev || 0, values: values };
+  }
+
+  async function saveContext(event) {
+    event.preventDefault();
+    const record = state.experiment;
+    const fields = changedFields(CONTEXT_FIELDS, record);
+    if (!Object.keys(fields).length) {
+      $("expt-context-status").textContent = "Nothing changed.";
+      return;
+    }
+    try {
+      const result = await api(
+        "PUT", "/api/experiment/context", { base_rev: record.rev || 0, fields: fields }
+      );
+      state.experiment = result.experiment;
+      // Refilled from what the server now holds, which is what was typed.
+      state.contextBase = null;
+      renderContext();
+      $("expt-context-status").textContent = "Saved.";
+    } catch (error) {
+      if (error.status === 400) $("expt-context-status").textContent = error.message;
+      else await failed(error, "Saving the experiment");
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -620,13 +715,10 @@
     const fresh = shownValues(current);
     $("expt-editor").classList.remove("d-none");
     $("expt-editor-title").textContent = "Sample " + id;
-    let typed = false;
-    Object.entries(FIELDS).forEach(function ([name, field]) {
-      const edited = same && $(field).value !== base.values[name];
-      if (edited) typed = true;
-      else $(field).value = fresh[name];
-      $(field).disabled = !state.writable || !(current && current.managed);
-    });
+    let typed = fillKeepingTyped(
+      FIELDS, fresh, same ? base.values : null,
+      !state.writable || !(current && current.managed)
+    );
     $("expt-save").disabled = !state.writable || !(current && current.managed);
     const measured = renderMeasurements(
       id, base, same, state.writable && Boolean(current && current.managed)
@@ -639,9 +731,7 @@
     const moved = same && typed && current &&
       ((current.rev || 0) !== base.rev || runMoved);
     $("expt-form-status").textContent = moved
-      ? "This sample was saved somewhere else while you were editing. What you " +
-        "typed is kept; saving puts your version of the fields you changed over " +
-        "the saved ones."
+      ? savedElsewhere("This sample")
       : current && !current.managed
         ? "Adopt this sample to edit it here."
         : same
@@ -671,7 +761,7 @@
       const [label, cls] = MD_STATE[preview.state] || [preview.state || "", "text-bg-light"];
       badge.className = "badge ms-auto " + cls;
       badge.textContent = "sample.md " + label;
-      /* Rendered by the server with raw HTML disabled, as on the sample page. */
+      /* Rendered by the server, as on the sample page. */
       $("expt-preview").innerHTML = preview.html || "";
       const adoptable = state.writable &&
         (preview.state === "drifted" || preview.state === "untracked" || !preview.managed);
@@ -690,11 +780,7 @@
     const id = state.editing;
     const current = card(id);
     if (!id || !current) return;
-    const fields = {};
-    Object.entries(FIELDS).forEach(function ([name, field]) {
-      const value = $(field).value;
-      if ((current[name] || "") !== value) fields[name] = value;
-    });
+    const fields = changedFields(FIELDS, current);
     // Each run's type, condition and notes, sent only where they changed.
     const runChanges = [];
     Object.entries(typedRuns()).forEach(function ([key, values]) {
@@ -722,7 +808,6 @@
           state.rows.set(row.key, row);
         });
         state.samples = saved.samples;
-        state.catalogVersion = saved.catalog_version;
         renderRuns();
         renderBulk();  // a type added here is a choice there now
       }
@@ -732,7 +817,6 @@
           { base_rev: current.rev || 0, fields: fields }
         );
         state.samples = result.samples;
-        state.catalogVersion = result.catalog_version;
       }
       // Refilled from what the server now holds, which is what was typed.
       await openSample(id);
@@ -957,6 +1041,7 @@
     renderProblems(state.payload.problems);
     renderRuns();
     renderBulk();
+    renderContext();
     renderSamples();
   }
 
@@ -994,6 +1079,7 @@
     editRuns({ include: true }, "Included");
   });
   $("expt-form").addEventListener("submit", saveSample);
+  $("expt-context-form").addEventListener("submit", saveContext);
   $("expt-adopt").addEventListener("click", showAdoptPlan);
   $("expt-review").addEventListener("click", review);
 

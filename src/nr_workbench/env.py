@@ -62,16 +62,19 @@ KNOWN_VARS = (
     # (web/ldap.py), read by `create_app` through `where_set`.
     "AURE_LDAP_URL",
     "AURE_LDAP_BASE_DN",
-    # Lets a user logged in to `nrw serve` change the project's settings
-    # without its one-time link, read by `create_app` through `where_set`.
-    "USER_ALLOW_SETTINGS",
+    # The Tiled server `nrw tiled` uses, and the key it sends instead of a
+    # login.
+    "TILED_URL",
+    "TILED_API_KEY",
 )
 
 #: Variables whose value must never be printed.
 #: The language model's keys: one of these set is "a key is set" for it.
 LLM_KEYS = ("LLM_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "ALCF_ACCESS_TOKEN")
 
-SECRET_VARS = frozenset({*LLM_KEYS, "ISAAC_KEY", "AURE_OAUTH_CLIENT_SECRET"})
+SECRET_VARS = frozenset(
+    {*LLM_KEYS, "ISAAC_KEY", "AURE_OAUTH_CLIENT_SECRET", "TILED_API_KEY"}
+)
 
 #: Set once loading has run, so repeated calls are free.
 _loaded = False
@@ -184,7 +187,6 @@ def where_set(
         # Checked before each file, as load_dotenv does: one may set it.
         if (skip_project and is_project) or _dotenv_disabled(environ):
             continue
-        # A regular file only: the server never waits on a FIFO put there.
         if not path.is_file():
             continue
         try:

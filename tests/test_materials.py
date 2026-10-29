@@ -1,4 +1,4 @@
-"""Contrast-match arithmetic, and the substrates prompts may need an SLD for.
+"""Contrast-match arithmetic.
 
 What used to be here was a name-to-density table with an `sld()` wrapper over
 `periodictable`. It is gone. AuRE retired its equivalent because the SLDs in a
@@ -6,7 +6,9 @@ fitted model come from its intake LLM rather than a table, and the same applies
 here with one more reason on top: the models this repository is used with supply
 a compound density on request, and `periodictable` does the physics. The table
 in between drifted -- six SLDs quoted in the skills had diverged from it, two of
-them disagreeing with the table sitting beside them in the package.
+them disagreeing with the table sitting beside them in the package. The
+substrate lookup that outlived it is gone too: the one prompt that used it
+leaves the substrate's SLD to the model, which reads the notes.
 
 `tests/test_skill_slds.py` is what replaced it: the numbers the skills quote are
 checked against the physics directly, which is where the error actually was.
@@ -21,7 +23,6 @@ from nr_workbench.aure_adapter import (
     H2O_SLD,
     contrast_match_ratio,
     mixture_sld,
-    substrate_sld,
 )
 
 
@@ -51,27 +52,6 @@ def test_the_two_are_inverses(fraction: float) -> None:
 def test_identical_ends_cannot_be_matched() -> None:
     with pytest.raises(ValueError, match="same SLD"):
         contrast_match_ratio(1.0, low=2.07, high=2.07)
-
-
-@pytest.mark.parametrize(
-    "name,expected",
-    [
-        ("Si", 2.07),
-        ("silicon", 2.07),
-        ("SiO2", 3.47),
-        ("quartz", 3.47),
-        ("sapphire", 5.67),
-        ("Al2O3", 5.67),
-    ],
-)
-def test_known_substrates_resolve(name: str, expected: float) -> None:
-    assert substrate_sld(name) == pytest.approx(expected)
-
-
-def test_a_material_that_is_not_a_substrate_returns_none() -> None:
-    """None means "leave it out of the prompt", not "guess"."""
-    assert substrate_sld("Cu") is None
-    assert substrate_sld("polystyrene") is None
 
 
 def test_the_arithmetic_does_not_import_aure() -> None:

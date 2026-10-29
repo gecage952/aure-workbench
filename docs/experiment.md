@@ -29,23 +29,11 @@ nrw serve
 
   This experiment is not set up yet: nrw needs its IPTS, or the
   folder its reduced data is in, before it can watch anything.
-
-  To edit the experiment, curate fits or change the settings, open this link
-  in your browser:
-    http://127.0.0.1:8765/auth/9f0c…
-  It works once, for one browser, and is kept out of the request log.
-  Without it the pages are view-only.
-  It opens Settings.
 ```
 
-On a project that is not set up yet the link opens **Settings** (see
-[Settings](#settings) below); once it is, the link opens the Experiment page.
-
-The `/auth/…` link lets *this browser* make changes. Without it the page is
-view-only, which is on purpose: an analysis node is shared, and anyone logged in
-to it can reach `127.0.0.1`. The link stops working once it has been used, so a
-copy left in scrollback or pasted into a chat opens nothing. To edit from a
-second browser, restart `nrw serve` for a new link.
+On a project that is not set up yet, start with **Settings** (see
+[Settings](#settings) below). The pages edit the project when the server is
+bound to loopback, as it is by default; started with `--host`, it only shows it.
 
 The same organization is available from the command line, for scripts and for
 anyone who prefers it:
@@ -73,11 +61,10 @@ model, which is saved in the project's `.env` ([Language model](#language-model)
   A run whose headers name an experiment other than the IPTS on the page is
   flagged, run by run.
 - **How new runs are noticed.** Files appearing in the data folder. The SNS web
-  monitor and Tiled are listed as coming and cannot be chosen yet.
+  monitor is listed as coming and cannot be chosen yet.
 - **Where samples and assignments are kept.** Parquet files in this project's
-  `experiment/`, committed with it. A metadata service, through which they
-  would be shared with everyone on the experiment, is listed as coming; see
-  [experiment-sources.md](experiment-sources.md).
+  `experiment/`, committed with it. `nrw tiled push` shares a copy with
+  everyone on the experiment; see [experiment-sources.md](experiment-sources.md).
 - **Advanced**: the settle time and the poll interval.
 
 A save changes only the lines of `nrw.toml` that hold these settings, keeps
@@ -130,8 +117,7 @@ for another provider, such as `gpt-4o`, would be passed to `claude`. Choosing
 whoever wrote them: after a choice of Claude, that leaves `.env` exactly as it
 was before. Nothing else in `.env` is changed. The section says
 so, and changes nothing, when `.env` is something it should not edit: a
-symbolic link, a file that is not text, or one changed by hand since the page
-read it.
+file that is not text, or one changed by hand since the page read it.
 
 Each job reads `.env` as it starts, so a choice applies from the next one, with
 no restart. The exception is a variable set in the environment `nrw serve` was
@@ -222,6 +208,18 @@ added once is offered from then on. A run whose type was never set is steady.
 In the bar above the table the type starts at *unchanged*, so assigning runs
 leaves the type each one already has.
 
+**The experiment**, the panel above the samples, is what every sample here
+is part of: a **Summary** of what the proposal sets out to learn, the
+**Hypotheses** the measurements should confirm or rule out, and **Notes** for
+anything else every measurement needs. It opens by itself until something is
+written in it, and then folds away, showing its first line. It is kept in the
+catalog and written to no file, so this panel is the one place to change it;
+`nrw experiment status --json` shows it. It is written into no `sample.md`,
+so none of the rules below apply to it. The unattended agent's instructions
+quote it ahead of each sample's task, **New model** sends it beside the
+sample's notes, and `nrw tiled push` writes it to the experiment's `context/`
+on Tiled.
+
 Click a sample to fill in its context. Each box becomes the section of
 `sample.md` it is named after:
 
@@ -245,22 +243,17 @@ its notes. They stay in the catalog and on the page, but are not written into
 The preview shows the `sample.md` that will be written.
 
 Some text is refused, with the reason, because a reader of `sample.md` would
-misread it. A run's notes are held to the same rules, since they are written
-there too:
+misread it:
 
 - **A heading line inside a box.** A `## Fits to perform` typed into the
   Description would become the agent's task.
 - **`<!--` or `-->`.** These hide text from readers that strip comments.
 - **A `|` in a condition.** It splits the table cell.
-- **An unclosed code block.**
 - **A second table with a Run column.**
-- **A line in Measurement conditions that reads as a run's notes**,
-  `- Run 218386: ...`. That is how sample.md writes each run's notes, so the
-  line would be read back as that run's. Put it in the run's notes under
-  **Measurements**, where it is kept with the run.
-- **In a run's notes, a heading or a code block**, however it is indented.
-  A note is written inside its run's entry, where indenting it does not make
-  it harmless.
+
+A run's notes may not hold `<!--`, `-->` or a table with a Run column either.
+A heading line in them is kept: sample.md indents a note's lines under its
+run, where no reader takes one for a heading.
 
 ## Applying
 
@@ -319,8 +312,7 @@ panel says when there are edits saved on the page that it does not have yet.
 
 A spec that already exists is never overwritten: choose another name, or edit
 that one. A name is a plain name (letters, digits, `.`, `-`, `_`), because it
-becomes the spec's filename. As with every change on the page, only a browser
-that opened the link `nrw serve` printed can write one.
+becomes the spec's filename.
 
 ### A quick fit with AuRE
 
@@ -332,8 +324,9 @@ co-refine several, write one with **New model**. From `sample.md` it reads:
 - the sample's *Description* and *Details*. A sample with nothing under
   *Description* is refused, because AuRE builds the whole model from it. Say
   which side the beam enters in words AuRE's setup looks for, such as "measured
-  through the silicon substrate" or "back reflection": without them, the setup
-  assumes the beam arrives from the ambient side;
+  through the silicon substrate" or "back reflection": without them, or with
+  them negated ("not through the substrate"), the setup takes the beam to
+  arrive from the ambient side;
 - *Fits to perform*, as a hypothesis;
 - for the run it fits, its condition in the Measurements table, the sample's
   *Measurement conditions*, and the notes on that run.
@@ -421,11 +414,9 @@ git ignores, for the newest 20 jobs. Like the rest of the page, it can be read
 by anyone who can open the page, link or not.
 
 Fitting again when nothing has changed -- the spec, the data, the settings --
-is refused, as `nrw fit run` refuses it: the result would be the one you have.
-The Fit panel says so, links that fit, and offers **Run again anyway**, which
-records a replicate. **run again even if nothing changed** in the form does the
-same from the start. Notes in `sample.md` are not among what a fit reads: to
-fit what you wrote there, put it in the spec, or ask AuRE again.
+records a replicate of the fit you have, as `nrw fit run` does, and its log
+names that fit. Notes in `sample.md` are not among what a fit reads: to fit
+what you wrote there, put it in the spec, or ask AuRE again.
 
 **Cancel** stops the fit and every process it started. What the fit had written
 so far stays where it is, and `nrw check` lists it as an interrupted run, as it
@@ -437,8 +428,7 @@ starts, and a fit that went on to finish is in Fits all the same.
 
 Setting up and running fits happens on this page. Judging them happens where
 their evidence is: a fit's own page (**Fits**, then a fit), with its curves,
-residuals, parameters and the other fits of its model. As with every change the
-pages make, only a browser that opened the link `nrw serve` printed can curate.
+residuals, parameters and the other fits of its model.
 
 - **☆ Star** marks a fit worth coming back to, and **★ Starred** takes the
   star away. The Fits list has a star beside each fit, which does the same.
@@ -454,10 +444,8 @@ pages make, only a browser that opened the link `nrw serve` printed can curate.
   another first.
 - **Delete files…** frees the disk, the fit's `NOTES.md` included. It is
   offered only for a fit already discarded, and only after you confirm. A fit
-  that anything uses keeps its files, and the page says what uses it: a
-  report in any sample that cites it or drew a figure from it, another fit
-  that read its files, or ISAAC records made or pushed from it. The record
-  that the fit ran stays in the index. The Fits list shows it as deleted,
+  whose files another fit read keeps them, and the page names that fit. The
+  record that the fit ran stays in the index. The Fits list shows it as deleted,
   behind **Show the discarded**, and its own page is gone with its files.
 
 Each of these is recorded in the fit index (`.nrw/index.jsonl`) with who and
@@ -493,14 +481,12 @@ finalized. The panel has three steps, each run as a job:
 3. **Push…** publishes exactly those records, after you confirm. What leaves
    the project is the data, the fitted model and the notes: `sample.md`, the
    fit's `NOTES.md`, the reason it was finalized, and any report that cites
-   it. It does not export again, so what the server checked is what it gets. The portal keeps
-   what it is given, so the push is recorded with the fit before it starts,
-   with the files it sends, and after it ends, with the id of every record the
-   portal made. A push that fails part way, or is stopped, is recorded as one
-   that may have made records. A copy of what was sent is kept in
-   `isaac/published/`, so a later export cannot change the record of it.
-   Pushing again adds new records and replaces none, and the page says so
-   first. The push refuses if the portal changed since you confirmed.
+   it. It does not export again, so what the server checked is what it gets.
+   Once the push has run, it is recorded with the fit: the files it sent and
+   their digests, the id of every record the portal made, and whether it
+   finished. A push stopped part way, by **Cancel** or Ctrl-C, is recorded with
+   the files it sent, as one that may have made records. Pushing again adds
+   new records and replaces none, and the page says so first.
 
 Once another fit is finalized in its place, the panel offers nothing more, but
 a fit that was pushed keeps its list of pushes on its page.
@@ -515,11 +501,9 @@ ISAAC_URL=https://isaac.slac.stanford.edu/portal/api
 ISAAC_KEY=...
 ```
 
-They are read from your own settings only (the shell, `~/.nrw`, or
-`~/.aure` if you keep them there) and never from the project's `.env`. Anyone who can write the project writes that file,
-and a portal named there would decide where your key and the records go. The
-panel says where each is set, the portal's host, and when the project's
-`.env` names one that is ignored. It never shows the key. From the terminal:
+They are read as nrw's other settings are: the shell, the project's
+`.env`, `~/.nrw`, then `~/.aure`. The panel says where each is set, and the
+portal's host. It never shows the key. From the terminal:
 
 ```bash
 nrw isaac export <fit_id>
@@ -527,7 +511,8 @@ nrw isaac push <fit_id> --validate-only
 nrw isaac push <fit_id>          # the final fit only; asks first
 ```
 
-A fit whose records were pushed keeps its files, even once it is discarded.
+A fit whose records were pushed can still have its files deleted once it is
+discarded; the fit index keeps the record of each push.
 Neither validating nor pushing is done by an unattended agent: both send the
 records, and the key, off the machine.
 
@@ -574,7 +559,7 @@ nrw experiment release Sample6
 |---|---|---|
 | `experiment/runs.parquet` | One row per run: its sample, type, condition, good or not, its notes | Yes |
 | `experiment/samples.parquet` | One row per sample: its context | Yes |
-| `experiment/catalog.json` | Digests of both, written last, so an interrupted save is noticed | Yes |
+| `experiment/experiment.parquet` | One row, once written: the experiment's own context, its summary, hypotheses and notes | Yes |
 | `samples/<id>/data/sources.json` | What apply copied | Yes |
 | `nrw.toml` (`[beamtime]`, `[experiment.*]`) | The IPTS, where the data is, and how new runs are noticed | Yes |
 
@@ -584,19 +569,30 @@ Parquet is binary, which has two consequences:
 
 - **git cannot merge it.** If two people organize the same experiment on
   different branches, the merge leaves one side in place with no conflict
-  markers. nrw refuses to load or save the catalog while git reports it
-  unmerged, and says how to resolve it.
+  markers: keep one side, and make the other's edits again on the page.
 - **A diff does not show what changed.** `nrw experiment status --json` does.
 
 A catalog file that exists but cannot be read is never treated as empty. The
 page shows it read-only, and nothing is saved over it until it is restored.
+
+**Sharing it on Tiled.** `nrw tiled push` writes the catalog to the
+experiment's `context/` on tiled.ornl.gov, and the starred and final fits to
+its `analysis/`, where everyone on the experiment, and other programs, can
+read them; `nrw tiled status` says what is there. Each fit goes as analysed
+data: its model with its parameters and the data it was fitted to, in the
+file refl1d loads, with its curves and its provenance. A colleague starting
+fresh runs `nrw tiled pull --context --data --fits`: the catalog, the reduced
+files, and each fit as it was recorded, on the Fits page.
+`nrw fit run --from <fit_id>` runs one again from its own problem file. The
+last writer wins, each way. See [experiment-sources.md](experiment-sources.md),
+"Tiled".
 
 ## Unattended agents
 
 An assistant can read the experiment, with `nrw experiment status --json` and
 the page's API, and can preview `apply` and `settings`. It cannot assign,
 apply, adopt, release or change the settings. Which sample a run belongs to is a claim about the experiment, like
-promoting a fit, so those commands are refused under `NRW_AGENT` and the agent
+promoting a fit, so the project's hook refuses those commands, and the agent
 is told to write its proposal in `ESCALATIONS.md`.
 
 ## Not yet

@@ -181,7 +181,9 @@ def _checked(model: dict[str, Any]) -> dict[str, Any]:
     return model
 
 
-def untranslatable(model: dict[str, Any]) -> list[str]:
+def untranslatable(
+    model: dict[str, Any], fit: dict[str, dict[str, Any]] | None = None
+) -> list[str]:
     """Return anything in the model this translation cannot carry across.
 
     AuRE's ``constraints`` are free-text expressions over its own parameter
@@ -192,6 +194,7 @@ def untranslatable(model: dict[str, Any]) -> list[str]:
 
     Args:
         model: A ModelDefinition.
+        fit: The fit behind it (:func:`reported_fit`), when there is one.
 
     Returns:
         Human-readable descriptions, empty when everything was carried over.
@@ -205,7 +208,76 @@ def untranslatable(model: dict[str, Any]) -> list[str]:
                 f"{layer.get('name', '?')}: roughness was tied to its own "
                 "thickness in the fit; imported as a fixed value"
             )
+    fitted, per_file = _fitted_intensities(fit or {})
+    if per_file:
+        values = (fit or {}).get("parameters") or {}
+        shown = ", ".join(f"{values[name]:.4g}" for name in fitted)
+        notes.append(
+            "intensity: one per angle segment, as AuRE fitted it, but a spec "
+            f"starts them all at one value; AuRE's were {shown}"
+        )
     return notes
+
+
+def reported_fit(final_state: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The fit behind the reported model: its ``parameters`` and their ``bounds``.
+
+    AuRE's ``finalize`` writes the selected fit's layer values into
+    ``current_model`` but has no field there for the probe's: each segment's
+    intensity, the sample broadening, a theta offset or a background -- "N
+    fitted parameter(s) had no ModelDefinition field", its log says. Nor does
+    ``current_model`` hold the ranges AuRE filled in from its own defaults,
+    such as an interface's lower bound. The fit result records both, under
+    AuRE's parameter names (``Cu interface``, ``intensity <file>``,
+    ``sample_broadening``).
+
+    The reported fit is the final MCMC polish when ``final_fit`` adopted it --
+    the last result -- and otherwise the one ``final_selection`` chose.
+
+    Args:
+        final_state: A parsed ``final_state.json``.
+
+    Returns:
+        ``{"parameters": {name: value}, "bounds": {name: [low, high]}}``, empty
+        mappings when the run recorded no fit.
+    """
+    state = final_state.get("state") or {}
+    fits = [f for f in state.get("fit_results") or [] if isinstance(f, dict)]
+    fit: dict[str, Any] = {}
+    if fits:
+        polish = state.get("final_fit")
+        selection = state.get("final_selection")
+        index = selection.get("index") if isinstance(selection, dict) else None
+        if isinstance(polish, dict) and polish.get("adopted"):
+            fit = fits[-1]
+        elif _is_index(index, len(fits)):
+            fit = fits[index]
+        else:
+            fit = fits[-1]
+    values = fit.get("parameters") if isinstance(fit.get("parameters"), dict) else {}
+    bounds = fit.get("bounds") if isinstance(fit.get("bounds"), dict) else {}
+    return {
+        "parameters": {str(k): float(v) for k, v in values.items() if _is_number(v)},
+        "bounds": {
+            str(k): [float(v[0]), float(v[1])]
+            for k, v in bounds.items()
+            if isinstance(v, list | tuple)
+            and len(v) == 2
+            and _is_number(v[0])
+            and _is_number(v[1])
+            and float(v[0]) < float(v[1])
+        },
+    }
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _is_index(value: Any, length: int) -> bool:
+    return (
+        isinstance(value, int) and not isinstance(value, bool) and 0 <= value < length
+    )
 
 
 def reported_chisq(final_state: dict[str, Any]) -> float | None:
@@ -421,52 +493,170 @@ def layer_names(model: dict[str, Any]) -> list[tuple[str, str]]:
     )
 
 
-def _free_parameters(names: list[str], model: dict[str, Any]) -> list[dict[str, Any]]:
-    """Turn AuRE's per-layer bounds into nrw parameter declarations.
+#: A spec attribute of a stack entry, the bounds ``ModelDefinition`` declares
+#: for it, and AuRE's name for it in a fit (``Cu interface``).
+_LAYER_BOUNDS = (
+    ("thickness", "thickness_min", "thickness_max", "thickness"),
+    ("rho", "sld_min", "sld_max", "rho"),
+    ("roughness", "roughness_min", "roughness_max", "interface"),
+)
+#: Nuisance parameters AuRE ties across the probes of a state, by the probe
+#: attribute each fits: one parameter per state, as AuRE fitted them.
+_NUISANCES = ("sample_broadening", "theta_offset", "background")
+
+
+def _free_parameters(
+    names: list[str],
+    model: dict[str, Any],
+    fit: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Turn the bounds AuRE fitted with into nrw parameter declarations.
 
     Only bounds AuRE actually recorded become free parameters. Inventing a
     range around a fitted value would turn its answer into our assumption, and
     a range nobody chose is exactly the kind of number that gets quoted later
-    as though it meant something.
-    """
-    layers = list(model.get("layers") or [])
-    back = bool(model.get("back_reflection"))
+    as though it meant something. The bounds ``ModelDefinition`` declares come
+    first; the reported fit (:func:`reported_fit`) has the rest -- a range AuRE
+    took from its own defaults, an interface it fitted on the substrate, and
+    the probe's parameters.
 
-    # Walk the stack back to the layer it came from, so a bound lands on the
-    # right name after the reversal and the de-duplication above.
-    order = list(reversed(range(len(layers)))) if back else list(range(len(layers)))
-    offset = 1  # both geometries put a medium first
+    Args:
+        names: The spec's names for the stack, in stack order.
+        model: A ModelDefinition.
+        fit: The reported fit, when the run recorded one.
+    """
+    fit = fit or {}
+    bounds = fit.get("bounds") or {}
+    stack = ordered_stack(model)
+    aure_names = [str(entry["name"]) for entry in stack]
+    layers = list(model.get("layers") or [])
+
+    # Each stack position back to the layer it came from, so a bound lands on
+    # the right name after the reversal and the de-duplication. Both
+    # geometries put a medium first and the incident medium last.
+    order = (
+        list(reversed(range(len(layers))))
+        if model.get("back_reflection")
+        else list(range(len(layers)))
+    )
+    layer_at = {position + 1: layers[index] for position, index in enumerate(order)}
 
     parameters: list[dict[str, Any]] = []
-    for position, layer_index in enumerate(order):
-        layer = layers[layer_index]
-        name = names[position + offset]
-        # A tied roughness is a derived parameter upstream (sigma = fraction x
-        # thickness), not a range, so it cannot be expressed as one. Leave the
-        # interface fixed rather than inventing a range around it; the caller
-        # reports the layer so the omission is visible.
-        tied = bool(layer.get("roughness_tie"))
-        for attribute, low, high in (
-            ("thickness", "thickness_min", "thickness_max"),
-            ("rho", "sld_min", "sld_max"),
-            ("roughness", "roughness_min", "roughness_max"),
-        ):
-            if attribute == "roughness" and tied:
+    for position, name in enumerate(names):
+        layer = layer_at.get(position)
+        incident = position == len(names) - 1
+        # A fit names a parameter by its layer's name, so a name the stack
+        # repeats does not say which layer it was.
+        unique = aure_names.count(aure_names[position]) == 1
+        for attribute, low, high, fitted_as in _LAYER_BOUNDS:
+            # The incident medium is semi-infinite, and a medium's thickness is
+            # no parameter: only their SLD and the first medium's interface.
+            if attribute != "rho" and (
+                incident or (attribute == "thickness" and not layer)
+            ):
                 continue
-            lo, hi = layer.get(low), layer.get(high)
-            if lo is None or hi is None:
+            # A tied roughness is a derived parameter upstream (sigma =
+            # fraction x thickness), not a range, so it cannot be expressed as
+            # one. Leave the interface fixed rather than inventing a range
+            # around it; the caller reports the layer so the omission is visible.
+            if attribute == "roughness" and layer and layer.get("roughness_tie"):
+                continue
+            lo, hi = (layer.get(low), layer.get(high)) if layer else (None, None)
+            recorded = (
+                bounds.get(f"{aure_names[position]} {fitted_as}") if unique else None
+            )
+            if lo is not None and hi is not None:
+                span = _declared_span(lo, hi)
+                if span is None:
+                    continue
+            elif recorded is not None:
+                span = list(recorded)
+            else:
                 continue
             parameters.append(
-                {
-                    "path": f"{name}.{attribute}",
-                    "range": [float(lo), float(hi)],
-                    "per": "model",
-                }
+                {"path": f"{name}.{attribute}", "range": span, "per": "model"}
             )
+    return parameters + _probe_parameters(model, fit)
 
-    # Intensity is per state because each reduction used its own direct beam.
+
+def _declared_span(lo: Any, hi: Any) -> list[float] | None:
+    """A range a model declares, as AuRE builds it; ``None`` when it fits nothing.
+
+    AuRE swaps an inverted pair, and fits a parameter whose bounds are equal
+    nowhere but at that value: it is held there, as the stack has it, not a
+    range a spec could fit in ("SiO2.rho: range (3.47, 3.47) is empty").
+    """
+    if lo is None or hi is None:
+        return None
+    span = sorted([float(lo), float(hi)])
+    return span if span[0] < span[1] else None
+
+
+def _fitted_intensities(fit: dict[str, dict[str, Any]]) -> tuple[list[str], bool]:
+    """AuRE's names of the intensities a fit refined, and whether one is per file.
+
+    ``intensity <file>`` in a single state's co-refinement, ``<state> <file>
+    intensity`` across states: one per file. ``<state> intensity``: one per
+    state. File labels and state names hold no spaces.
+    """
+    names = sorted(
+        name
+        for name in fit.get("parameters") or {}
+        if name == "intensity"
+        or name.startswith("intensity ")
+        or name.endswith(" intensity")
+    )
+    per_file = [n for n in names if n.startswith("intensity ") or len(n.split()) >= 3]
+    return names, len(per_file) > 1
+
+
+def _fitted_as(fit: dict[str, dict[str, Any]], attribute: str) -> str | None:
+    """AuRE's name, in a fit, of a probe attribute tied across a state's probes."""
+    names = [
+        name
+        for name in fit.get("parameters") or {}
+        if name == attribute or name.endswith(f" {attribute}")
+    ]
+    return names[0] if len(names) == 1 else None
+
+
+def _probe_parameters(
+    model: dict[str, Any], fit: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The probe's free parameters, as AuRE fitted them.
+
+    A state's angle segments, each reduced on its own, each get an intensity
+    when AuRE fitted one per file: the scale between segments is a fitted
+    quantity, and one shared value cannot express a 3.4 degree segment that
+    needs 37% more than the 0.45 degree one. A spec gives a parameter one
+    starting value, so the segments start at the median of AuRE's values,
+    within the bounds AuRE fitted them in. Sample broadening, theta offset and
+    background are one parameter per state, from AuRE's fitted value.
+    """
+    values = fit.get("parameters") or {}
+    bounds = fit.get("bounds") or {}
+    parameters: list[dict[str, Any]] = []
+
     intensity = model.get("intensity") or {}
-    if not intensity.get("fixed", False):
+    fitted, per_file = _fitted_intensities(fit)
+    if fitted:
+        spans = [bounds[name] for name in fitted if name in bounds]
+        declared = _declared_span(intensity.get("min"), intensity.get("max"))
+        middle = sorted(values[name] for name in fitted)[len(fitted) // 2]
+        entry: dict[str, Any] = {
+            "path": "probe.intensity",
+            "value": middle,
+            "per": "measurement" if per_file else "state",
+        }
+        if spans:
+            entry["range"] = [min(s[0] for s in spans), max(s[1] for s in spans)]
+        elif declared is not None:
+            entry["range"] = declared
+        else:
+            entry["pm"] = 0.1
+        parameters.append(entry)
+    elif not intensity.get("fixed", False):
+        # Intensity is per state because each reduction used its own direct beam.
         parameters.append(
             {
                 "path": "probe.intensity",
@@ -475,6 +665,20 @@ def _free_parameters(names: list[str], model: dict[str, Any]) -> list[dict[str, 
                 "per": "state",
             }
         )
+
+    for attribute in _NUISANCES:
+        fitted_name = _fitted_as(fit, attribute)
+        block = model.get(attribute) if isinstance(model.get(attribute), dict) else {}
+        span = bounds.get(fitted_name) if fitted_name else None
+        # Enabled with no fit to say where it ended: the range AuRE declared.
+        if span is None and block.get("enabled"):
+            span = _declared_span(block.get("min"), block.get("max"))
+        if span is None:
+            continue
+        entry = {"path": f"probe.{attribute}", "range": list(span), "per": "state"}
+        if fitted_name:
+            entry["value"] = values[fitted_name]
+        parameters.append(entry)
     return parameters
 
 
@@ -485,6 +689,7 @@ def to_spec(
     name: str,
     states: list[dict[str, Any]],
     chisq: float | None = None,
+    fit: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build an nrw model spec from AuRE's fitted model.
 
@@ -497,6 +702,8 @@ def to_spec(
             those blocks carry the measured incident angles, which AuRE's
             output does not report back in a form we could reuse.
         chisq: The chi-squared AuRE reported, for the description.
+        fit: The fit behind the model (:func:`reported_fit`): what the model
+            has no field for, so that the spec fits what AuRE fitted.
 
     Returns:
         The spec mapping, ready for ``_emit_spec``.
@@ -550,5 +757,5 @@ def to_spec(
         },
     }
     document["states"] = states
-    document["parameters"] = _free_parameters(names, model)
+    document["parameters"] = _free_parameters(names, model, fit)
     return document

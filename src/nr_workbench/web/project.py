@@ -957,11 +957,6 @@ class ProjectData:
 
     def _fit_dir(self, fit_id: str, sample: Any) -> Path:
         """Locate a fit directory, searching all samples if needed."""
-        from nr_workbench.provenance.lookup import plain_name
-
-        # The index is committed: a name in it is refused unless it is one.
-        if not plain_name(fit_id) or (sample and not plain_name(sample)):
-            raise FileNotFoundError(f"{fit_id!r} does not name a fit directory here.")
         if sample:
             candidate = self.layout.sample(str(sample)) / "results" / fit_id
             if candidate.is_dir():
@@ -987,11 +982,8 @@ class ProjectData:
         return list(curation_of(self.index.entries()).get(fit_id, NONE).labels)
 
     def _series_dir(self, sample_id: str, name: str) -> Path:
-        """Resolve a series directory, rejecting anything outside the sample."""
-        base = (self.layout.sample(sample_id) / "data" / "tnr").resolve()
-        directory = (base / name).resolve()
-        if not _within(directory, base):
-            raise FileNotFoundError(f"No series {name!r} for {sample_id}")
+        """Resolve a series directory."""
+        directory = self.layout.sample(sample_id) / "data" / "tnr" / name
         if not directory.is_dir():
             raise FileNotFoundError(f"No series {name!r} for {sample_id}")
         return directory
@@ -1099,15 +1091,6 @@ def _or_none(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
-
-
-def _within(path: Path, parent: Path) -> bool:
-    """Return whether ``path`` sits inside ``parent``."""
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True
 
 
 __all__ = ["ProjectData", "Problem", "Curve", "Profile"]

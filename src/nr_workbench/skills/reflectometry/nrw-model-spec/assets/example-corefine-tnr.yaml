@@ -15,7 +15,7 @@ materials:
   Ti: {rho: -3.0}
   Si: {rho: 2.07}
 
-stack:                                      # ambient -> substrate
+stack:                                      # measured through the Si, so it is last
   - {name: THF,  material: THF,  thickness: 0,   roughness: 25}
   - {name: CuOx, material: CuOx, thickness: 60,  roughness: 20}
   - {name: Cu,   material: Cu,   thickness: 500, roughness: 5}

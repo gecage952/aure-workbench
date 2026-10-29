@@ -123,7 +123,6 @@ class CurationData:
             "curation": state.as_dict(),
             "final": str(holder["fit_id"]) if holder else None,
             "delete_refusal": refusal,
-            "max_reason": curation.MAX_REASON,
         }
 
     def _check(self, fit_id: str) -> None:

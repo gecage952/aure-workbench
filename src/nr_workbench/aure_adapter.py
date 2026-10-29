@@ -53,13 +53,12 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     # CI rather than when a scientist is waiting on a first fit.
     "aure.setup": ("load_setup", "dump_setup"),
     "aure.workflow.runner": ("run_analysis",),
-    # The only `aure.nodes` entry. That module's header pulls langchain, the
-    # AuRE skill registry and the whole node graph, so it is imported inside
-    # `judge_fit` alone and never for the arithmetic next to it -- AuRE's
-    # boundary-hit and BIC helpers live in the same file and are five and
-    # twenty lines of pure maths, reimplemented in `fitting/assess.py` rather
-    # than paid for with that import.
-    "aure.nodes.evaluation": ("analyze_fit_quality_with_llm",),
+    # The language-model client. `nrw assess`, `nrw model new --from-notes` and
+    # `nrw isaac export` reach a model through `complete` and `llm_available`
+    # and nothing else, and `llm_available` reports a renamed function as no
+    # endpoint at all -- so a rename has to fail here, not there.
+    "aure.llm.config": ("llm_available", "get_llm_config", "get_llm_info"),
+    "aure.llm.providers": ("get_llm",),
 }
 
 
@@ -444,25 +443,6 @@ ENVIRONMENT_ONLY_KNOBS: dict[str, str] = {
     "USE_RUN_TITLE": "0",
 }
 
-#: Setup keys that choose the language-model endpoint or carry its credential.
-#: AuRE accepts all of these and applies them as environment overrides for the
-#: duration of a run, so a setup file can silently re-point the run at another
-#: host -- taking the caller's own ``LLM_API_KEY`` with it, because AuRE reads
-#: the key from the ambient environment while taking the URL from the file.
-#:
-#: A setup is a *tracked, shareable* file here, which is exactly why this
-#: matters: one arriving from a collaborator, or from an archived beamtime,
-#: must not be able to decide where this machine's credentials are sent. The
-#: endpoint comes from ``.env``, which is gitignored for the same reason.
-CREDENTIAL_SETUP_KEYS: tuple[str, ...] = (
-    "llm_api_key",
-    "llm_base_url",
-    "llm_provider",
-    "llm_model",
-    "llm_temperature",
-    "llm_timeout",
-)
-
 
 class SetupInvalidError(Exception):
     """Raised when a setup document is rejected -- by AuRE, or by us.
@@ -473,18 +453,6 @@ class SetupInvalidError(Exception):
     fix. Reporting the second as the first sends a fixable data problem to an
     issue tracker.
     """
-
-
-def credential_keys_in(document: dict[str, Any]) -> list[str]:
-    """Return any endpoint- or credential-choosing keys the document sets.
-
-    Args:
-        document: A parsed setup mapping.
-
-    Returns:
-        The offending key names, in declaration order.
-    """
-    return [key for key in CREDENTIAL_SETUP_KEYS if document.get(key) not in (None, "")]
 
 
 def validate_setup(path: Path) -> dict[str, Any]:
@@ -505,8 +473,7 @@ def validate_setup(path: Path) -> dict[str, Any]:
 
     Raises:
         AureUnavailableError: If AuRE is not importable.
-        SetupInvalidError: If the setup is rejected -- by AuRE's own loader, or
-            because it tries to choose the language-model endpoint.
+        SetupInvalidError: If AuRE's own loader rejects the setup.
     """
     try:
         from aure.setup import load_setup
@@ -514,23 +481,9 @@ def validate_setup(path: Path) -> dict[str, Any]:
         raise AureUnavailableError(f"Cannot import aure.setup: {exc}") from exc
 
     try:
-        document = dict(load_setup(str(path)))
+        return dict(load_setup(str(path)))
     except Exception as exc:
         raise SetupInvalidError(f"{path}: {exc}") from exc
-
-    # Checked after parsing so synonyms and coercion have been applied, and
-    # before the caller can act on the document. See CREDENTIAL_SETUP_KEYS.
-    offending = credential_keys_in(document)
-    if offending:
-        raise SetupInvalidError(
-            f"{path} sets {', '.join(offending)}. A setup file may not choose "
-            "the language-model endpoint or carry a key: it is committed and "
-            "shared, and AuRE would apply those to the run while still using "
-            "the API key from your environment. Remove them -- the endpoint "
-            "comes from .env, which is gitignored. If this file came from "
-            "somebody else, rotate any key you have configured."
-        )
-    return document
 
 
 # --------------------------------------------------------------------------
@@ -628,38 +581,6 @@ def load_data(path: Path) -> dict[str, np.ndarray]:
 #: of every water contrast series.
 H2O_SLD = -0.56
 D2O_SLD = 6.37
-
-
-#: The substrates this repository actually measures through, and nothing else.
-#: Back-reflection prompts need the substrate SLD when a spec has not declared
-#: one, and that is the only surviving caller of a name-to-SLD lookup here.
-#: Three constants of nature, deliberately not a materials table -- anything
-#: else states its `rho` in the spec, where a reader can see it.
-_SUBSTRATE_SLD: dict[str, float] = {
-    "si": 2.07,
-    "silicon": 2.07,
-    "sio2": 3.47,
-    "quartz": 3.47,
-    "fused silica": 3.47,
-    "silica": 3.47,
-    "al2o3": 5.67,
-    "sapphire": 5.67,
-    "alumina": 5.67,
-}
-
-
-def substrate_sld(name: str) -> float | None:
-    """SLD of a known substrate, or None if it is not one of the three.
-
-    Args:
-        name: Substrate material name, as written in the spec.
-
-    Returns:
-        The SLD in 1e-6 per square angstrom, or None when the name is not a
-        substrate this repository knows. None is the signal to leave the
-        prompt without one rather than to guess.
-    """
-    return _SUBSTRATE_SLD.get(name.strip().lower())
 
 
 def contrast_match_ratio(
@@ -840,92 +761,3 @@ def complete(system: str, user: str, *, temperature: float = 0.0) -> str:
         ]
         return "".join(parts)
     return str(content)
-
-
-def judge_fit(
-    *,
-    chisq: float,
-    method: str,
-    parameters: dict[str, float],
-    sample_description: str,
-    converged: bool | None = None,
-    skill_context: str = "",
-    hypothesis: str | None = None,
-    boundary_hits: list[dict[str, Any]] | None = None,
-    per_file_results: list[dict[str, Any]] | None = None,
-    bic: float | None = None,
-    n_params: int = 0,
-    n_layers: int = 0,
-    chi2_max: float = 5.0,
-) -> dict[str, Any]:
-    """Ask a language model whether a fit is physically sensible.
-
-    Wraps AuRE's fit evaluator. What it adds over the numbers is the only
-    thing arithmetic cannot supply: a reading of the parameter values against
-    the sample's own description and the installed domain skills.
-
-    Args:
-        chisq: Reduced chi-squared. Must be a real number -- AuRE formats it
-            with ``:.3f`` and raises on ``None``.
-        method: The fitter used.
-        parameters: Best-fit values by name.
-        converged: Whether the sampler reported convergence. ``None`` means the
-            fitter does not test it, which is reported as not converged.
-        sample_description: The prose from ``sample.md``.
-        skill_context: Concatenated SKILL.md bodies, the physics grounding.
-        hypothesis: What the fit was testing, if recorded.
-        boundary_hits: Parameters on their bounds, in AuRE's shape.
-        per_file_results: ``[{"label": str, "chi_squared": float}, ...]``.
-        bic: Bayesian information criterion.
-        n_params: Free parameter count.
-        n_layers: Layers in the stack.
-        chi2_max: The acceptance threshold shown to the model.
-
-    Returns:
-        AuRE's verdict: ``acceptable``, ``quality_assessment``, ``issues``,
-        ``suggestions``, ``physical_concerns`` and more. ``next_action`` and
-        ``proposed_hypothesis_id`` are absent when AuRE fell back, so read
-        every key with ``.get``.
-
-    Raises:
-        AureUnavailableError: If no endpoint is configured, or the call fails.
-    """
-    if not llm_available():
-        raise AureUnavailableError(
-            "No language-model endpoint is configured. "
-            f"{endpoint_hint()} `nrw doctor` reports what it sees."
-        )
-
-    try:
-        from aure.nodes.evaluation import analyze_fit_quality_with_llm
-
-        verdict = analyze_fit_quality_with_llm(
-            {
-                "chi_squared": float(chisq),
-                "method": method,
-                # Never hard-code this. A DREAM run that did not converge can
-                # have the best chi-squared of a set -- on the real Cu/THF
-                # corpus it did -- and telling the judge it converged hides
-                # the one fact that disqualifies the fit. Unknown reads as
-                # not-converged here because AuRE's prompt has no third state,
-                # and "not checked" must not read as "clean".
-                "converged": bool(converged),
-                "parameters": {k: float(v) for k, v in parameters.items()},
-            },
-            sample_description,
-            hypothesis,
-            None,
-            chi2_max=chi2_max,
-            boundary_hits=boundary_hits,
-            bic=bic,
-            n_params=n_params,
-            n_layers=n_layers,
-            skill_context=skill_context,
-            per_file_results=per_file_results,
-        )
-    except Exception as exc:
-        raise AureUnavailableError(
-            f"The fit evaluation failed: {type(exc).__name__}: {exc}"
-        ) from exc
-
-    return dict(verdict) if isinstance(verdict, dict) else {}

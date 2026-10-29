@@ -18,7 +18,7 @@ from typing import Any
 
 import click
 
-from nr_workbench.fitting.assess import Assessment, as_markdown, check
+from nr_workbench.fitting.assess import VERDICT_LISTS, Assessment, as_markdown, check
 from nr_workbench.notes import NOTES_FILENAME
 from nr_workbench.project.layout import ProjectLayout, ProjectNotFoundError
 from nr_workbench.provenance.index import FitIndex
@@ -165,8 +165,16 @@ def _add_judgement(
         )
         return
 
-    from nr_workbench.aure_adapter import judge_fit
-    from nr_workbench.fitting.assess import read_par
+    from nr_workbench.aure_adapter import complete
+    from nr_workbench.fitting import judge
+    from nr_workbench.fitting.assess import (
+        per_model_chisq,
+        read_bounds,
+        read_par,
+        read_uncertainty,
+    )
+    from nr_workbench.notes import inert
+    from nr_workbench.spec.authoring import find_skills
 
     if not isinstance(assessment.chisq, int | float):
         assessment.problems.append(
@@ -174,96 +182,70 @@ def _add_judgement(
         )
         return
 
-    sample = entry.get("sample")
-    description = _sample_description(layout, sample, directory)
-
-    try:
-        verdict = judge_fit(
-            chisq=float(assessment.chisq),
-            method=str((manifest.get("params") or {}).get("method") or "unknown"),
-            parameters=read_par(directory),
-            sample_description=description,
-            converged=(manifest.get("info") or {}).get("converged"),
-            skill_context=_skill_context(layout),
-            boundary_hits=_boundary_hits(assessment),
-            bic=assessment.bic,
-            n_params=assessment.n_free or 0,
-            n_layers=_layer_count(directory),
+    parameters = read_par(directory)
+    if not parameters:
+        assessment.problems.append(
+            "No fitted values to judge, so no language model was asked."
         )
-    except AureUnavailableError as exc:
-        assessment.problems.append(str(exc))
         return
 
+    notes = _sample_notes(layout, entry.get("sample"))
+    spec = _frozen_spec_text(directory)
+    reference, unreadable = judge.reference_for(notes, spec, find_skills(layout.root))
+    if unreadable:
+        assessment.problems.append(
+            f"Could not read the skill(s) {', '.join(unreadable)}, so the "
+            "language model was asked without them."
+        )
+
+    system, user = judge.build_prompt(
+        assessment=assessment,
+        notes=notes,
+        spec=spec,
+        parameters=parameters,
+        bounds=read_bounds(directory),
+        uncertainty=read_uncertainty(directory),
+        per_model=per_model_chisq(directory),
+        method=str((manifest.get("params") or {}).get("method") or "unknown"),
+        converged=(manifest.get("info") or {}).get("converged"),
+        reference=reference,
+    )
+    try:
+        reply = complete(system, user)
+    except AureUnavailableError as exc:
+        # The provider's own text: one inert line, as everything from outside is.
+        assessment.problems.append(inert(exc, 2000))
+        return
+
+    verdict = judge.read_verdict(reply)
+    if verdict is None:
+        # Never a stand-in verdict: a heuristic written up under "What a
+        # language model made of it" would read as the model's opinion.
+        assessment.problems.append(
+            "The language model answered, but not with a verdict that could be "
+            "read, so nothing judged whether these values are physically sensible."
+        )
+        return
     assessment.judgement = verdict
 
 
-def _boundary_hits(assessment: Assessment) -> list[dict[str, Any]]:
-    """Re-shape our bound findings into what AuRE's prompt formatter wants.
+def _sample_notes(layout: ProjectLayout, sample: Any) -> str:
+    """What the scientist wrote in ``sample.md``, or ``""`` when it has none.
 
-    AuRE renders each hit with ``:.4f`` on ``value`` and ``bound_value``, so
-    every key has to be present and numeric or the prompt raises.
+    Without the template's guidance: its examples describe other samples.
     """
-    hits = []
-    for finding in assessment.findings:
-        if finding.kind != "bound" or not finding.parameter:
-            continue
-        if finding.value is None or finding.limit is None:
-            continue
-        hits.append(
-            {
-                "name": finding.parameter,
-                "value": float(finding.value),
-                "bound_hit": finding.edge or "lower",
-                "bound_value": float(finding.limit),
-            }
-        )
-    return hits
+    from nr_workbench.notes import strip_comments
 
-
-def _sample_description(layout: ProjectLayout, sample: Any, directory: Path) -> str:
-    """The prose a model needs to judge whether parameters make sense."""
-    parts = []
-    if sample:
-        path = layout.sample(str(sample)) / "sample.md"
-        if path.is_file():
-            parts.append(path.read_text(encoding="utf-8"))
-    spec = directory / "spec.yaml"
-    if spec.is_file():
-        parts.append("Model spec:\n" + spec.read_text(encoding="utf-8"))
-    return "\n\n".join(parts) or "(not provided)"
-
-
-def _skill_context(layout: ProjectLayout) -> str:
-    """Concatenate the installed domain skills, the prompt's physics grounding.
-
-    Without this the model has chi-squared and a list of numbers, which is
-    exactly the situation where it invents plausible physics.
-    """
-    directory = layout.skills_dir
-    if not directory.is_dir():
+    if not sample:
         return ""
-    bodies = []
-    for path in sorted(directory.glob("*/*/SKILL.md")):
-        try:
-            bodies.append(path.read_text(encoding="utf-8"))
-        except OSError:
-            continue
-    return "\n\n---\n\n".join(bodies)
+    path = layout.sample(str(sample)) / "sample.md"
+    return strip_comments(path.read_text(encoding="utf-8")) if path.is_file() else ""
 
 
-def _layer_count(directory: Path) -> int:
-    """Layers in the frozen spec, or zero."""
-    spec = directory / "spec.yaml"
-    if not spec.is_file():
-        return 0
-    try:
-        import yaml
-
-        payload = yaml.safe_load(spec.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001 - a count is not worth failing over
-        return 0
-    stack = (payload or {}).get("stack") if isinstance(payload, dict) else None
-    return len(stack) if isinstance(stack, list) else 0
+def _frozen_spec_text(directory: Path) -> str:
+    """The spec the fit froze, as written, or ``""`` for a fit without one."""
+    path = directory / "spec.yaml"
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def _print(assessment: Assessment) -> None:
@@ -289,7 +271,7 @@ def _print(assessment: Assessment) -> None:
     if judgement:
         click.echo()
         click.echo(f"  model     {judgement.get('quality_assessment', 'unknown')}")
-        for key in ("issues", "physical_concerns", "suggestions"):
+        for key, _ in VERDICT_LISTS:
             for item in judgement.get(key) or []:
                 click.echo(f"    {key[:-1] if key.endswith('s') else key}: {item}")
 

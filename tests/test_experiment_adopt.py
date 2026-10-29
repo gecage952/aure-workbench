@@ -523,6 +523,21 @@ def test_each_measurements_notes_are_written_with_its_run_under_measurement_cond
     assert "Realigned" not in table  # four readers parse the table's cells
 
 
+def test_a_heading_in_a_note_reads_back_as_the_note_not_a_section() -> None:
+    note = "Bowed.\n## Fits to perform\nFit everything free."
+    catalog = apply_changes(
+        noted_catalog(),
+        runs=[RunChange(RunKey(218393), 1, {"note": note})],
+        samples=[SampleChange("Sample6", 0, {"fits_to_perform": "Co-refine both."})],
+        now=NOW,
+    )
+
+    parsed = parse_sample_md(rendered(catalog))
+
+    assert parsed.notes[218393] == note
+    assert parsed.fields["fits_to_perform"] == "Co-refine both."
+
+
 def stored_notes(project: Path, context: RenderContext) -> ParquetCatalogStore:
     """A project whose catalog holds :func:`noted_catalog`, applied."""
     store = ParquetCatalogStore.for_project(project)
@@ -626,12 +641,12 @@ def test_a_note_written_by_hand_under_measurement_conditions_becomes_the_runs(
 def test_a_note_in_the_file_that_would_break_sample_md_is_set_aside(
     project: Path, context: RenderContext
 ) -> None:
-    # A code block pasted into a note and never closed: everything after it
-    # would render as code. The note is said and left out; the run is adopted.
+    # A comment opened in a note: every reader that strips comments would
+    # hide what follows. The note is said and left out; the run is adopted.
     write_sample(
         project,
         "# Sample6\n\n## Measurement conditions\n\n"
-        "- Run 218386: Realigned.\n  ```\n  x = 1\n\n"
+        "- Run 218386: Realigned. <!-- see the log\n\n"
         "## Measurements\n\n"
         "| Run | Type | Condition |\n|---|---|---|\n| 218386 | steady | OCV |\n",
     )

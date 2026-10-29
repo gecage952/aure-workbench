@@ -1,4 +1,4 @@
-"""The experiment's runs and samples, as the page and the command line report them.
+"""The experiment, its runs and samples, as the page and the command line report them.
 
 Both show the same things, and each used to build its own dictionary for them.
 They had already drifted: the command line said "the source does not list it"
@@ -11,7 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from nr_workbench.experiment.model import Catalog, RunEntry, RunKey
+from nr_workbench.experiment.model import (
+    Catalog,
+    ExperimentContext,
+    RunEntry,
+    RunKey,
+)
 from nr_workbench.experiment.render import sample_md_relpath
 
 #: The state shown for a run the catalog records but the data source does not
@@ -98,6 +103,25 @@ def sample_card(root: Path, catalog: Catalog, sample_id: str) -> dict[str, Any]:
         "rev": context.rev,
         "runs": [e.key.run for e in runs if e.include],
         "excluded": [e.key.run for e in runs if not e.include],
+    }
+
+
+def experiment_card(record: ExperimentContext) -> dict[str, Any]:
+    """The experiment's own context: what every sample in it is part of.
+
+    Args:
+        record: The catalog's experiment record.
+
+    Returns:
+        The JSON-ready card, with the revision an edit is made against. The
+        columns a newer nrw added are left out, as they are of a sample's
+        card: they are that version's to show.
+    """
+    return {
+        "summary": record.summary,
+        "hypotheses": record.hypotheses,
+        "notes": record.notes,
+        "rev": record.rev,
     }
 
 

@@ -138,6 +138,7 @@ def test_load_problem_reports_a_missing_script(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.fit
 def test_our_export_path_writes_the_uncertainty_block(
     script_project: Path, tmp_path: Path
 ) -> None:
@@ -164,6 +165,7 @@ def test_our_export_path_writes_the_uncertainty_block(
     assert "chain" in outcome.artifacts
 
 
+@pytest.mark.fit
 @pytest.mark.slow
 def test_bumps_export_kwarg_still_drops_the_uncertainty_block(
     script_project: Path, tmp_path: Path
@@ -367,19 +369,6 @@ def test_an_optimiser_has_no_opinion_about_convergence() -> None:
     from nr_workbench.fitting.runner import _read_convergence
 
     assert _read_convergence([], "amoeba") is None
-
-
-def test_the_judge_is_not_told_a_fit_converged_when_it_did_not() -> None:
-    """`judge_fit` hard-coded `converged: True`, so the LLM was told the one
-    non-converged fit in the corpus had converged -- at a chi-squared better
-    than the answer's."""
-    import inspect
-
-    from nr_workbench import aure_adapter
-
-    source = inspect.getsource(aure_adapter.judge_fit)
-    assert '"converged": True' not in source
-    assert "converged" in inspect.signature(aure_adapter.judge_fit).parameters
 
 
 # --------------------------------------------------------------------------

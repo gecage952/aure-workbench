@@ -64,18 +64,26 @@ Or copy [assets/example-corefine-tnr.yaml](assets/example-corefine-tnr.yaml),
 which is the full worked case: two OCV states, three angle segments each, and
 fifteen tNR slices constrained between them.
 
-### 2. Declare the stack, ambient first
+### 2. Declare the stack, the medium the beam enters through last
 
 ```yaml
 materials:
   THF: {rho: 6.2}
   Cu:  {rho: 6.3}
   Si:  {rho: 2.07}
-stack:                                # ambient -> substrate
+stack:                                # the beam enters through the last entry
   - {name: THF, material: THF, thickness: 0,   roughness: 25}
   - {name: Cu,  material: Cu,  thickness: 500, roughness: 5}
   - {name: Si,  material: Si}
 ```
+
+refl1d takes the **last** entry as the medium the beam enters from, so the order
+is the measurement geometry. This cell is measured through the silicon (back
+reflection), so silicon is last, with no thickness or roughness, and the THF
+behind the film is first, at thickness 0. A film measured from the air side is
+the other way round: substrate first, air last. Backwards, the fit converges
+and reports a chi-squared in the hundreds; `nrw model validate` checks the order
+against the measured critical edge.
 
 The thickness and roughness here are the **starting values**. `range` says
 where a parameter may go; the stack says where it starts.

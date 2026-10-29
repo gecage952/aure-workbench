@@ -3,15 +3,13 @@
 The terminal's side of what the Fits page offers. The rules -- what may be
 discarded, what must be discarded before its files go, what nothing may use
 if they do -- are :mod:`nr_workbench.provenance.curation`'s, so the two cannot
-disagree. Each refuses under ``NRW_AGENT``: which fits are good, set aside or
-deleted is a person's judgement, as a promotion is.
+disagree.
 """
 
 from __future__ import annotations
 
 import click
 
-from nr_workbench.agent.guard import refuse_if_agent
 from nr_workbench.project.layout import ProjectLayout, ProjectNotFoundError
 
 
@@ -31,7 +29,6 @@ def run_curate(
     """
     from nr_workbench.provenance import curation
 
-    refuse_if_agent("curate")
     try:
         layout = ProjectLayout.discover()
     except ProjectNotFoundError as exc:

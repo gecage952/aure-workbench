@@ -51,8 +51,10 @@ Three things have to be in there, and none of them is in the data:
   absorb into a layer and still converge.
 - **Which side the beam enters.** A solid/liquid cell is measured *through the
   wafer*. Say so in those words, or "back reflection" — `nrw aure new` looks for
-  them. Getting this backwards produces a fit that converges and reports a
-  chi-squared in the hundreds with nothing naming the cause.
+  them, and reads them negated ("from the air side, not through the
+  substrate") as the ambient side. Getting this backwards produces a fit that
+  converges and reports a chi-squared in the hundreds with nothing naming the
+  cause.
 
 If you already suspect something — a native oxide, a swollen layer — write it
 under `## Fits to perform`. AuRE will rank it as a candidate and test it.
@@ -147,6 +149,13 @@ nrw model validate samples/Cu4/models/cu-thf-first.yaml
 against the measured critical edge, independently of what you wrote in
 `sample.md`. If it contradicts what you believe about your own measurement,
 something is wrong and it is worth finding out which of the two before fitting.
+
+The spec frees what AuRE's fit freed, in the bounds it fitted them in: each
+layer's thickness, SLD and interface, the substrate's interface, an intensity
+for each angle segment, and the sample broadening, theta offset or background
+when AuRE fitted them, at the values it found. So the fit that follows starts
+where AuRE ended. The segments' intensities are the exception: a spec gives
+them one starting value, and the import says what AuRE's were.
 
 The written spec says at the top who proposed it:
 

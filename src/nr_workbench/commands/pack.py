@@ -41,7 +41,7 @@ from typing import Any
 import click
 
 from nr_workbench.project.layout import ProjectLayout, ProjectNotFoundError
-from nr_workbench.provenance.hashing import sha256_file
+from nr_workbench.provenance.hashing import MODEL_ROLES, sha256_file
 from nr_workbench.provenance.index import FitIndex
 from nr_workbench.provenance.lookup import FitNotFoundError, resolve_fit
 from nr_workbench.provenance.record import FitDirectory
@@ -170,6 +170,12 @@ def _build(
 
     provenance = manifest.get("provenance", {})
     script_entry = next((e for e in inputs if e.get("role") == "script"), None)
+    if script_entry is None and any(e.get("role") == "problem" for e in inputs):
+        raise click.ClickException(
+            "This fit ran another fit's problem file (`nrw fit run --from`), "
+            "not a script, and a bundle reproduces a script's run: pack the "
+            "fit it came from."
+        )
     if script_entry is None:
         raise click.ClickException(
             "This fit recorded no script, so there is nothing to reproduce. "
@@ -182,7 +188,7 @@ def _build(
     _copy(fit_dir / "model.py", staging / script_rel)
 
     # 2. Every measurement, at its recorded path.
-    data_entries = [e for e in inputs if e.get("role") != "script"]
+    data_entries = [e for e in inputs if e.get("role") not in MODEL_ROLES]
     copied = []
     for item in data_entries:
         relative = Path(str(item["path"]))

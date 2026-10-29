@@ -431,54 +431,6 @@ def _runs_already_fitted(
 
 
 # --------------------------------------------------------------------------
-# The output budget
-# --------------------------------------------------------------------------
-
-#: One page per sample, and one escalations file. Not a setting: forty
-#: individually defensible records are collectively unreadable, and once the
-#: scientist stops reading, every other safety property here is a formality.
-#: A session that wants to say more must say it in the same page.
-MAX_REPORT_WORDS = 1200
-
-
-def output_budget(root: Path, sample: str) -> tuple[int, int]:
-    """How much prose exists for one sample, as (files, words).
-
-    Args:
-        root: Project root.
-        sample: Sample identifier.
-
-    Returns:
-        The number of report files and the total word count.
-    """
-    reports = Path(root) / "samples" / sample / "reports"
-    if not reports.is_dir():
-        return (0, 0)
-    files = sorted(p for p in reports.rglob("*.md") if p.is_file())
-    words = sum(
-        len(p.read_text(encoding="utf-8", errors="replace").split()) for p in files
-    )
-    return (len(files), words)
-
-
-def over_budget(root: Path, sample: str) -> str:
-    """Why this sample's output is unreadable, or an empty string.
-
-    Checked after each session rather than enforced during one. A hard stop
-    mid-session would leave a half-written page, which is worse than a long
-    one; naming it here means the next session is told to consolidate.
-    """
-    files, words = output_budget(Path(root), sample)
-    if words > MAX_REPORT_WORDS:
-        return (
-            f"samples/{sample}/reports/ holds {words} words across {files} "
-            f"file(s), over the {MAX_REPORT_WORDS}-word budget. Consolidate "
-            "into one page before writing more; nobody reads the second one."
-        )
-    return ""
-
-
-# --------------------------------------------------------------------------
 # The loop
 # --------------------------------------------------------------------------
 
@@ -687,10 +639,6 @@ def _poll(
             started += 1
             count[0] = started
             say(f"{sample}: session finished (exit {session.returncode})")
-
-            crowded = over_budget(Path(root), sample)
-            if crowded:
-                say(f"{sample}: {crowded}")
 
             if max_sessions is not None and started >= max_sessions:
                 break

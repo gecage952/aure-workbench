@@ -260,9 +260,13 @@ nrw data features <file>      # critical edge -> implied SLD, fringes -> thickne
 
 Three specific checks:
 
-1. **Critical edge.** `nrw data features` reports `Qc` and the SLD it implies.
-   Compare with the SLD of your top layer — if the data says 4.3 and your
-   model says 6.2, the model is wrong or the sample is not what you think.
+1. **Critical edge.** `nrw data features` reports `Qc` and the SLD it implies,
+   which is a step: the SLD of the medium that reflects the beam totally, less
+   that of the medium the beam enters through. From air, compare it with that
+   medium's SLD in your model. Through the substrate, add the substrate's SLD
+   first — d8-THF measured through silicon gives a step of about 4.3, which is
+   no solvent. If they still disagree, the model is wrong or the sample is not
+   what you think.
 2. **Segment ratios within 3σ**, or an explicit per-segment intensity saying
    why not.
 3. **`chi2` over a tNR reference block ≈ 1.** If it is 5, the uncertainties in

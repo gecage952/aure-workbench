@@ -58,7 +58,7 @@ has no way to receive any — so everything is an environment variable.
 | `NRW_VERSION` | `main` | Git ref (branch, tag or commit) to install |
 | `NRW_REPO` | this repository | Git URL to install from |
 | `NRW_PYTHON` | `3.13` | Python version for the tool environment |
-| `NRW_EXTRAS` | *(none)* | Extras to include, comma-separated: `nexus` for HDF5/NeXus reading, `isaac` for publishing fits to the ISAAC Portal |
+| `NRW_EXTRAS` | *(none)* | Extras to include, comma-separated: `nexus` for HDF5/NeXus reading, `isaac` for publishing fits to the ISAAC Portal, `tiled` for `nrw tiled` |
 | `NRW_UV_VERSION` | *(latest)* | Pin uv to a version, e.g. `0.12.17` |
 | `NRW_SYSTEM_CERTS` | `0` | `1` to use the system trust store from the start |
 | `NRW_INSTALL_DRY_RUN` | `0` | `1` prints what would run and exits, changing nothing |

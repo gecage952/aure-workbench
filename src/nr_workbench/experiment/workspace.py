@@ -39,8 +39,8 @@ class _Unavailable:
         del inventory
         return FeedUpdate(problems=(self.problem,))
 
-    def read_bytes(self, file: Any, *, max_bytes: int) -> bytes:
-        del file, max_bytes
+    def read_bytes(self, file: Any) -> bytes:
+        del file
         raise OSError(self.problem.message)
 
 
@@ -70,9 +70,6 @@ class _UnavailableStore:
         raise CatalogUnavailableError(self.reason)
 
     def load(self) -> Any:
-        return self._refuse()
-
-    def load_report(self) -> Any:
         return self._refuse()
 
     def update(self, **kwargs: Any) -> Any:

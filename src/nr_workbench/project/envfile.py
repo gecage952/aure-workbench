@@ -6,28 +6,20 @@ to, and leaves every other byte as it was. It is edited through python-dotenv's
 own parser -- the reader every nrw command uses -- so what nrw changes is what
 a reader sees change, a quoted value spanning lines included.
 
-In a shared project another account could plant a link at ``.env``, so the file
-is read through a descriptor opened without following one, and replaced whole
-(:func:`nr_workbench.fsutil.atomic_write_bytes`) with the mode that descriptor
-reported: it is never looked up by name after the check. A new one is readable
-by its owner only, because it is where keys go.
+The file is replaced whole (:func:`nr_workbench.fsutil.atomic_write_bytes`),
+keeping its mode; a new one is readable by its owner only, because it is where
+keys go.
 
 A change is made against the revision of the file the page was shown, and
 checked again just before the file is replaced, so an edit made by hand in
-between is refused rather than written over. The revision is keyed per
-process: it is served to anyone who can read the page, and a plain hash of a
-file of secrets would confirm a guess of its contents.
+between is refused rather than written over.
 """
 
 from __future__ import annotations
 
 import hashlib
-import hmac
 import io
-import os
 import re
-import secrets
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,10 +30,6 @@ ENV_FILE = ".env"
 
 #: The revision of a project with no ``.env``.
 ABSENT = "absent"
-
-#: No settings file is larger. A bigger one -- or a link to ``/dev/zero`` -- is
-#: refused, not read into the server's memory.
-MAX_BYTES = 1 << 20
 
 #: The longest value nrw writes.
 MAX_VALUE = 128
@@ -54,13 +42,6 @@ _VALUE_RE = re.compile(rf"[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]{{0,{MAX_VALUE - 1}}}"
 
 #: The mode of a new file: the owner's alone.
 NEW_FILE_MODE = 0o600
-
-#: Keys the revisions of this process: they need only match within its life.
-_REVISION_KEY = secrets.token_bytes(32)
-
-_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-#: A FIFO planted as ``.env`` is opened without waiting for a writer.
-_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 
 
 class EnvFileError(Exception):
@@ -83,64 +64,37 @@ class EnvFile:
         path: Where it is, or would be.
         text: What it holds; ``None`` when there is no file.
         revision: What a change must be made against.
-        mode: Its permission bits, as the descriptor it was read through
-            reported them; ``None`` when there is no file.
     """
 
     path: Path
     text: str | None
     revision: str
-    mode: int | None
 
 
 def read_env_file(root: Path) -> EnvFile:
-    """Read the project's ``.env``, never through a link.
+    """Read the project's ``.env``.
 
     Args:
         root: The project.
 
     Returns:
-        Its text, revision and mode.
+        Its text and revision.
 
     Raises:
-        EnvFileError: It is a symbolic link, not a regular file, too large, not
-            UTF-8 text, or cannot be read.
+        EnvFileError: It is not UTF-8 text, or cannot be read.
     """
     path = Path(root) / ENV_FILE
-    if not _NOFOLLOW and path.is_symlink():  # pragma: no cover - Windows
-        raise EnvFileError(_LINKED)
     try:
-        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _NONBLOCK)
+        data = path.read_bytes()
     except FileNotFoundError:
-        return EnvFile(path=path, text=None, revision=ABSENT, mode=None)
+        return EnvFile(path=path, text=None, revision=ABSENT)
     except OSError as exc:
-        if path.is_symlink():
-            raise EnvFileError(_LINKED) from exc
         raise EnvFileError(f"{ENV_FILE} cannot be read: {exc.strerror}.") from exc
-    with os.fdopen(descriptor, "rb") as handle:
-        info = os.fstat(handle.fileno())
-        if not stat.S_ISREG(info.st_mode):
-            raise EnvFileError(f"{ENV_FILE} is not a regular file.")
-        data = handle.read(MAX_BYTES + 1)
-    if len(data) > MAX_BYTES:
-        raise EnvFileError(
-            f"{ENV_FILE} is larger than {MAX_BYTES // 1024} KiB, which no "
-            "settings file is."
-        )
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise EnvFileError(f"{ENV_FILE} is not UTF-8 text.") from exc
-    revision = hmac.new(_REVISION_KEY, data, hashlib.sha256).hexdigest()
-    return EnvFile(
-        path=path, text=text, revision=revision, mode=stat.S_IMODE(info.st_mode)
-    )
-
-
-_LINKED = (
-    f"{ENV_FILE} is a symbolic link, and nrw never reads or writes one through "
-    "a link. Edit the file it points at by hand."
-)
+    return EnvFile(path=path, text=text, revision=hashlib.sha256(data).hexdigest())
 
 
 def check_value(name: str, value: str) -> str:
@@ -199,7 +153,7 @@ def set_values(
     atomic_write_bytes(
         current.path,
         text.encode("utf-8"),
-        mode=NEW_FILE_MODE if current.mode is None else current.mode,
+        mode=NEW_FILE_MODE if current.text is None else None,
     )
     return changes
 

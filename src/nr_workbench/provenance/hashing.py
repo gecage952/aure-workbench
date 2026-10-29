@@ -21,6 +21,11 @@ from typing import Any
 #: Read in chunks so a large chain file does not land in memory whole.
 _CHUNK = 1 << 20
 
+#: The roles of a fit's inputs that define its model rather than its
+#: measurements: the script it ran, or, for a fit run again with
+#: ``nrw fit run --from``, the recorded fit's problem file.
+MODEL_ROLES = frozenset({"script", "problem"})
+
 
 @dataclass(frozen=True)
 class FileDigest:

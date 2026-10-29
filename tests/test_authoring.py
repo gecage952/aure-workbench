@@ -10,6 +10,8 @@ and be wrong. The filter is structural, not a request in the prompt.
 from __future__ import annotations
 
 import json
+import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,7 @@ import pytest
 from nr_workbench.spec.authoring import (
     CORE_SKILLS,
     PROPOSABLE,
+    STACK_ORDER,
     AuthoringError,
     Proposal,
     agent_instructions,
@@ -272,6 +275,57 @@ def test_notes_select_extra_skills(project: Path) -> None:
     assert "polymer-films" not in chosen, "nothing in the notes calls for it"
 
 
+METAL, POLYMER, SOLVENT, THIN = (
+    "metal-oxide-interfaces",
+    "polymer-films",
+    "solvent-contrast-matching",
+    "thin-layer-degeneracy",
+)
+
+
+@pytest.mark.parametrize(
+    ("notes", "chosen", "not_chosen"),
+    [
+        # Substrings once: "cu" in "curve", "thin" in "nothing".
+        ("A curve of R against Q, nothing else.", [], [METAL, THIN]),
+        # Every sample is a film; "film" chose polymer physics for copper.
+        ("A Cu film in d8-THF.", [METAL, SOLVENT], [POLYMER]),
+        ("50 nm Ti in dTHF.", [METAL, SOLVENT], []),
+        # A stem alone: nothing else in these notes is a trigger.
+        ("A deuterated film.", [SOLVENT], [POLYMER]),
+        # A stem and a plural.
+        ("Swelling of the brushes.", [POLYMER], []),
+        ("Native oxides.", [METAL, THIN], []),
+        # A plural on an element symbol: "cu"+"es", "ti"+"es".
+        ("Visual cues only.", [], [METAL]),
+        ("The data ties them.", [], [METAL]),
+        # Formulas, which a whole-word match on "cu" missed.
+        ("Cu2O at the interface.", [METAL], []),
+        ("A CuO layer.", [METAL], []),
+    ],
+)
+def test_skills_are_chosen_by_word_not_by_substring(
+    notes: str, chosen: list[str], not_chosen: list[str]
+) -> None:
+    available = dict.fromkeys(
+        [
+            *CORE_SKILLS,
+            "metal-oxide-interfaces",
+            "polymer-films",
+            "solvent-contrast-matching",
+            "thin-layer-degeneracy",
+        ],
+        Path("x"),
+    )
+
+    picked = relevant_skills(notes, available)
+
+    for name in chosen:
+        assert name in picked, name
+    for name in not_chosen:
+        assert name not in picked, name
+
+
 def test_relevant_but_uninstalled_skills_are_reported() -> None:
     """The most relevant skills are exactly the ones init does not seed.
 
@@ -309,7 +363,7 @@ def test_the_prompt_includes_measured_facts_when_given(project: Path) -> None:
         skeleton=SKELETON,
         notes="",
         skills=find_skills(project),
-        facts="ocv1: critical edge Qc=0.0147 implies a topmost SLD near 4.28",
+        facts="ocv1: critical edge Qc=0.01467, an SLD step of 4.28",
     )
 
     assert "critical edge" in user
@@ -334,6 +388,123 @@ def test_agent_instructions_name_the_files_and_the_boundary() -> None:
     assert "never fill it in" in text
     # the ambient: from each measurement's condition, and never assumed
     assert "never assume air" in " ".join(text.split())
+
+
+def test_both_requests_give_the_same_stack_order(project: Path) -> None:
+    """The endpoint was told "AMBIENT FIRST, SUBSTRATE LAST" for every sample
+    -- back reflection -- while the assistant was told the last entry is the
+    medium the beam enters through. One rule now, said word for word in both.
+    """
+    system, _ = build_prompt(skeleton=SKELETON, notes="", skills=find_skills(project))
+    instructions = agent_instructions(
+        spec_path="m.yaml", notes_path="sample.md", skills=[], sample="S1"
+    )
+
+    for text in (system, instructions):
+        flat = " ".join(text.split())
+        assert STACK_ORDER in flat
+        # In any case: the spec skill, which goes into the same prompt, said
+        # "Declare the stack, ambient first".
+        assert "ambient first" not in flat.lower()
+
+
+def test_the_scaffold_states_the_rule_where_it_writes_the_stack(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every scaffolded spec carried "# ambient -> substrate" above its stack."""
+    from click.testing import CliRunner
+
+    from nr_workbench.cli import main
+
+    root = sample_with_data(project)
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(main, ["model", "new", "Sample1", "--name", "m"])
+
+    assert result.exit_code == 0, result.output
+    text = (root / "samples" / "Sample1" / "models" / "m.yaml").read_text()
+    assert "ambient -> substrate" not in text
+    assert "enters through the LAST entry" in text
+
+
+def test_the_assistant_reads_the_critical_edge_as_a_step() -> None:
+    """The endpoint is told what a step is beside the edges it is given. The
+    assistant runs `nrw data features` itself, and its line had said
+    "critical edge -> top-layer SLD": in back reflection, 4.28 for a d8-THF
+    cell at 6.35."""
+    flat = " ".join(
+        agent_instructions(
+            spec_path="m.yaml", notes_path="sample.md", skills=[], sample="S1"
+        ).split()
+    )
+
+    assert "top-layer SLD" not in flat
+    assert "through the substrate, add the substrate's SLD" in flat
+
+
+def test_the_scaffold_reads_the_critical_edge_as_a_step(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its materials comment said to check the edge's SLD against the top
+    layer, which in back reflection is off by the substrate's SLD."""
+    from click.testing import CliRunner
+
+    from nr_workbench.cli import main
+
+    root = sample_with_data(project)
+    monkeypatch.chdir(root)
+
+    result = CliRunner().invoke(main, ["model", "new", "Sample1", "--name", "m"])
+
+    assert result.exit_code == 0, result.output
+    text = (root / "samples" / "Sample1" / "models" / "m.yaml").read_text()
+    assert "check the top layer" not in text
+    assert "a step from the medium the beam enters through" in text
+
+
+def test_the_templates_own_examples_choose_no_skill() -> None:
+    """The scaffolded sample.md's guidance holds examples of other samples --
+    "~30 nm ionomer ... on 20 nm copper ... in D2O" -- and read as the
+    scientist's words they chose every contextual skill for every sample."""
+    blank = (
+        Path(__file__).parent / "data" / "experiment" / "blank_sample.md"
+    ).read_text(encoding="utf-8")
+    installed = dict.fromkeys(CORE_SKILLS, Path("x"))
+    # Every contextual skill on offer, or choosing none proves nothing.
+    every = dict.fromkeys([*CORE_SKILLS, METAL, POLYMER, SOLVENT, THIN], Path("x"))
+
+    assert missing_relevant(blank, installed) == []
+    assert relevant_skills(blank, every) == list(CORE_SKILLS)
+
+
+def test_the_endpoint_is_sent_the_notes_without_the_templates_guidance(
+    project: Path,
+) -> None:
+    notes = "<!-- e.g. ~30 nm ionomer on copper -->\nA Cu film in d8-THF.\n"
+
+    _, user = build_prompt(skeleton=SKELETON, notes=notes, skills=find_skills(project))
+
+    assert "A Cu film in d8-THF." in user
+    assert "ionomer" not in user
+
+
+def test_the_request_asks_for_json_in_the_user_half_too(project: Path) -> None:
+    """The claude_code provider decides from the user half alone whether a
+    reply should be JSON and may be retried."""
+    _, user = build_prompt(skeleton=SKELETON, notes="", skills=find_skills(project))
+
+    assert "json" in user.lower()
+
+
+def test_the_assistant_may_write_the_constraints_it_is_told_to_add() -> None:
+    """Step 5 asks for a `constraints:` block; step 3 once forbade writing it."""
+    text = agent_instructions(
+        spec_path="m.yaml", notes_path="sample.md", skills=[], sample="S1"
+    )
+
+    editable = text.split("Edit ONLY these parts of the spec:")[1].split("\n\n")[0]
+    assert "constraints" in editable
+    assert "constraints:` block" in text
 
 
 # --------------------------------------------------------------------------
@@ -464,6 +635,107 @@ def test_the_request_carries_each_measurement_and_never_assumes_air() -> None:
     assert "per: state, in: [<that state>]" in system
 
 
+def test_the_request_carries_the_experiments_context_after_the_notes(
+    project: Path,
+) -> None:
+    _, user = build_prompt(
+        skeleton=SKELETON,
+        notes="Cu in THF",
+        skills=find_skills(project),
+        experiment="Summary:\nDoes Li plate on Cu?",
+    )
+
+    notes = user.index("===== THE SCIENTIST'S NOTES (sample.md) =====")
+    experiment = user.index("===== THE EXPERIMENT THIS SAMPLE IS PART OF =====")
+    assert notes < experiment < user.index("===== WHAT IS ON DISK =====")
+    assert "Summary:\nDoes Li plate on Cu?" in user
+    assert "the notes are about this sample" in user
+
+
+def test_the_request_says_nothing_of_an_experiment_nothing_was_written_about(
+    project: Path,
+) -> None:
+    _, user = build_prompt(
+        skeleton=SKELETON, notes="Cu in THF", skills=find_skills(project)
+    )
+
+    assert "THE EXPERIMENT THIS SAMPLE IS PART OF" not in user
+
+
+def test_from_notes_sends_the_experiments_context(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page's New model runs this: the experiment's context reaches the
+    language model beside the sample's notes."""
+    from click.testing import CliRunner
+
+    from nr_workbench import aure_adapter
+    from nr_workbench.cli import main
+    from nr_workbench.experiment.model import ExperimentChange
+    from nr_workbench.experiment.store import ParquetCatalogStore
+
+    root = sample_with_data(project)
+    ParquetCatalogStore.for_project(root).update(
+        experiment=ExperimentChange(0, {"summary": "Does Li plate on Cu?"})
+    )
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        aure_adapter,
+        "llm_info",
+        lambda: {"available": True, "provider": "stub", "model": "test-model"},
+    )
+    asked: list[str] = []
+
+    def complete(system: str, user: str, *, temperature: float = 0.0) -> str:
+        asked.append(user)
+        return json.dumps(PROPOSED)
+
+    monkeypatch.setattr(aure_adapter, "complete", complete)
+
+    result = CliRunner().invoke(
+        main, ["model", "new", "Sample1", "--name", "m", "--from-notes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    (user,) = asked
+    assert "Summary:\nDoes Li plate on Cu?" in user
+
+
+def test_from_notes_tells_the_person_the_experiment_could_not_be_read(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The person, not only the language model: a request without the
+    experiment's context is weaker, as one without a skill is."""
+    from click.testing import CliRunner
+
+    from nr_workbench import aure_adapter
+    from nr_workbench.cli import main
+    from nr_workbench.experiment.store import CatalogCorruptError, ParquetCatalogStore
+
+    def load(self):
+        raise CatalogCorruptError("runs.parquet cannot be read")
+
+    root = sample_with_data(project)
+    monkeypatch.setattr(ParquetCatalogStore, "exists", lambda self: True)
+    monkeypatch.setattr(ParquetCatalogStore, "load", load)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        aure_adapter,
+        "llm_info",
+        lambda: {"available": True, "provider": "stub", "model": "test-model"},
+    )
+    monkeypatch.setattr(
+        aure_adapter, "complete", lambda system, user, **kw: json.dumps(PROPOSED)
+    )
+
+    result = CliRunner().invoke(
+        main, ["model", "new", "Sample1", "--name", "m", "--from-notes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "! The experiment's catalog could not be read" in result.output
+
+
 def test_from_notes_asks_with_each_runs_condition(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -489,7 +761,7 @@ def test_from_notes_asks_with_each_runs_condition(
     )
     asked: list[str] = []
 
-    def complete(system: str, user: str, **kw) -> str:
+    def complete(system: str, user: str, *, temperature: float = 0.0) -> str:
         asked.append(user)
         return json.dumps(PROPOSED)
 
@@ -769,3 +1041,135 @@ def test_the_prompt_lists_the_constraint_forms_and_how_to_choose(
         assert form in system
     assert "RETURN a `constraints` block" in system
     assert "oscillatory" in system.lower()
+
+
+# --------------------------------------------------------------------------
+# What the data says, and how the geometry reads it
+# --------------------------------------------------------------------------
+
+REFERENCE = Path(__file__).parent / "data" / "reference" / "steady"
+
+
+def _facts(tmp_path: Path, notes: str) -> str:
+    """`nrw model new`'s measured facts for the reference segment, under *notes*."""
+    pytest.importorskip("aure")
+    from nr_workbench.commands.model import _measured_facts
+    from nr_workbench.project.layout import ProjectLayout
+
+    segment = REFERENCE / "REFL_218386_1_218386_partial.txt"
+    (tmp_path / "data").mkdir(exist_ok=True)
+    shutil.copy(segment, tmp_path / "data" / segment.name)
+    document = {
+        "states": [{"name": "ocv1", "run": 218386, "data_dir": "data"}],
+        "probe": {},
+    }
+    return _measured_facts(ProjectLayout(tmp_path), document, notes)
+
+
+def _step(facts: str) -> float:
+    found = re.search(r"an SLD step of (-?[\d.]+)", facts)
+    assert found, facts
+    return float(found.group(1))
+
+
+ADD_THE_SUBSTRATE = "add the SLD of the substrate the notes name"
+
+
+def test_the_reference_edge_is_a_step_the_substrate_is_added_to(
+    tmp_path: Path,
+) -> None:
+    """The number the reading exists for: a step of 4.28 is no solvent; plus
+    silicon's 2.07 it is 6.35, d8-THF exactly. Offered as "a topmost SLD near
+    4.28", it had a proposal set the solvent's range to [4.0, 4.7]."""
+    facts = _facts(tmp_path, "Cu on Ti on Si, in d8-THF, measured through the silicon.")
+
+    assert _step(facts) == pytest.approx(4.28, abs=0.005)
+    assert ADD_THE_SUBSTRATE in facts
+    assert "the edge is the measurement" in facts
+
+
+def test_the_facts_are_the_same_whatever_the_substrate(tmp_path: Path) -> None:
+    """The substrate is the model's to name, from the notes: nothing here adds
+    one. Reading the scaffold's placeholder silicon corrected every sample as
+    silicon, and a table of substrate names, tried next, is never complete."""
+    facts = {
+        _facts(tmp_path, notes)
+        for notes in (
+            "Cu on Ti on Si, measured through the silicon.",
+            "Cu on Ti on sapphire, measured through the sapphire.",
+            "Cu on Ti, measured through the substrate.",
+            "Cu on sapphire, measured through the substrate. "
+            "Aligned on a Si wafer first.",
+        )
+    }
+
+    assert len(facts) == 1, facts
+    assert ADD_THE_SUBSTRATE in facts.pop()
+
+
+def test_a_film_in_air_is_told_only_what_a_step_is(tmp_path: Path) -> None:
+    facts = _facts(tmp_path, "30 nm polystyrene on silicon, in air.")
+
+    assert "from air, it is the reflecting medium's own SLD" in facts
+    assert ADD_THE_SUBSTRATE not in facts
+
+
+def test_no_edge_is_given_no_reading(tmp_path: Path) -> None:
+    """How to read a step is said only where there is a step to read."""
+    from nr_workbench.commands.model import _measured_facts
+    from nr_workbench.project.layout import ProjectLayout
+
+    document = {
+        "states": [{"name": "ocv1", "run": 218386, "data_dir": "data"}],
+        "probe": {"back_reflection": True},
+    }
+
+    assert _measured_facts(ProjectLayout(tmp_path), document, "") == ""
+
+
+def test_from_notes_sends_the_edge_and_how_to_read_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Through the command, on the reference data: the reading for back
+    reflection reaches the prompt only if the notes reach the facts."""
+    pytest.importorskip("aure")
+    from click.testing import CliRunner
+
+    from nr_workbench import aure_adapter
+    from nr_workbench.cli import main
+
+    root = tmp_path / "proj"
+    assert (
+        CliRunner().invoke(main, ["init", str(root), "--sample", "S1"]).exit_code == 0
+    )
+    steady = root / "samples" / "S1" / "data" / "steady"
+    steady.mkdir(parents=True, exist_ok=True)
+    for segment in REFERENCE.glob("REFL_218386_*_partial.txt"):
+        shutil.copy(segment, steady / segment.name)
+    (root / "samples" / "S1" / "sample.md").write_text(
+        "# S1\n\n## Description\n\n"
+        "Cu on Ti on Si, in d8-THF, measured through the silicon.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        aure_adapter,
+        "llm_info",
+        lambda: {"available": True, "provider": "stub", "model": "test-model"},
+    )
+    asked: list[str] = []
+
+    def complete(system: str, user: str, *, temperature: float = 0.0) -> str:
+        asked.append(user)
+        return json.dumps(PROPOSED)
+
+    monkeypatch.setattr(aure_adapter, "complete", complete)
+
+    result = CliRunner().invoke(
+        main, ["model", "new", "S1", "--name", "m", "--from-notes"]
+    )
+
+    assert result.exit_code == 0, result.output
+    (user,) = asked
+    assert "an SLD step of 4.28" in user
+    assert ADD_THE_SUBSTRATE in user

@@ -7,9 +7,8 @@
  * so far. Each step runs as a job, one at a time with the page's fits, and the
  * panel follows it. Push asks first, naming what leaves and where.
  *
- * Only a browser that opened the link `nrw serve` printed has the page token;
- * without it the panel is shown, and nothing is offered. Every value is set as
- * text.
+ * On a view-only server the panel is shown, and nothing is offered. Every
+ * value is set as text.
  */
 "use strict";
 
@@ -17,8 +16,7 @@
   const N = window.NRWPage;
   const $ = N.$;
   const el = N.el;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
-  const api = N.client(TOKEN);
+  const api = N.client();
   const panel = $("isaac");
   const said = window.NRW_CURATION;
   if (!panel || !said) return;
@@ -38,16 +36,12 @@
     });
     items.push(shown.portal.host
       ? line("Portal: " + shown.portal.host + " (ISAAC_URL, in " + shown.portal.from + ")")
-      : line("ISAAC_URL is not set: add it to ~/.nrw.", "text-warning-emphasis"));
+      : line("ISAAC_URL is not set: add it to the project's .env or ~/.nrw.",
+        "text-warning-emphasis"));
     items.push(shown.key.set
       ? line("Key: ISAAC_KEY is set, in " + shown.key.from + ".")
-      : line("ISAAC_KEY is not set: add it to ~/.nrw. It is never shown here.",
-        "text-warning-emphasis"));
-    if (shown.ignored.length) {
-      items.push(line("The project's .env sets " + shown.ignored.join(" and ") +
-        ": ignored. The portal and the key are yours, and come from your own " +
-        "settings only.", "text-warning-emphasis"));
-    }
+      : line("ISAAC_KEY is not set: add it to the project's .env or ~/.nrw. It is " +
+        "never shown here.", "text-warning-emphasis"));
     items.push(shown.records.length
       ? line(shown.records.length + " record(s) exported, " + shown.exported_at + ".")
       : line("Not exported yet."));
@@ -60,8 +54,8 @@
       ? pushes.map(function (push) {
         const made = (push.records || []).length;
         const said = "Pushed " + push.at + " by " + push.who + " to " + push.portal + ": ";
-        // Recorded before it ran: one that never reported back may still have
-        // made records, and pushing again would make them twice.
+        // A push stopped before it reported back may still have made records,
+        // and pushing again would make them twice.
         if (push.complete === undefined) {
           return said + "its outcome was never recorded, so it may have made " +
             "records. Check the portal before pushing again.";
@@ -101,12 +95,12 @@
       return;
     }
     setup();
-    if (!TOKEN || !shown.writable) return;  // shown, not offered
+    if (!shown.writable) return;  // shown, not offered
     const tools = Object.values(shown.tools).every(Boolean);
     const sendable = tools && shown.records.length && shown.portal.host && shown.key.set;
     const why = !tools ? "install the tools first"
       : !shown.records.length ? "export first"
-        : !shown.key.set || !shown.portal.host ? "set ISAAC_URL and ISAAC_KEY in ~/.nrw" : "";
+        : !shown.key.set || !shown.portal.host ? "set ISAAC_URL and ISAAC_KEY" : "";
     $("isaac-buttons").replaceChildren(
       button("Export", "isaac-export", function () { start("export"); }, running || !tools),
       button("Validate with the server", "isaac-validate", validate,
@@ -131,7 +125,7 @@
       shown.portal.host + " to validate?\n\nThe portal checks them and keeps " +
       "nothing. Your key goes with them."
     );
-    if (sure) start("validate", { host: shown.portal.host });
+    if (sure) start("validate");
   }
 
   function push() {
@@ -146,7 +140,7 @@
       "it was finalized, and any report that cites it -- and the portal keeps " +
       "them." + again
     );
-    if (sure) start("push", { confirm: said.fit_id, host: shown.portal.host });
+    if (sure) start("push", { confirm: said.fit_id });
   }
 
   async function start(step, body) {

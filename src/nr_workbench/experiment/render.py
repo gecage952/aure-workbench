@@ -19,13 +19,7 @@ import dataclasses
 from collections.abc import Iterable
 from pathlib import Path
 
-from nr_workbench.experiment.model import (
-    Catalog,
-    CatalogValidationError,
-    RunEntry,
-    clean_prose,
-    refuse_run_note_lines,
-)
+from nr_workbench.experiment.model import Catalog, RunEntry
 from nr_workbench.project.layout import ProjectLayout
 from nr_workbench.project.render import MeasurementRow, RenderContext, SampleProse
 from nr_workbench.project.samples import plan_sample_files
@@ -70,11 +64,6 @@ def prose_for(catalog: Catalog, sample_id: str) -> SampleProse:
     data reconcile``'s check that the two agree.
     """
     context = catalog.context_for(sample_id)
-    try:
-        # Saved before the rule, or by another program: refused, not rewritten.
-        refuse_run_note_lines(context.measurement_conditions)
-    except CatalogValidationError as exc:
-        raise SampleRenderError(f"sample.md cannot be written: {exc}") from exc
     included = [entry for entry in catalog.runs_for(sample_id) if entry.include]
     rows = tuple(
         MeasurementRow(entry.key.run, entry.measurement_type, entry.condition)
@@ -102,24 +91,12 @@ def run_notes(entries: Iterable[RunEntry]) -> str:
     ``- Run 218386: realigned after mounting``. A note of several lines
     continues indented, so it stays with its run for a reader, and for
     :func:`~nr_workbench.experiment.adopt.parse_sample_md` reading it back.
-
-    Raises:
-        SampleRenderError: A note breaks a rule of the prose in ``sample.md``,
-            as one saved before notes were written there may: a heading in it
-            would start a section of its own. It is refused, not rewritten.
     """
     lines: list[str] = []
     for entry in entries:
         if not entry.note:
             continue
-        try:
-            note = clean_prose(f"the note on run {entry.key.run}", entry.note)
-        except CatalogValidationError as exc:
-            raise SampleRenderError(
-                f"sample.md cannot be written: {str(exc).rstrip('.')}. "
-                "Edit the note on the Experiment page."
-            ) from exc
-        first, *rest = note.split("\n")
+        first, *rest = entry.note.split("\n")
         lines.append(RUN_NOTE_PREFIX.format(run=entry.key.run) + first)
         lines.extend(RUN_NOTE_INDENT + line if line else "" for line in rest)
     return "\n".join(lines)

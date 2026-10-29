@@ -75,9 +75,9 @@ folder — it never overwrites a file you have edited.
 
 While an experiment is running, `nrw serve` has an **Experiment** page that
 lists every run as the reduction writes it, with whether it has finished
-arriving. From an empty folder, `nrw init` then `nrw serve` is enough: the link
-it prints opens **Settings**, where you set the IPTS and the data folder, and
-check the folder before choosing it. Select runs, assign them to a sample with a condition, describe the
+arriving. From an empty folder, `nrw init` then `nrw serve` is enough:
+**Settings** is where you set the IPTS and the data folder, and check the
+folder before choosing it. Select runs, assign them to a sample with a condition, describe the
 sample, and **apply**. The data is copied into the sample and its `sample.md`
 is written. Nothing is overwritten, and only complete runs are copied. The same
 from the command line:
@@ -90,6 +90,14 @@ nrw experiment apply --write
 
 The organization is kept in `experiment/*.parquet`.
 **[docs/experiment.md](docs/experiment.md)** walks through it.
+
+To share it with everyone on the experiment, `nrw tiled push` writes it, and
+the starred and final fits, to the experiment's node on tiled.ornl.gov, and
+`nrw tiled status` says what is there. A colleague starting fresh runs `nrw
+tiled pull --context --data --fits` to bring back the catalog, the reduced
+files, and each fit as it was recorded; `nrw fit run --from <fit_id>` runs
+one again. Each acts with your own Tiled login (`nrw tiled login`), and needs
+the installer's `NRW_EXTRAS=tiled`.
 
 ### Choosing an assistant
 
@@ -107,8 +115,8 @@ locally hosted model, want OpenCode: it takes a provider and model in its own
 `opencode.json` rather than being tied to one vendor.
 
 Two things to know. **`nrw agent run` drives Claude Code or OpenCode**
-(`--harness opencode`), and checks each one's limit before a session starts:
-Claude Code's `PreToolUse` hook, or OpenCode's guard plugin and deny rules.
+(`--harness opencode`), each limited by its own guard: Claude Code's
+`PreToolUse` hook, or OpenCode's guard plugin and deny rules.
 OpenCode has no turn cap, so a session there needs `--timeout`, and refuses to
 start without one rather than run unbounded. And **narrowing the set never
 deletes anything**: files for an assistant you drop stay on disk, and nrw stops
@@ -159,8 +167,10 @@ come from `nrw fit run`, or from **Fit…** on the Experiment page, which runs
 
 1. the command line (`nrw fit run model.py --method amoeba --steps 500`), or
    the page's Fit form;
-2. the project's `nrw.toml`, under `[fit]`;
-3. bumps' own default for that fitter.
+2. with `nrw fit run --from <fit_id>`, which runs a recorded fit again from
+   its own problem file, the fitter, settings and seed that fit ran with;
+3. the project's `nrw.toml`, under `[fit]`;
+4. bumps' own default for that fitter.
 
 When nothing names a fitter, it is **DREAM**: it samples the posterior, so its
 answer comes with uncertainties. In `nrw.toml`, `[fit]` names the fitter and
@@ -243,9 +253,7 @@ For the language-model endpoint, nrw takes each variable from the first of:
 3. `~/.nrw`;
 4. `~/.aure`.
 
-The ISAAC Portal's `ISAAC_URL` and `ISAAC_KEY` follow the same order but skip
-the project's `.env`: anyone who can write the project can write that file, and
-it would choose where your key and your records are sent.
+The ISAAC Portal's `ISAAC_URL` and `ISAAC_KEY` follow the same order.
 
 `nrw doctor` lists the files it read and the settings it found, with keys
 redacted. Keys and endpoints never go in `nrw.toml`, because it is committed
@@ -256,6 +264,15 @@ To use Claude through the Claude Code CLI, which needs no key, choose it under
 `LLM_PROVIDER=claude_code` into the project's `.env`, which then wins over
 `~/.aure`, and **Check** makes one call to prove it answers. See
 [docs/experiment.md](docs/experiment.md#language-model).
+
+**What is sent, and to which model.** Four commands ask the endpoint for an
+answer — `nrw model new --from-notes`, `nrw assess`, `nrw isaac export` and
+`nrw aure run` — and `nrw agent run` drives a harness instead; while a harness
+is driving, those four stand down. [docs/llm-calls.svg](docs/llm-calls.svg)
+maps them, and one diagram per command shows how its prompt is assembled:
+[model new](docs/model-new-llm.svg), [assess](docs/assess-llm.svg),
+[isaac export](docs/isaac-export-llm.svg), [aure run](docs/aure-run-llm.svg)
+and [agent run](docs/agent-run-llm.svg).
 
 ## Provenance
 
@@ -277,14 +294,15 @@ the tree was dirty), and the bumps output. `nrw whence` traces a figure back to
 that record even after it has been copied out of the project, because the
 figures a fit writes are stamped with its id when it finishes.
 
-Re-running an identical fit is refused by default, and a result whose data has
-changed underneath it is reported as `STALE` everywhere it appears.
+Re-running an identical fit is recorded as a replicate of the first, and a
+result whose data has changed underneath it is reported as `STALE` everywhere
+it appears.
 
 Fits are curated on the fit pages of `nrw serve` — star, finalize, discard,
 restore and delete — or with `nrw fit star`, `unstar`, `discard`, `restore`
 and `delete`; **Finalize** on a page is `nrw promote --as final`. A discarded
 fit leaves the listings (`nrw ls --all` shows it) but keeps its files until you
-delete them, which is refused while anything uses them, and the record that it
+delete them, which is refused while another fit reads them, and the record that it
 ran is never lost. A sample's final fit is published to the ISAAC Portal from
 its page, or with `nrw isaac export` and `nrw isaac push`, and each push is
 recorded with the fit. See
@@ -317,9 +335,8 @@ package supplies what has to exist around it: the offline checks it reads
 first, limits it cannot talk past, a bounded session, and a transcript.
 Promoting or curating fits, publishing to ISAAC, `nrw aure run`, organizing the
 experiment, `nrw sample reset`, `init --nested` and any `--force` are refused by
-the harness's hook *and* by `nrw` itself under `NRW_AGENT=1`; the full list,
-with what stays allowed, is in
-[docs/agent.md](docs/agent.md#the-limits-and-why-there-are-two-of-them).
+the harness's hook; the full list, with what stays allowed, is in
+[docs/agent.md](docs/agent.md#the-limits).
 
 A session refuses to start unless `## Fits to perform` in the sample's notes
 says what you want. Deciding that is the one thing it must not do for itself.
@@ -335,7 +352,7 @@ Working. The scaffold and skills, the provenance spine, the tNR assessment
 tools, the model spec and generator, the web UI — its Experiment page, fit
 curation and ISAAC publishing included — and the data tools are all
 implemented, along with `nrw pack`, `nrw note`, `nrw assess`, `nrw isaac
-export` and `push`, and the unattended agent above.
+export` and `push`, `nrw tiled`, and the unattended agent above.
 
 ## Development
 

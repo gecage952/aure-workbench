@@ -11,9 +11,10 @@ per-model chi-squared spread, and BIC against the sibling fits of the same
 sample. None of that is a matter of opinion, and all of it is the kind of thing
 that gets missed at 2am.
 
-The **judgement** half calls AuRE's ``analyze_fit_quality_with_llm``, which asks
-a model whether the numbers are physically sensible given ``sample.md`` and the
-installed domain skills. It runs only when an endpoint is configured.
+The **judgement** half, :mod:`nr_workbench.fitting.judge`, asks a model whether
+the numbers are physically sensible given ``sample.md`` and the skills its notes
+call for, and hands it what this half found. It runs only when an endpoint is
+configured.
 
 The split matters because AuRE's own no-LLM fallback (``_simple_evaluation``)
 is three chi-squared bands and nothing else --- it reads no parameters, no
@@ -179,6 +180,19 @@ class Assessment:
             if any(f.severity == level for f in self.findings):
                 return level
         return "ok"
+
+
+#: The lists a language model's verdict carries, with each one's heading in
+#: NOTES.md. With ``quality_assessment`` these are the only keys a verdict
+#: keeps: `nrw assess` prints them and :func:`as_markdown` files them.
+VERDICT_LISTS: tuple[tuple[str, str], ...] = (
+    ("issues", "Issues"),
+    ("physical_concerns", "Physical concerns"),
+    ("suggestions", "Suggestions"),
+)
+
+#: The words a verdict's quality may be.
+QUALITIES = ("excellent", "good", "marginal", "poor")
 
 
 def bic(chisq: float, n_points: int, n_free: int) -> float:
@@ -1151,7 +1165,7 @@ def as_markdown(assessment: Assessment) -> str:
     Returns:
         A markdown section.
     """
-    from nr_workbench.notes import GENERATED_CLOSE, GENERATED_OPEN
+    from nr_workbench.notes import GENERATED_CLOSE, GENERATED_OPEN, inert
 
     lines = [GENERATED_OPEN, "## Assessment", ""]
     facts = []
@@ -1183,11 +1197,7 @@ def as_markdown(assessment: Assessment) -> str:
         quality = judgement.get("quality_assessment")
         if quality:
             lines += [f"Quality: **{quality}**", ""]
-        for key, heading in (
-            ("issues", "Issues"),
-            ("physical_concerns", "Physical concerns"),
-            ("suggestions", "Suggestions"),
-        ):
+        for key, heading in VERDICT_LISTS:
             items = judgement.get(key) or []
             if items:
                 lines.append(f"{heading}:")
@@ -1195,14 +1205,15 @@ def as_markdown(assessment: Assessment) -> str:
                 lines.append("")
         lines += [
             "<!-- Written by a language model from the numbers, sample.md and the",
-            "     installed skills. It has not seen the data. Treat it as a",
-            "     reviewer's first pass, not a result. -->",
+            "     skills its notes call for. It has not seen the data. Treat it as",
+            "     a reviewer's first pass, not a result. -->",
             "",
         ]
 
     if assessment.problems:
         lines.append("Not checked:")
-        lines += [f"- {p}" for p in assessment.problems]
+        # A provider's error text can reach a problem, so it is made inert too.
+        lines += [f"- {inert(p, 2000)}" for p in assessment.problems]
         lines.append("")
     lines.append(GENERATED_CLOSE)
     lines.append("")

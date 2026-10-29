@@ -13,7 +13,7 @@ import json
 import re
 import shlex
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,13 @@ from nr_workbench.project.config import ProjectConfigError, load_config
 from nr_workbench.project.layout import ProjectLayout, ProjectNotFoundError
 from nr_workbench.provenance import stack
 from nr_workbench.provenance.env import capture as capture_env
-from nr_workbench.provenance.hashing import HashCache, digest_files, inputs_digest
+from nr_workbench.provenance.hashing import (
+    MODEL_ROLES,
+    FileDigest,
+    HashCache,
+    digest_files,
+    inputs_digest,
+)
 from nr_workbench.provenance.index import FitIndex
 from nr_workbench.provenance.record import (
     FitIdentity,
@@ -54,16 +60,38 @@ class ResolvedTarget:
     results_dir: Path
 
 
+@dataclass(frozen=True)
+class FitSource:
+    """What a fit runs: a script, or a recorded fit's problem file.
+
+    Attributes:
+        path: The script, or the problem file.
+        role: Its role among the fit's inputs: ``script`` or ``problem``,
+            which is also the fit's ``script_origin``.
+        model: The model's name, unless one is given.
+        sample: The sample, unless one is given; ``None`` infers it from
+            *path*.
+        settings: The settings the recorded fit ran with; empty for a script.
+        regenerated_from: The recorded fit; ``None`` for a script.
+        measurements: The measurements the recorded fit read, as its
+            ``inputs.json`` records them. Its problem file holds them, so
+            they are the new fit's too.
+    """
+
+    path: Path
+    role: str
+    model: str
+    sample: str | None = None
+    settings: dict[str, Any] = field(default_factory=dict)
+    regenerated_from: str | None = None
+    measurements: tuple[FileDigest, ...] = ()
+
+
 #: The line a fit prints as it starts, naming its result directory -- whose name
 #: is the fit id. The Experiment page reads it back from a job's output to link
 #: the fit that job recorded, rather than guess which of the model's fits it was.
 RUNNING_LINE = "Running {method} fit -> {directory}"
 RUNNING_RE = re.compile(r"^Running \S+ fit -> (?P<directory>\S.*?)\s*$", re.MULTILINE)
-
-#: How a fit refused as identical to one already recorded names that one, so
-#: the page can link it and offer to run again anyway.
-IDENTICAL_LINE = "An identical run already exists: {fit_id}"
-IDENTICAL_RE = re.compile(r"An identical run already exists: (?P<fit_id>\S+)")
 
 
 def resolve_target(
@@ -209,7 +237,8 @@ def _locate(literal: str, script: Path, root: Path) -> Path | None:
 
 def run_fit_command(
     *,
-    script: str,
+    script: str | None = None,
+    from_fit: str | None = None,
     sample: str | None = None,
     method: str | None = None,
     steps: int | None = None,
@@ -221,16 +250,25 @@ def run_fit_command(
     plots: bool = False,
     note: str | None = None,
     model_name: str | None = None,
-    force: bool = False,
     dry_run: bool = False,
     as_json: bool = False,
     verbose: bool = False,
 ) -> FitRecord | None:
-    """Run a fit script and write an immutable record of the run.
+    """Run a fit script, or a recorded fit again, and write an immutable
+    record of the run.
 
     Args:
-        script: Path to the refl1d script.
-        sample: Sample to record the fit under. Inferred from the path if omitted.
+        script: Path to the refl1d script; or ``None``, with *from_fit*.
+        from_fit: A recorded fit, or a unique prefix of its id, to run again
+            instead of a script, from its problem file (``fit/<model>.json``):
+            its model, its parameters at the fit's values, and its data. Its
+            fitter, its fitter's settings and its seed are the fit's own but
+            for those given, and so are its sample and its model's name. The
+            new fit's inputs are that file, and the measurements the fit
+            recorded, which the file holds; its settings name the fit as
+            ``regenerated_from``.
+        sample: Sample to record the fit under. Inferred from the path if
+            omitted; with *from_fit*, the fit's.
         method: Bumps fitter name; unset, the project's ``nrw.toml`` [fit]
             names it, or it is DREAM. See :mod:`nr_workbench.fitting.settings`.
         steps: Maximum optimizer steps.
@@ -241,8 +279,8 @@ def run_fit_command(
         parallel: CPUs to use; 0 means all of them. Each setting left unset is
             taken from ``nrw.toml`` [fit], else bumps' default.
         note: Free-text note stored in the record.
-        model_name: Model name. Defaults to the script stem.
-        force: Run even if an identical run already exists.
+        model_name: Model name. Defaults to the script stem; with *from_fit*,
+            the fit's.
         dry_run: Report what would run, write nothing.
         as_json: Emit the record as JSON instead of prose.
 
@@ -252,20 +290,11 @@ def run_fit_command(
         nothing and so has nothing to return.
 
     Raises:
-        click.ClickException: If there is no project, the script is missing, or
-            the fit fails.
+        click.ClickException: If there is no project, the script is missing,
+            the fit to run again has no problem file, or the fit fails.
     """
-    script_path = Path(script).resolve()
-    if not script_path.is_file():
-        raise click.ClickException(f"Script not found: {script}")
-
-    try:
-        layout = ProjectLayout.discover(script_path.parent)
-        config = load_config(layout.root)
-    except (ProjectNotFoundError, ProjectConfigError) as exc:
-        raise click.ClickException(str(exc)) from exc
-
-    target = resolve_target(layout, script_path, sample)
+    layout, config, source = _source(script, from_fit)
+    target = resolve_target(layout, source.path, sample or source.sample)
     index = FitIndex(layout.index_file)
 
     # The command line, then nrw.toml [fit], then bumps: see fitting/settings.
@@ -279,21 +308,22 @@ def run_fit_command(
         defaults = read_fit_defaults(config.raw)
     except FitSettingsError as exc:
         raise click.ClickException(f"{layout.root / 'nrw.toml'}: {exc}") from exc
+    given: dict[str, Any] = {
+        "steps": steps,
+        "samples": samples,
+        "burn": burn,
+        "pop": pop,
+        "seed": seed,
+        "parallel": parallel,
+    }
+    method, given, inherited = _inherit(source.settings, method, given)
     try:
-        fit = resolve(
-            defaults,
-            method=method,
-            given={
-                "steps": steps,
-                "samples": samples,
-                "burn": burn,
-                "pop": pop,
-                "seed": seed,
-                "parallel": parallel,
-            },
-        )
+        fit = resolve(defaults, method=method, given=given)
     except FitSettingsError as exc:
         raise click.ClickException(str(exc)) from exc
+    for key in inherited:
+        # Said as the fit's own, not as typed on this command line.
+        fit.origins[key] = f"fit {source.regenerated_from}"
     method = fit.method
     _refuse_over_agent_limits(layout.root, config.raw, fit)
     settings: dict[str, Any] = {"method": method, **fit.settings}
@@ -304,16 +334,25 @@ def run_fit_command(
     # files it genuinely read rather than a guess from its source. --dry-run
     # does not execute anything, so it falls back to the weaker scan.
     loaded = None
-    if dry_run:
-        candidates = guess_inputs(script_path, layout.root)
+    if source.role == "problem":
+        candidates = [("problem", source.path)]
+        if not dry_run:
+            from nr_workbench.fitting.runner import FitError, load_problem_file
+
+            try:
+                loaded = load_problem_file(source.path)
+            except FitError as exc:
+                raise click.ClickException(str(exc)) from exc
+    elif dry_run:
+        candidates = guess_inputs(source.path, layout.root)
     else:
         from nr_workbench.fitting.runner import FitError, load_problem
 
         try:
-            loaded = load_problem(script_path, root=layout.root)
+            loaded = load_problem(source.path, root=layout.root)
         except FitError as exc:
             raise click.ClickException(str(exc)) from exc
-        candidates = observed_inputs(script_path, loaded.opened, layout.root)
+        candidates = observed_inputs(source.path, loaded.opened, layout.root)
 
     cache = HashCache(layout.cache_dir / "hashes.json")
     try:
@@ -321,30 +360,31 @@ def run_fit_command(
     except FileNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
     cache.save()
+    inputs = [*inputs, *source.measurements]
 
     environment = capture_env(layout.root, include_requirements=not dry_run)
     identity = FitIdentity(
-        script_sha256=next(d.sha256 for d in inputs if d.role == "script"),
+        script_sha256=next(d.sha256 for d in inputs if d.role == source.role),
         inputs_digest=inputs_digest(inputs),
         settings_digest=settings_digest(settings),
         env_digest=env_digest(environment),
     )
 
     duplicates = index.find_by_run_key(identity.run_key)
-    if duplicates and not force and not dry_run:
+    if duplicates and not dry_run:
         previous = duplicates[0]
-        raise click.ClickException(
-            IDENTICAL_LINE.format(fit_id=previous["fit_id"]) + " "
-            f"(status {previous.get('status')}, chisq {previous.get('chisq')}).\n"
-            "Nothing changed: script, inputs, settings and environment all match.\n"
-            "  --force   run anyway, recorded as a replicate\n"
-            f"  nrw whence {previous['fit_id']}   show what it produced"
+        click.echo(
+            f"  ! An identical run already exists: {previous['fit_id']} (status "
+            f"{previous.get('status')}, chisq {previous.get('chisq')}). Script, "
+            "inputs, settings and environment all match; this one is recorded "
+            "as a replicate of it.",
+            err=True,
         )
 
     started = utc_now()
     fit_id = make_fit_id(started, identity.run_key)
 
-    data_inputs = [d for d in inputs if d.role != "script"]
+    data_inputs = [d for d in inputs if d.role not in MODEL_ROLES]
     if dry_run:
         _report_dry_run(
             fit_id, target.results_dir / fit_id, settings, inputs, environment
@@ -361,8 +401,8 @@ def run_fit_command(
     record = FitRecord(
         fit_id=fit_id,
         sample=target.sample,
-        model=model_name or script_path.stem,
-        script_origin="script",
+        model=model_name or source.model,
+        script_origin=source.role,
         identity=identity,
         inputs=inputs,
         settings=settings,
@@ -376,6 +416,8 @@ def run_fit_command(
     )
     if duplicates:
         record.settings["replicate_of"] = duplicates[0]["fit_id"]
+    if source.regenerated_from:
+        record.settings["regenerated_from"] = source.regenerated_from
 
     try:
         directory, fit_id = create_unique(target.results_dir, fit_id)
@@ -384,7 +426,8 @@ def run_fit_command(
     fit_dir = directory.path
     record.fit_id = fit_id
 
-    directory.freeze_script(script_path)
+    if source.role == "script":
+        directory.freeze_script(source.path)
     directory.write_inputs(inputs)
     directory.write_environment(environment)
     # Two different things, so they go to two different places: the blockquote
@@ -394,7 +437,12 @@ def run_fit_command(
     # nobody had thought about.
     directory.write_notes_stub(
         fit_id=fit_id,
-        description=f"{method} fit of {record.model}.",
+        description=(
+            f"{method} fit of {record.model}, run again from "
+            f"{source.regenerated_from}'s problem file."
+            if source.regenerated_from
+            else f"{method} fit of {record.model}."
+        ),
         why=note or "",
     )
 
@@ -477,6 +525,99 @@ def run_fit_command(
         _report_regression(record, index)
 
     return record
+
+
+def _source(
+    script: str | None, from_fit: str | None
+) -> tuple[ProjectLayout, Any, FitSource]:
+    """The project, its configuration, and what the fit runs: *script*, or
+    the problem file of the fit *from_fit* names, in the project here.
+
+    Raises:
+        click.ClickException: Both or neither given; no project; the script
+            is missing; no such fit, or it left no problem file.
+    """
+    from nr_workbench.fitting.runner import problem_path
+    from nr_workbench.provenance.lookup import FitNotFoundError, resolve_fit
+    from nr_workbench.provenance.record import FitDirectory
+
+    if (script is None) == (from_fit is None):
+        raise click.ClickException(
+            "Give a script to run, or a fit to run again with --from; not both."
+        )
+    path = Path(script).resolve() if script is not None else None
+    if path is not None and not path.is_file():
+        raise click.ClickException(f"Script not found: {script}")
+    try:
+        layout = ProjectLayout.discover(path.parent if path else Path.cwd())
+        config = load_config(layout.root)
+    except (ProjectNotFoundError, ProjectConfigError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    if path is not None:
+        return layout, config, FitSource(path=path, role="script", model=path.stem)
+
+    try:
+        entry, directory = resolve_fit(
+            layout, FitIndex(layout.index_file), str(from_fit)
+        )
+    except FitNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+    problem = problem_path(directory)
+    if problem is None:
+        raise click.ClickException(
+            f"{entry['fit_id']} left no problem file in {directory / 'fit'}, so "
+            "it cannot be run again from one."
+        )
+    measurements = tuple(
+        FileDigest(
+            role=str(item["role"]),
+            path=str(item["path"]),
+            sha256=str(item["sha256"]),
+            bytes=int(item.get("bytes") or 0),
+        )
+        for item in FitDirectory(directory).read_inputs()
+        if item.get("role") not in MODEL_ROLES
+    )
+    return (
+        layout,
+        config,
+        FitSource(
+            path=problem,
+            role="problem",
+            model=str(entry.get("model") or problem.stem),
+            sample=entry.get("sample"),
+            settings=dict(entry.get("settings") or {}),
+            regenerated_from=str(entry["fit_id"]),
+            measurements=measurements,
+        ),
+    )
+
+
+def _inherit(
+    theirs: dict[str, Any], method: str | None, given: dict[str, Any]
+) -> tuple[str | None, dict[str, Any], list[str]]:
+    """The fitter and settings a fit runs with again: those *given*, then
+    those it ran with, *theirs*.
+
+    Its fitter's own settings and its seed are taken when it runs with its
+    own fitter; another fitter takes none of them, and how many CPUs is this
+    machine's to say.
+
+    Returns:
+        The fitter, the settings, and the names of those taken from it.
+    """
+    from nr_workbench.fitting.settings import METHOD_SETTINGS
+
+    own = str(theirs.get("method") or "") or None
+    if own is None or method not in (None, own):
+        return method, given, []
+    taken = [] if method else ["method"]
+    settings = dict(given)
+    for key in (*METHOD_SETTINGS.get(own, ()), "seed"):
+        if settings.get(key) is None and theirs.get(key) is not None:
+            settings[key] = theirs[key]
+            taken.append(key)
+    return own, settings, taken
 
 
 def _command_line() -> str:

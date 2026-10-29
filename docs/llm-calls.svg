@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 986" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" xml:space="preserve">
+  <!-- Background -->
+  <rect width="1680" height="986" fill="#ffffff"/>
+
+  <defs>
+    <style>text { white-space: pre; }</style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#db2777"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect x="40" y="116" width="820" height="602" rx="14" fill="#faf5ff" stroke="#6d28d9" stroke-width="2"/>
+  <rect x="40" y="116" width="820" height="36" rx="14" fill="#6d28d9"/>
+  <rect x="40" y="138" width="820" height="14" fill="#6d28d9"/>
+  <text x="60" y="140" font-size="15" font-weight="700" fill="#ffffff">COMPLETIONS ENDPOINT  ·  used when a person is driving</text>
+    <text x="60" y="176" font-size="11" fill="#334155">AuRE's client, <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">aure.llm.providers.get_llm()</tspan>: one request, one reply, no tools</text>
+    <text x="60" y="192" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">LLM_PROVIDER</tspan> / <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">LLM_API_KEY</tspan> / <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">LLM_BASE_URL</tspan>, or <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">LLM_PROVIDER=claude_code</tspan> (the Claude Code CLI, no key)</text>
+    <text x="60" y="206" font-size="10" fill="#64748b">taken from the shell, the project's .env, ~/.nrw, then ~/.aure; nrw doctor shows what it found, keys redacted</text>
+  <rect x="900" y="116" width="740" height="602" rx="14" fill="#f0fdfa" stroke="#0f766e" stroke-width="2"/>
+  <rect x="900" y="116" width="740" height="36" rx="14" fill="#0f766e"/>
+  <rect x="900" y="138" width="740" height="14" fill="#0f766e"/>
+  <text x="920" y="140" font-size="15" font-weight="700" fill="#ffffff">CODING HARNESS  ·  what an unattended session is</text>
+    <text x="920" y="176" font-size="11" fill="#334155">a tool-using loop: <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">claude</tspan> by default, <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">opencode</tspan>, or what <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">NRW_HARNESS</tspan> names</text>
+    <text x="920" y="190" font-size="10" fill="#64748b">it reads files and runs nrw itself; its provider is its own configuration</text>
+    <text x="920" y="204" font-size="10" fill="#64748b">(an Anthropic key, Foundry, Bedrock, Vertex …), not the endpoint's</text>
+  <text x="840" y="46" font-size="30" text-anchor="middle" font-weight="700" fill="#0f172a">nr-workbench · every command that reaches a language model</text>
+  <text x="840" y="76" font-size="16" text-anchor="middle" fill="#475569">Two different kinds of model, configured separately and failing independently; while a harness drives, the commands that would ask the endpoint stand down</text>
+
+  <!-- ================================================================ -->
+  <!-- Region: the completions endpoint                                 -->
+  <!-- ================================================================ -->
+  <g transform="translate(60, 232)">
+    <rect width="380" height="116" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="380" height="32" rx="10" fill="#7c3aed"/>
+    <rect y="22" width="380" height="10" fill="#7c3aed"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw model new --from-notes</tspan></text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>1  ·  system + user</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">proposes the stack, materials, parameters and</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">constraints; only seven keys reach the spec</text>
+    <text x="14" y="100" font-size="10.5" fill="#334155"><tspan fill="#64748b">how the prompt is built  →  </tspan><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">model-new-llm.svg</tspan></text>
+  </g>
+  <g transform="translate(460, 232)">
+    <rect width="380" height="116" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="380" height="32" rx="10" fill="#7c3aed"/>
+    <rect y="22" width="380" height="10" fill="#7c3aed"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw assess &lt;fit&gt;</tspan></text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>1  ·  system + user</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">is the fit physically sensible? written into the</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">fit's NOTES.md beside the arithmetic checks</text>
+    <text x="14" y="100" font-size="10.5" fill="#334155"><tspan fill="#64748b">how the prompt is built  →  </tspan><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">assess-llm.svg</tspan></text>
+  </g>
+  <g transform="translate(60, 364)">
+    <rect width="380" height="116" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="380" height="32" rx="10" fill="#7c3aed"/>
+    <rect y="22" width="380" height="10" fill="#7c3aed"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw isaac export &lt;fit&gt;</tspan></text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>1  ·  system + user</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">one sentence per state saying what it was measured</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">under, for the ISAAC record</text>
+    <text x="14" y="100" font-size="10.5" fill="#334155"><tspan fill="#64748b">how the prompt is built  →  </tspan><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">isaac-export-llm.svg</tspan></text>
+  </g>
+  <g transform="translate(460, 364)">
+    <rect width="380" height="116" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="380" height="32" rx="10" fill="#7c3aed"/>
+    <rect y="22" width="380" height="10" fill="#7c3aed"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw aure run &lt;setup&gt;</tspan></text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>a probe, 4 + 1/file at intake, 1–3 per evaluation</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">AuRE's own pipeline in a subprocess proposes and</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">fits a first stack from the notes; nrw writes no prompt</text>
+    <text x="14" y="100" font-size="10.5" fill="#334155"><tspan fill="#64748b">how the prompt is built  →  </tspan><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">aure-run-llm.svg</tspan></text>
+  </g>
+  <g transform="translate(60, 496)">
+    <rect width="780" height="100" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="780" height="32" rx="10" fill="#94a3b8"/>
+    <rect y="22" width="780" height="10" fill="#94a3b8"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw check-llm --endpoint</tspan></text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>1  ·  a probe</text>
+    <text x="14" y="68" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#475569">"You are a connectivity check. Reply with exactly what is asked for and nothing else."</tspan></text>
+    <text x="14" y="84" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#475569">"Reply with exactly NRW-OK and nothing else."</tspan></text>
+  </g>
+  <rect x="60" y="610" width="780" height="86" rx="6" fill="#ffffff" stroke="#c4b5fd"/>
+    <text x="72" y="628" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a" font-weight="700">LLM_PROVIDER=claude_code</tspan>  changes the transport, and with it what is sent:</text>
+    <text x="72" y="642" font-size="10" fill="#64748b">each request is claude -p --max-turns 1 with every tool denied, under AuRE's own system prompt</text>
+    <text x="72" y="656" font-size="10" fill="#64748b">("You are a text-completion endpoint …"), with nr-workbench's system text appended; temperature is</text>
+    <text x="72" y="670" font-size="10" fill="#64748b">ignored; and a reply that should be JSON but does not parse is asked for once more, where "should</text>
+    <text x="72" y="684" font-size="10" fill="#64748b">be JSON" means the user half mentions json, which isaac export's never does</text>
+
+  <!-- ================================================================ -->
+  <!-- Region: the coding harness                                       -->
+  <!-- ================================================================ -->
+  <g transform="translate(920, 232)">
+    <rect width="700" height="130" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="700" height="32" rx="10" fill="#0d9488"/>
+    <rect y="22" width="700" height="10" fill="#0d9488"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw agent run &lt;sample&gt;  ·  nrw agent watch</tspan></text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>one session  ·  up to 200 turns on Claude Code  ·  the prompt on stdin</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">does the task the scientist declared under ## Fits to perform, or the</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">one --task-file gives: fits, notes, a three-tier report, ESCALATIONS.md</text>
+    <text x="14" y="94" font-size="10" fill="#64748b">watch starts the same session once a measurement's files have settled</text>
+    <text x="14" y="114" font-size="10.5" fill="#334155"><tspan fill="#64748b">how the prompt is built  →  </tspan><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">agent-run-llm.svg</tspan></text>
+  </g>
+  <g transform="translate(920, 378)">
+    <rect width="700" height="114" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="700" height="32" rx="10" fill="#94a3b8"/>
+    <rect y="22" width="700" height="10" fill="#94a3b8"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#ffffff" font-weight="700">nrw check-llm --harness</tspan></text>
+    <text x="14" y="52" font-size="11" fill="#334155"><tspan fill="#0f172a" font-weight="700">calls  </tspan>1 turn  ·  the same command line, --max-turns 1 on Claude Code</text>
+    <text x="14" y="68" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#475569">"This is a connectivity check, not a task. Do not use any tool and do not</tspan></text>
+    <text x="14" y="84" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#475569"> read or write any file. Reply with exactly NRW-OK and nothing else."</tspan></text>
+    <text x="14" y="98" font-size="10" fill="#64748b">a real turn on the configured model: it is how an undeployed model is found</text>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Band: the endpoint stands down under a harness                   -->
+  <!-- ================================================================ -->
+  <path d="M 1270.0 718 V 754" stroke="#db2777" stroke-width="1.6" marker-end="url(#arrow-pink)" fill="none"/>
+  <rect x="40" y="758" width="1600" height="128" rx="12" fill="#fdf2f8" stroke="#db2777" stroke-width="2" filter="url(#shadow)"/>
+  <text x="60" y="786" font-size="14" font-weight="700" letter-spacing="1" fill="#be185d">WHILE A HARNESS DRIVES  ·  NRW_AGENT=1 is set for the session, and four commands stand down</text>
+  <rect x="60" y="802" width="299.2" height="70" rx="6" fill="#fce7f3" stroke="#f9a8d4"/>
+    <text x="72" y="820" font-size="11" font-weight="700" fill="#be185d">model new --from-notes</text>
+    <text x="72" y="834" font-size="10" fill="#64748b">becomes --print-prompt: the placeholder</text>
+    <text x="72" y="848" font-size="10" fill="#64748b">is written and the instruction printed</text>
+  <rect x="375.2" y="802" width="299.2" height="70" rx="6" fill="#fce7f3" stroke="#f9a8d4"/>
+    <text x="387.2" y="820" font-size="11" font-weight="700" fill="#be185d">assess</text>
+    <text x="387.2" y="834" font-size="10" fill="#64748b">no judge: "Judge these values yourself"</text>
+    <text x="387.2" y="848" font-size="10" fill="#64748b">is added to what was not checked</text>
+  <rect x="690.4" y="802" width="299.2" height="70" rx="6" fill="#fce7f3" stroke="#f9a8d4"/>
+    <text x="702.4" y="820" font-size="11" font-weight="700" fill="#be185d">isaac export</text>
+    <text x="702.4" y="834" font-size="10" fill="#64748b">the table and the spec only; conditions</text>
+    <text x="702.4" y="848" font-size="10" fill="#64748b">belong in sample.md, where a person checks</text>
+  <rect x="1005.6" y="802" width="299.2" height="70" rx="6" fill="#fce7f3" stroke="#f9a8d4"/>
+    <text x="1017.6" y="820" font-size="11" font-weight="700" fill="#be185d">aure run</text>
+    <text x="1017.6" y="834" font-size="10" fill="#64748b">refused without --dry-run</text>
+    <text x="1017.6" y="848" font-size="10" fill="#64748b">by the PreToolUse hook</text>
+  <rect x="1320.8" y="802" width="299.2" height="70" rx="6" fill="#fce7f3" stroke="#f9a8d4"/>
+    <text x="1332.8" y="820" font-size="11" font-weight="700" fill="#be185d">but: check-llm --endpoint</text>
+    <text x="1332.8" y="834" font-size="10" fill="#64748b">still makes its one probe call: only</text>
+    <text x="1332.8" y="848" font-size="10" fill="#64748b">the harness probe checks NRW_AGENT</text>
+  <text x="840" y="916" font-size="12" text-anchor="middle" font-style="italic" fill="#475569">Why: the harness is the better model, and a weaker one's verdict handed back to it would read as evidence.</text>
+  <text x="840" y="940" font-size="12" text-anchor="middle" fill="#94a3b8">Every other command — fit run, ls, check, report, tnr assess, data …, doctor — is deterministic and calls no model.</text>
+  <text x="840" y="964" font-size="11" text-anchor="middle" fill="#cbd5e1">nrw serve runs these same commands as jobs: Quick fit with AuRE, a model from notes, ISAAC export, Settings → Check.</text>
+</svg>

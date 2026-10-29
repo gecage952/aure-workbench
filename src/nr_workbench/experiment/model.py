@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Container, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -42,47 +42,21 @@ MEASUREMENT_TYPES = ("steady", "tNR")
 DEFAULT_MEASUREMENT = "steady"
 
 #: Whether the sample was moved between measurements. Not derivable from the
-#: data, and it decides whether alignment is one parameter or one per state --
-#: see ``docs/ground_truths.md``, "theta_offset scope is a claim about
-#: remounting, not about change".
+#: data, and it decides whether alignment is one parameter or one per state:
+#: theta_offset's scope is a claim about remounting, not about change.
 MOUNTINGS = ("unknown", "once", "remounted")
 
 #: Sample ids become directory names, script tokens and URL segments. The
 #: intersection of what every one of those accepts, plus a length cap.
 _SAMPLE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", re.ASCII)
 
-#: Names Windows refuses as files or directories, in any case.
-_RESERVED_NAMES = frozenset(
-    {"con", "prn", "aux", "nul"}
-    | {f"com{i}" for i in range(1, 10)}
-    | {f"lpt{i}" for i in range(1, 10)}
-)
-
-#: Longest single-line value (a title, a condition).
-MAX_LINE = 200
-
-#: Longest prose value (a description, the fits to perform).
-MAX_PROSE = 20_000
-
 #: Characters that end a line for *some* reader. ``str.splitlines`` honours all
 #: of these; markdown honours only ``\n`` and ``\r``. A cell containing U+2028
 #: is one row to the browser and two to ``conditions.from_table``.
 _LINE_BREAKS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
 
-#: Bidirectional overrides: they make displayed text differ from stored text.
-_BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-
 #: An ATX heading, as CommonMark reads one.
 _HEADING_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)", re.MULTILINE)
-
-#: The opening line of a fenced code block.
-_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-
-#: The same two in a run's notes, which sample.md writes inside the run's entry,
-#: every line after the first indented: there either takes effect after any
-#: indentation, a tab included, that at the margin would make it code instead.
-_NOTE_HEADING_RE = re.compile(r"^[ \t]*#{1,6}(?:[ \t]|$)", re.MULTILINE)
-_NOTE_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})", re.MULTILINE)
 
 
 class CatalogValidationError(ValueError):
@@ -182,11 +156,6 @@ def validate_sample_id(sample_id: Any) -> str:
             f"{sample_id!r} is not a usable sample id: start with a letter or "
             "digit, then use letters, digits, '-' or '_', at most 64 characters."
         )
-    if sample_id.casefold() in _RESERVED_NAMES:
-        raise CatalogValidationError(
-            f"{sample_id!r} is a reserved device name on Windows and cannot be "
-            "a directory there."
-        )
     return sample_id
 
 
@@ -195,17 +164,17 @@ def validate_sample_id(sample_id: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _invisible_trouble(value: str, *, allow: str) -> str | None:
-    """Name the first character that is not safe to store, or ``None``."""
+def _invisible_trouble(value: str, *, allow: Container[str]) -> str | None:
+    """Name the first line break not in *allow*, or lone surrogate, in *value*."""
     for char in value:
         if char in allow:
             continue
         if char in _LINE_BREAKS:
             return f"a line break ({unicodedata.name(char, repr(char))})"
-        if char in _BIDI_CONTROLS:
-            return f"a text-direction control ({unicodedata.name(char)})"
-        if unicodedata.category(char) == "Cc":
-            return f"a control character ({char!r})"
+        if unicodedata.category(char) == "Cs":
+            # Half of a surrogate pair: JSON carries it, no encoding stores
+            # it, and left in it would fail the whole save at the parquet.
+            return f"a lone surrogate ({char!r}), which no encoding can store"
     return None
 
 
@@ -218,6 +187,13 @@ def _check_comment_markers(label: str, value: str) -> None:
                 "this as the start or end of one -- hiding the text between "
                 "here and the next comment."
             )
+
+
+def _text(label: str, value: Any) -> str:
+    """*value* with Windows line endings normalized and the ends trimmed."""
+    if not isinstance(value, str):
+        raise CatalogValidationError(f"{label} must be text, not {value!r}")
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
@@ -239,10 +215,6 @@ def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
     text = value.strip()
     if not text and not allow_empty:
         raise CatalogValidationError(f"{label} must not be empty")
-    if len(text) > MAX_LINE:
-        raise CatalogValidationError(
-            f"{label} is {len(text)} characters; the limit is {MAX_LINE}"
-        )
     trouble = _invisible_trouble(text, allow="")
     if trouble:
         raise CatalogValidationError(f"{label} contains {trouble}; it must be one line")
@@ -255,12 +227,17 @@ def clean_line(label: str, value: Any, *, allow_empty: bool = True) -> str:
     return text
 
 
-def clean_prose(label: str, value: Any) -> str:
-    """Validate a multi-line value: a description, the fits to perform.
+def clean_prose(label: str, value: Any, *, headings: bool = True) -> str:
+    """Validate a multi-line value written into ``sample.md``: a description,
+    the fits to perform, a run's notes.
 
     Args:
         label: The field's name, for the message.
         value: The proposed value.
+        headings: Whether a heading line is refused. Not for a run's notes:
+            sample.md writes them after ``- Run <n>:``, every later line
+            indented, so none of their lines reads as a heading to a reader
+            that splits the file into sections.
 
     Returns:
         The text with Windows line endings normalized and the ends trimmed.
@@ -270,18 +247,12 @@ def clean_prose(label: str, value: Any) -> str:
     Raises:
         CatalogValidationError: With the reason.
     """
-    if not isinstance(value, str):
-        raise CatalogValidationError(f"{label} must be text, not {value!r}")
-    text = value.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if len(text) > MAX_PROSE:
-        raise CatalogValidationError(
-            f"{label} is {len(text)} characters; the limit is {MAX_PROSE}"
-        )
-    trouble = _invisible_trouble(text, allow="\n\t")
+    text = _text(label, value)
+    trouble = _invisible_trouble(text, allow="\n")
     if trouble:
         raise CatalogValidationError(f"{label} contains {trouble}")
     _check_comment_markers(label, text)
-    heading = _HEADING_RE.search(text)
+    heading = _HEADING_RE.search(text) if headings else None
     if heading:
         line = text[heading.start() :].split("\n", 1)[0]
         raise CatalogValidationError(
@@ -290,28 +261,8 @@ def clean_prose(label: str, value: Any) -> str:
             "its own -- a '## Fits to perform' here would become the agent's "
             "task. Use **bold** for emphasis instead."
         )
-    _check_fences(label, text)
     _check_tables(label, text)
     return text
-
-
-def _check_fences(label: str, text: str) -> None:
-    open_fence: str | None = None
-    for line in text.split("\n"):
-        match = _FENCE_RE.match(line)
-        if not match:
-            continue
-        fence = match.group(1)
-        if open_fence is None:
-            open_fence = fence
-        elif fence[0] == open_fence[0] and len(fence) >= len(open_fence):
-            open_fence = None
-    if open_fence is not None:
-        raise CatalogValidationError(
-            f"{label} opens a code block ({open_fence}) and never closes it. "
-            "Everything after it in sample.md -- the measurement table and the "
-            "fits to perform -- would render as code."
-        )
 
 
 def _check_tables(label: str, text: str) -> None:
@@ -333,22 +284,11 @@ def _check_tables(label: str, text: str) -> None:
 
 
 def clean_title_snapshot(value: Any) -> str:
-    """Tidy a run title read from a file header, for display only.
+    """A run title or start time read from a file header, its ends trimmed.
 
-    Unlike the functions above this never rejects: the title comes from the
-    instrument, not from the person editing, and refusing their edit over it
-    would make an odd header impossible to organize around.
+    Never refused: it comes from the instrument, not from the person editing.
     """
-    if not isinstance(value, str):
-        return ""
-    kept = "".join(
-        char
-        for char in value
-        if char not in _LINE_BREAKS
-        and char not in _BIDI_CONTROLS
-        and unicodedata.category(char) != "Cc"
-    )
-    return kept.strip()[:MAX_LINE]
+    return value.strip() if isinstance(value, str) else ""
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +402,60 @@ class SampleContext:
         )
 
 
+@dataclass(frozen=True)
+class ExperimentContext:
+    """What the experimenter said about the whole experiment: the context of
+    every measurement in it, as a sample's context is of its own.
+
+    No file is written from it, so there is none to edit by hand and drift
+    from it: it is changed on the Experiment page, and read from the catalog.
+
+    Attributes:
+        summary: What the proposal sets out to learn.
+        hypotheses: What the measurements should confirm or rule out.
+        notes: Anything else every measurement needs.
+        rev: Revision of this record; ``0`` until it is first written.
+        updated_at: When the record last changed, ISO-8601 UTC.
+        extra: Columns written by a newer nrw, preserved on save.
+    """
+
+    summary: str = ""
+    hypotheses: str = ""
+    notes: str = ""
+    rev: int = 0
+    updated_at: str = ""
+    extra: Mapping[str, Any] = field(default_factory=dict)
+
+    def content(self) -> tuple[Any, ...]:
+        """Everything a person decided, for telling an edit from a no-op."""
+        return (self.summary, self.hypotheses, self.notes)
+
+
+#: The experiment's fields a person may change.
+EXPERIMENT_FIELDS = ("summary", "hypotheses", "notes")
+
+
+def clean_experiment_field(name: str, value: Any) -> str:
+    """Check one of the experiment's fields.
+
+    No ``sample.md`` holds it, so none of that file's rules apply: only a lone
+    surrogate, which no file can store, is refused.
+
+    Returns:
+        The text with Windows line endings normalized and the ends trimmed.
+
+    Raises:
+        CatalogValidationError: With the reason, or for a field it has not.
+    """
+    if name not in EXPERIMENT_FIELDS:
+        raise CatalogValidationError(f"the experiment has no field {name!r}")
+    text = _text(name, value)
+    trouble = _invisible_trouble(text, allow=_LINE_BREAKS)
+    if trouble:
+        raise CatalogValidationError(f"{name} contains {trouble}")
+    return text
+
+
 #: Run fields a person may change, and how each is checked.
 RUN_FIELDS = ("sample_id", "measurement", "condition", "include", "note")
 
@@ -495,11 +489,7 @@ def _clean_run_field(name: str, value: Any) -> Any:
             )
         return value
     if name == "note":
-        # Rendered into sample.md, so held to the rules of the prose there: no
-        # heading, comment marker, fence or second table to change how it reads.
-        text = clean_prose("note", value)
-        _check_note_structure(text)
-        return text
+        return clean_prose("note", value, headings=False)
     if name == "title":
         return clean_title_snapshot(value)
     if name == "start_time":
@@ -517,53 +507,8 @@ def _clean_sample_field(name: str, value: Any) -> Any:
             )
         return value
     if name in _PROSE_FIELDS:
-        text = clean_prose(name.replace("_", " "), value)
-        if name == "measurement_conditions":
-            refuse_run_note_lines(text)
-        return text
+        return clean_prose(name.replace("_", " "), value)
     raise CatalogValidationError(f"a sample has no field {name!r}")
-
-
-def refuse_run_note_lines(text: str) -> None:
-    """Refuse the sample's own *Measurement conditions* a line like a run's notes.
-
-    sample.md writes each run's notes after the sample's text, each opening
-    ``- Run <n>:``. A line of the sample's own that opens so would be read back
-    as that run's notes -- and, for a run left out, dropped.
-
-    Args:
-        text: The sample's measurement conditions.
-
-    Raises:
-        CatalogValidationError: Naming the run, and where the line belongs.
-    """
-    from nr_workbench.sample_md import RUN_NOTE_RE
-
-    for line in text.split("\n"):
-        match = RUN_NOTE_RE.match(line)
-        if match:
-            run = match.group(1)
-            raise CatalogValidationError(
-                f"measurement conditions has a line that reads as run {run}'s "
-                f"notes ({line.strip()[:60]!r}). Put it in run {run}'s notes, "
-                "under Measurements, where it is kept with the run -- or word it "
-                f"another way, such as 'Run {run} was ...'."
-            )
-
-
-def _check_note_structure(text: str) -> None:
-    for regex, what in (
-        (_NOTE_HEADING_RE, "a heading line"),
-        (_NOTE_FENCE_RE, "a code fence"),
-    ):
-        match = regex.search(text)
-        if match:
-            line = text[match.start() :].split("\n", 1)[0].strip()
-            raise CatalogValidationError(
-                f"note contains {what} ({line[:60]!r}). sample.md writes a note "
-                "inside its run's entry, where this would start a section or a "
-                "code block of its own, however it is indented."
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -605,6 +550,19 @@ class SampleChange:
 
 
 @dataclass(frozen=True)
+class ExperimentChange:
+    """An edit to the experiment's context.
+
+    Attributes:
+        base_rev: The revision the editor saw; ``0`` before it is first written.
+        changes: Field name to new value, a subset of :data:`EXPERIMENT_FIELDS`.
+    """
+
+    base_rev: int
+    changes: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Catalog:
     """Everything the experimenter has decided, as one immutable value.
 
@@ -617,10 +575,13 @@ class Catalog:
     Attributes:
         runs: Run records by key.
         samples: Sample context records by id.
+        experiment: The experiment's own context: empty, at revision 0,
+            until it is first written.
     """
 
     runs: Mapping[RunKey, RunEntry] = field(default_factory=dict)
     samples: Mapping[str, SampleContext] = field(default_factory=dict)
+    experiment: ExperimentContext = field(default_factory=ExperimentContext)
 
     def sample_ids(self) -> list[str]:
         """Every sample the catalog knows, from either table, sorted."""
@@ -648,6 +609,7 @@ def apply_changes(
     *,
     runs: Iterable[RunChange] = (),
     samples: Iterable[SampleChange] = (),
+    experiment: ExperimentChange | None = None,
     now: str,
 ) -> Catalog:
     """Apply a person's edits, refusing any made against a stale record.
@@ -659,6 +621,7 @@ def apply_changes(
         catalog: The current catalog, freshly loaded.
         runs: Edits to run records.
         samples: Edits to sample records.
+        experiment: An edit to the experiment's context.
         now: The timestamp to record on changed records.
 
     Returns:
@@ -724,9 +687,26 @@ def apply_changes(
             proposed, rev=base.rev + 1, updated_at=now
         )
 
+    experiment_record = catalog.experiment
+    if experiment is not None:
+        if _rev(experiment.base_rev) != experiment_record.rev:
+            stale.append("the experiment")
+        else:
+            cleaned = {
+                name: clean_experiment_field(name, value)
+                for name, value in experiment.changes.items()
+            }
+            proposed = replace(experiment_record, **cleaned)
+            if proposed.content() != experiment_record.content():
+                experiment_record = replace(
+                    proposed, rev=experiment_record.rev + 1, updated_at=now
+                )
+
     if stale:
         raise RecordConflict(stale)
-    return Catalog(runs=run_records, samples=sample_records)
+    return Catalog(
+        runs=run_records, samples=sample_records, experiment=experiment_record
+    )
 
 
 def _rev(value: Any) -> int:

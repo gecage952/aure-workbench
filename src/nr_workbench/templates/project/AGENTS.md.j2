@@ -73,9 +73,8 @@ them is how you end up unable to say which script produced a figure.
 
 These change what the project claims, or send it somewhere else, so they are
 the person's to run. The project's hook refuses them to you in Claude Code and
-OpenCode, and `nrw` refuses them itself in an unattended session
-(`NRW_AGENT=1`). Give the person the command and your reasons; unattended,
-write both in `ESCALATIONS.md` and stop.
+OpenCode. Give the person the command and your reasons; unattended, write both
+in `ESCALATIONS.md` and stop.
 
 - `nrw promote`, and curating fits: `nrw fit star`, `unstar`, `discard`,
   `restore` and `delete`
@@ -85,6 +84,9 @@ write both in `ESCALATIONS.md` and stop.
   with `--write` (without it they only preview, and are yours)
 - `nrw sample reset` (with `--dry-run` it is yours)
 - `nrw init --nested`, and any `--force`
+- every `nrw tiled` command, and Tiled's own `tiled login`, `tree` and the
+  rest: each acts with the person's login, and a push publishes this
+  project's claims to everyone on the experiment
 
 `nrw agent guard --command '<command>'` says whether a command would be
 refused, and why.
@@ -232,8 +234,7 @@ the fit absorbs the error into roughness rather than reporting it.
 
 `nrw serve` also exposes `/api/…`, which returns exactly what the browser
 renders — useful for reading a curve, an assessment, or a fit's provenance
-without opening a page. `/api/experiment` reads the same way; its write
-endpoints accept only a browser that opened the link `nrw serve` printed, and
-reaching for them is the same decision as `nrw experiment apply --write`.
+without opening a page. `/api/experiment` reads the same way; reaching for
+its write endpoints is the same decision as `nrw experiment apply --write`.
 
 Run `nrw --help` for the full surface.

@@ -44,27 +44,6 @@ def main() -> None:
     beamtime folder), then `nrw sample new <ID>` and copy your reduced data
     into the sample's data/ folders.
     """
-    # Every forcing flag in this tool exists because a check said no, so an
-    # unattended run may not use any of them. Checked here rather than in each
-    # command: there are eight of them today and the next one would be added
-    # without remembering this, which is precisely how a limit becomes a
-    # limit-shaped comment.
-    import os
-    import sys
-
-    if os.environ.get("NRW_AGENT") and any(
-        arg == "--force" or arg.startswith("--force=") for arg in sys.argv[1:]
-    ):
-        from nr_workbench.agent.guard import refuse_if_agent
-
-        refuse_if_agent("force")
-
-    if os.environ.get("NRW_AGENT") and any(
-        arg == "--nested" or arg.startswith("--nested=") for arg in sys.argv[1:]
-    ):
-        from nr_workbench.agent.guard import refuse_if_agent
-
-        refuse_if_agent("nested")
 
 
 @main.command("init")
@@ -535,11 +514,20 @@ def fit_group() -> None:
 
 
 @fit_group.command("run")
-@click.argument("script", type=click.Path(exists=True, dir_okay=False))
+@click.argument("script", required=False, type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--from",
+    "from_fit",
+    metavar="FIT_ID",
+    default=None,
+    help="Run this fit again from its own problem file, instead of a script, "
+    "with its fitter and settings but for those given.",
+)
 @click.option(
     "--sample",
     default=None,
-    help="Sample to record under [default: inferred from the path].",
+    help="Sample to record under [default: inferred from the path; with "
+    "--from, the fit's].",
 )
 @click.option(
     "--method",
@@ -612,17 +600,19 @@ def fit_group() -> None:
 )
 @click.option("--note", default=None, help="Free-text note stored in the record.")
 @click.option(
-    "--name", "model_name", default=None, help="Model name [default: the script stem]."
-)
-@click.option(
-    "--force", is_flag=True, help="Run even if an identical run already exists."
+    "--name",
+    "model_name",
+    default=None,
+    help="Model name [default: the script stem; with --from, the fit's].",
 )
 @click.option("--dry-run", is_flag=True, help="Report what would run; write nothing.")
 def fit_run_command(**kwargs: object) -> None:
-    """Run SCRIPT and write an immutable record of the fit.
+    """Run SCRIPT, or the fit named by --from again, and record the fit.
 
     Works on hand-written refl1d scripts as they are: no migration, no schema.
-    The script must define a module-level `problem = FitProblem(...)`.
+    The script must define a module-level `problem = FitProblem(...)`. With
+    --from, the fit's own problem file runs: its model, its parameters at the
+    fit's values, and its data, as bumps saved them.
     """
     from nr_workbench.commands.fit import run_fit_command
 
@@ -968,27 +958,111 @@ def isaac_export_command(**kwargs: object) -> None:
     help="Ask the API whether the records would be accepted, without keeping them.",
 )
 @click.option("--yes", is_flag=True, help="Skip the confirmation.")
-@click.option(
-    "--expect-host",
-    default=None,
-    metavar="HOST",
-    help="Refuse unless the portal is HOST: what was confirmed, when the page asked.",
-)
-def isaac_push_command(
-    fit_id: str, validate_only: bool, yes: bool, expect_host: str | None
-) -> None:
+def isaac_push_command(fit_id: str, validate_only: bool, yes: bool) -> None:
     """Send FIT_ID's exported records to the ISAAC Portal.
 
     The records `nrw isaac export` wrote, unchanged: what the server validated
     is what is published. Only the final fit of a sample is published, and
-    each push is recorded in the fit index. ISAAC_URL and ISAAC_KEY are the
-    person's own -- the shell, ~/.nrw or ~/.aure -- never the project's .env.
+    each push is recorded in the fit index. ISAAC_URL and ISAAC_KEY are read
+    as every other setting is.
     """
     from nr_workbench.commands.isaac_cmd import run_push
 
-    run_push(
-        fit_id=fit_id, validate_only=validate_only, yes=yes, expect_host=expect_host
-    )
+    run_push(fit_id=fit_id, validate_only=validate_only, yes=yes)
+
+
+@main.group("tiled")
+def tiled_group() -> None:
+    """Tiled: push the catalog and the fits, say what is there, pull them back.
+
+    Needs the installer's NRW_EXTRAS=tiled. The server is TILED_URL
+    (tiled.ornl.gov by default), read as nrw's other settings are. Each
+    command acts with your login, so an agent is refused them all.
+    """
+
+
+@tiled_group.command("login")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+def tiled_login_command(**kwargs: object) -> None:
+    """Log in through Globus: Tiled prints an address and a code to enter."""
+    from nr_workbench.commands.tiled_cmd import run_login
+
+    run_login(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("logout")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+def tiled_logout_command(**kwargs: object) -> None:
+    """End the login the Tiled client keeps for your server."""
+    from nr_workbench.commands.tiled_cmd import run_logout
+
+    run_logout(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("status")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+def tiled_status_command(**kwargs: object) -> None:
+    """Whose your login is, and whether this experiment is on Tiled."""
+    from nr_workbench.commands.tiled_cmd import run_status
+
+    run_status(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("push")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+@click.option(
+    "--only",
+    type=click.Choice(["context", "fits"]),
+    default=None,
+    help="Push only the catalog (context/) or only the fits (analysis/).",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Say what would be written; write nothing."
+)
+@click.option("--yes", is_flag=True, help="Skip the confirmation.")
+def tiled_push_command(**kwargs: object) -> None:
+    """Write the catalog to context/, and the starred and final fits to analysis/.
+
+    The last writer wins: a record that differs is written over Tiled's copy,
+    keeping fields other programs keep on it. Records Tiled alone holds stay.
+    """
+    from nr_workbench.commands.tiled_cmd import run_push
+
+    run_push(**kwargs)  # type: ignore[arg-type]
+
+
+@tiled_group.command("pull")
+@click.option(
+    "--context", is_flag=True, help="The catalog's runs, samples and context."
+)
+@click.option("--data", is_flag=True, help="The experiment's reduced files.")
+@click.option("--fits", is_flag=True, help="The fits, as they were recorded.")
+@click.option(
+    "--run", "runs", type=int, multiple=True, help="Only this run; repeat for more."
+)
+@click.option(
+    "--into",
+    type=click.Path(file_okay=False),
+    help="Copy into this folder [default: the configured data folder].",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Say what would be pulled; write nothing."
+)
+@click.option("--yes", is_flag=True, help="Skip the confirmation.")
+@click.option("--root", type=click.Path(file_okay=False), help="Project root.")
+def tiled_pull_command(**kwargs: object) -> None:
+    """Bring back the catalog, the reduced files and the fits from Tiled.
+
+    --context writes Tiled's records into the catalog, Tiled's copy winning.
+    --data copies each reduced file the data folder lacks; the folder watcher
+    does the rest. --fits rebuilds each fit as it was recorded, with the
+    reduced files it read, and writes its spec and script into its sample's
+    models/; `nrw fit run --from` runs it again.
+    """
+    from nr_workbench.commands.tiled_cmd import run_pull
+
+    run_pull(**kwargs)  # type: ignore[arg-type]
 
 
 @main.group("agent")
@@ -1075,6 +1149,12 @@ def agent_stop_command(sample: str | None) -> None:
     default=None,
     help="Which harness to drive [default: claude].",
 )
+@click.option(
+    "--task-file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="The session's task, in place of `## Fits to perform`.",
+)
 def agent_run_command(
     sample: str,
     dry_run: bool,
@@ -1084,12 +1164,15 @@ def agent_run_command(
     quiet: bool,
     again: bool,
     harness: str | None,
+    task_file: str | None,
 ) -> None:
     """Run one unattended analysis session over SAMPLE.
 
-    The task comes from `## Fits to perform` in the sample's notes; with
-    nothing written there this refuses to start, because deciding what is
-    worth fitting is the one thing an unattended session must not do.
+    The task comes from `## Fits to perform` in the sample's notes, or from
+    --task-file when whoever starts the session has planned it (nr-watcher
+    does, for the whole experiment). With neither this refuses to start,
+    because deciding what is worth fitting is the one thing an unattended
+    session must not do.
 
     It also refuses when the sample already has a written report, since the task
     text does not change when the work is finished. Say what is left under
@@ -1104,9 +1187,17 @@ def agent_run_command(
     except ProjectNotFoundError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    task = None
+    if task_file is not None:
+        from pathlib import Path
+
+        task = Path(task_file).read_text(encoding="utf-8").strip()
+        if not task:
+            raise click.ClickException(f"{task_file} is empty: there is no task in it.")
+
     try:
         if dry_run:
-            session = compose(root, sample, again=again)
+            session = compose(root, sample, again=again, task=task)
             click.echo(session.prompt)
             return
         session = run_session(
@@ -1118,6 +1209,7 @@ def agent_run_command(
             timeout=timeout,
             on_progress=None if quiet else click.echo,
             again=again,
+            task=task,
         )
     except SessionError as exc:
         raise click.ClickException(str(exc)) from exc
@@ -1258,7 +1350,7 @@ def assess_command(fit_id: str, write: bool, use_llm: bool, as_json: bool) -> No
     Always runs the arithmetic: parameters on their bounds, posteriors that
     span most of their prior, a best fit outside its own credible interval,
     BIC. With an LLM endpoint configured it also asks whether the values are
-    physically sensible, given sample.md and the installed skills.
+    physically sensible, given sample.md and the skills its notes call for.
 
     The result is appended to the fit's NOTES.md, so it travels in a bundle
     and shows on the fit page.
@@ -1745,14 +1837,14 @@ def import_command(**kwargs: object) -> None:
 @click.option(
     "--debug",
     is_flag=True,
-    help="Enable the Flask reloader and its debugger (loopback only).",
+    help="Enable the Flask reloader and its debugger.",
 )
 def serve_command(**kwargs: object) -> None:
     """Browse the project, and organize the experiment's runs into samples.
 
     Pages only read, except where they change the project -- the Experiment
-    and Settings pages, and curating and publishing fits -- and those work
-    only in a browser that opened the one-time link printed at start-up.
+    and Settings pages, and curating and publishing fits -- and those are
+    offered when the server is bound to loopback, as it is without --host.
     """
     from nr_workbench.commands.serve import run_serve
 

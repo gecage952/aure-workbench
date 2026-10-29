@@ -99,10 +99,10 @@ def test_a_fitters_table_applies_to_that_fitter_only() -> None:
         ("[fit]\nsteps = 100", "no setting 'steps'"),
         ("[fit.amoeba]\nsamples = 100", "amoeba takes no 'samples'"),
         ("[fit.de]\nburn = 10", "de takes no 'burn'"),
-        ("[fit.dream]\nsamples = 0", "from 1 to"),
+        ("[fit.dream]\nsamples = 0", "at least 1"),
         ("[fit.dream]\nsamples = true", "whole number"),
         ('[fit.dream]\nsamples = "10000"', "whole number"),
-        ("[fit]\nparallel = -1", "from 0 to"),
+        ("[fit]\nparallel = -1", "at least 0"),
         ("[fit]\ndream = 1", "must be a table"),
     ],
 )
@@ -186,6 +186,7 @@ def test_nrw_fit_run_says_it_fits_with_dream_when_nothing_says_otherwise(
     assert "  method    dream" in result.output
 
 
+@pytest.mark.fit
 def test_nrw_fit_run_takes_what_nrw_toml_says_and_records_it(
     fitted_project: Path, monkeypatch
 ) -> None:

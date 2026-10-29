@@ -82,6 +82,8 @@ the honest situation, since the density is what you are assuming.
 For a front-reflection measurement, a critical edge appears when the ambient SLD
 is **below** the layer beneath it. In back-reflection through silicon
 (SLD 2.07), an edge at low Q says something above the substrate has SLD > 2.07.
+The implied SLD is the step from the silicon, so the 4.279 above is a solvent at
+4.279 + 2.07 = 6.35.
 
 If the stated solvent is protonated THF (0.18) and the fitted ambient comes back
 near 6.3, the sample was in d8-THF. That is not a fit problem to be tuned away —

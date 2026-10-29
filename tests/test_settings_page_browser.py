@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import select
 import shutil
 import signal
@@ -312,10 +311,9 @@ def page(browser: Browser) -> Iterator[Page]:
 
 @dataclass(frozen=True)
 class Site:
-    """A served project: its address, and the one-time link `nrw serve` prints."""
+    """A served project: its address."""
 
     url: str
-    link: str
 
 
 @pytest.fixture
@@ -340,31 +338,25 @@ def facility(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def site(fresh: Path) -> Iterator[Site]:
-    """The project served on a free port, as `nrw serve` would.
-
-    Its link is as unguessable as `nrw serve`'s: the server listens on the
-    machine's loopback, which other accounts on it can reach.
-    """
+    """The project served on a free port, as `nrw serve` would."""
     from werkzeug.serving import make_server
 
     from nr_workbench.web.app import create_app
 
-    token = secrets.token_urlsafe(24)
-    app = create_app(fresh, token=token, autostart=False)
+    app = create_app(fresh, autostart=False)
     server = make_server("127.0.0.1", 0, app, threaded=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = f"http://127.0.0.1:{server.server_port}"
     try:
-        yield Site(url=url, link=f"{url}/auth/{token}")
+        yield Site(url=url)
     finally:
         server.shutdown()
         app.config["NRW_EXPERIMENT"].reload()
 
 
 def open_settings(page: Page, site: Site) -> None:
-    """Open the one-time link, then Settings, and wait for it to be editable."""
-    page.goto(site.link)
+    """Open Settings and wait for it to be editable."""
     page.goto(f"{site.url}/settings")
     page.wait_for("!document.getElementById('s-save').disabled", what="editable")
 
@@ -378,22 +370,21 @@ def location_of(facility: Path) -> str:
 # --------------------------------------------------------------------------
 
 
-def test_the_link_lands_on_settings_and_the_default_path_follows_the_ipts(
+def test_settings_is_editable_and_the_default_path_follows_the_ipts(
     page: Page, site: Site
 ) -> None:
-    page.goto(site.link)
-    page.wait_for("location.pathname === '/settings'", what="landing on Settings")
+    page.goto(f"{site.url}/settings")
     page.wait_for("!document.getElementById('s-save').disabled", what="editable")
     assert "needs the IPTS" in page.text("s-default-path")
 
     page.type("s-ipts", "34347")
 
     assert "/IPTS-34347/" in page.text("s-default-path")
-    # Where samples and assignments are kept: the project's files, and the
-    # metadata service listed as coming, as Tiled and the web monitor are.
+    # Where samples and assignments are kept: the project's files, and
+    # nothing else promised as coming.
     catalogs = page.text("s-catalogs")
     assert "Parquet files in this project" in catalogs
-    assert "A metadata service" in catalogs and "coming" in catalogs
+    assert "coming" not in catalogs
 
 
 def test_a_folder_check_shows_what_the_server_found_run_by_run(

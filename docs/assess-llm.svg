@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 1174" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" xml:space="preserve">
+  <!-- Background -->
+  <rect width="1680" height="1174" fill="#ffffff"/>
+
+  <defs>
+    <style>text { white-space: pre; }</style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-light" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-pink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#db2777"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <text x="840" y="46" font-size="30" text-anchor="middle" font-weight="700" fill="#0f172a">nrw assess · how a language model's verdict joins the arithmetic checks</text>
+  <text x="840" y="76" font-size="16" text-anchor="middle" fill="#475569">nr-workbench's own prompt, one <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">system</tspan> + one <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">user</tspan> message: each section is what the fit's record holds, or it is left out</text>
+  <text x="40" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">INPUTS  (what _add_judgement reads)</text>
+  <text x="480" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">PROMPT  (fitting/judge.py build_prompt)</text>
+  <text x="1150" y="124" font-size="14" font-weight="700" letter-spacing="2" fill="#64748b">LLM CALL  &amp;  OUTPUT</text>
+
+  <!-- ================================================================ -->
+  <!-- Column 2: the system and user messages                           -->
+  <!-- ================================================================ -->
+  <g transform="translate(480, 140)">
+    <rect width="630" height="340" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="630" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="630" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">system  <tspan fill="#cbd5e1">≈91 KB here, 7 skills</tspan></text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"You are reviewing a finished neutron reflectometry fit for a</text>
+    <text x="14" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> scientist at SNS REF_L (BL-4B)."</text>
+    <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"The arithmetic checks on this fit have already run, and what they</text>
+    <text x="14" y="98" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> found is in the request … Take them as given. Your part is what</text>
+    <text x="14" y="112" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> arithmetic cannot do: read the fitted values against what the sample</text>
+    <text x="14" y="126" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> is … and say whether they are physically sensible."</text>
+    <text x="14" y="144" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"The reference material is the project's own skills. Follow them; they</text>
+    <text x="14" y="158" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a"> carry this beamline's conventions."</text>
+    <text x="14" y="176" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== SKILL: {name} =====</text>
+    <text x="26" y="190" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#d97706">{SKILL.md, whole}</tspan><tspan fill="#64748b" font-style="italic">   once per chosen skill</tspan></text>
+    <text x="14" y="208" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== YOUR TASK =====</text>
+    <text x="26" y="222" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">- Judge the values, not the chi-squared …</text>
+    <text x="26" y="236" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">- A value on its bound, or a posterior that spans its range, was not</text>
+    <text x="26" y="250" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">  measured. Say what it means for this sample …</text>
+    <text x="26" y="264" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">- Use only what is given here; say what is missing, as an issue.</text>
+    <text x="26" y="278" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">- Name parameters exactly as the request writes them.</text>
+    <text x="14" y="296" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">Reply with one JSON object and nothing else, with no markdown fence:</text>
+    <text x="26" y="310" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">{ "quality_assessment": "excellent" | "good" | "marginal" | "poor",</tspan></text>
+    <text x="26" y="324" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0d9488">  "issues": [ … ], "physical_concerns": [ … ], "suggestions": [ … ] }</tspan></text>
+  </g>
+  <g transform="translate(480, 498)">
+    <rect width="630" height="360" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="630" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="630" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">user  <tspan fill="#cbd5e1">≈3.9 KB here</tspan></text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== THE SAMPLE: sample.md =====</text>
+    <text x="26" y="66" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#db2777">{sample.md}</tspan><tspan fill="#64748b" font-style="italic">   comments stripped; a ===== line of its own is indented</tspan></text>
+    <text x="14" y="84" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== THE MODEL: the spec this fit froze =====</text>
+    <text x="26" y="98" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">{spec.yaml}</tspan><tspan fill="#64748b" font-style="italic">   as written</tspan></text>
+    <text x="14" y="116" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== THE FIT =====</text>
+    <text x="26" y="130" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0369a1">- reduced chi-squared: 1.83</tspan></text>
+    <text x="26" y="144" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">- data points 1210; free parameters 14; BIC 812.4</tspan><tspan fill="#64748b" font-style="italic">   each only if known</tspan></text>
+    <text x="26" y="158" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0369a1">- fitter: dream; the sampler ran and raised no convergence warning</tspan></text>
+    <text x="26" y="172" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">- chi-squared by model: ocv1-1 1.21, ocv1-2 1.43, ocv1-3 4.92</tspan><tspan fill="#64748b" font-style="italic">   with two or more</tspan></text>
+    <text x="14" y="190" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== BEST-FIT VALUES =====</text>
+    <text x="26" y="204" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#0369a1">- Cu thickness = 512.3   range [400, 600]   68% interval [505.1, 519.4]</tspan></text>
+    <text x="26" y="218" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">- Ti rho = -1.95</tspan><tspan fill="#64748b" font-style="italic">   range and interval where recorded</tspan></text>
+    <text x="14" y="236" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== WHAT THE ARITHMETIC CHECKS FOUND =====</text>
+    <text x="26" y="250" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">- [warn] CuOx rho sits on its lower bound (4).</tspan></text>
+    <text x="26" y="264" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#16a34a">- [warn] CuOx thickness and CuOx rho are correlated (r = -0.93).</tspan></text>
+    <text x="26" y="278" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155"><tspan fill="#94a3b8" font-style="italic">or "- nothing: no check flagged this fit"</tspan></text>
+    <text x="14" y="296" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">===== WHAT WAS NOT CHECKED =====</text>
+    <text x="26" y="310" font-size="11" fill="#334155"><tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">- {each problem the checks recorded}</tspan><tspan fill="#64748b" font-style="italic">   only when there is one</tspan></text>
+    <text x="14" y="330" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">"Reply with the JSON object the instructions describe."</text>
+    <text x="14" y="344" font-size="10.5" fill="#334155"><tspan fill="#64748b" font-style="italic">in the user half too: the claude_code provider decides from it whether to retry</tspan></text>
+  </g>
+  <text x="480" y="880" font-size="11" fill="#475569"><tspan fill="#0f172a" font-weight="700">Not AuRE's fit evaluator any more: </tspan>its template, written for AuRE's loop, called every nrw fit a</text>
+  <text x="480" y="896" font-size="11" fill="#475569">"single-file fit", reported no residual fringes when nothing had looked, and said each pinned</text>
+  <text x="480" y="912" font-size="11" fill="#475569">range "has been auto-expanded for the next fit" (2026-10-13).</text>
+
+  <!-- ================================================================ -->
+  <!-- Column 1: INPUTS                                                 -->
+  <!-- ================================================================ -->
+  <g transform="translate(40, 276)">
+    <rect width="400" height="112" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="400" height="32" rx="10" fill="#d97706"/>
+    <rect y="22" width="400" height="10" fill="#d97706"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">skills  ·  relevant_skills(notes)</text>
+    <text x="14" y="52" font-size="10" fill="#64748b">chosen as nrw model new chooses: the core skills, and</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">those whose words the notes or the frozen spec use.</text>
+    <text x="14" y="82" font-size="10" fill="#64748b">7 here; it was every installed skill, <tspan fill="#0f172a" font-weight="700">≈189–223 KB</tspan></text>
+    <text x="14" y="96" font-size="10" fill="#64748b">one it cannot read is named in Not checked, not fatal</text>
+  </g>
+  <g transform="translate(40, 443)">
+    <rect width="400" height="96" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="400" height="32" rx="10" fill="#db2777"/>
+    <rect y="22" width="400" height="10" fill="#db2777"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">sample.md</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">samples/&lt;id&gt;/sample.md</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">without its &lt;!-- guidance --&gt;: the template's examples</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">describe other samples</text>
+  </g>
+  <g transform="translate(40, 551)">
+    <rect width="400" height="68" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="400" height="32" rx="10" fill="#3b82f6"/>
+    <rect y="22" width="400" height="10" fill="#3b82f6"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">the frozen spec</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">results/&lt;fit&gt;/spec.yaml, as written</text>
+  </g>
+  <g transform="translate(40, 631)">
+    <rect width="400" height="174" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="400" height="32" rx="10" fill="#3b82f6"/>
+    <rect y="22" width="400" height="10" fill="#3b82f6"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">the fit's record  ·  results/&lt;fit&gt;/</text>
+    <text x="14" y="52" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">manifest.json</text>
+    <text x="24" y="66" font-size="10" fill="#64748b">chi-squared, free parameters, points summed over models,</text>
+    <text x="24" y="80" font-size="10" fill="#64748b">the fitter; converged: True, False, or None for a fitter</text>
+    <text x="24" y="94" font-size="10" fill="#64748b">that does not test it, each said as such</text>
+    <text x="14" y="112" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">fit/*.par · the problem JSON · *-err.json</text>
+    <text x="24" y="126" font-size="10" fill="#64748b">values, their ranges, their 68% intervals</text>
+    <text x="14" y="144" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">fit/*.out</text>
+    <text x="24" y="158" font-size="10" fill="#64748b">chi-squared by model, from the run log</text>
+  </g>
+  <g transform="translate(40, 817)">
+    <rect width="400" height="96" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="400" height="32" rx="10" fill="#16a34a"/>
+    <rect y="22" width="400" height="10" fill="#16a34a"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">the arithmetic checks  ·  fitting/assess.py</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">check(directory, manifest)</text>
+    <text x="14" y="66" font-size="10" fill="#64748b">every finding, with its severity, and every problem</text>
+    <text x="14" y="80" font-size="10" fill="#64748b">that kept a check from running</text>
+  </g>
+  <line x1="440" y1="312" x2="474" y2="312" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="440" y1="529" x2="474" y2="546" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="440" y1="578" x2="474" y2="578" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="440" y1="651" x2="474" y2="610" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+  <line x1="440" y1="837" x2="474" y2="730" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow-light)" fill="none"/>
+
+  <!-- ================================================================ -->
+  <!-- Column 3: LLM CALL & OUTPUT                                      -->
+  <!-- ================================================================ -->
+  <line x1="1110" y1="200" x2="1146" y2="200" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <path d="M 1110 558 C 1120 558, 1100 260, 1146 240" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <g transform="translate(1150, 140)">
+    <rect width="490" height="132" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2.5" filter="url(#shadow)"/>
+    <rect width="490" height="34" rx="12" fill="#d97706"/>
+    <rect y="22" width="490" height="12" fill="#d97706"/>
+    <text x="14" y="23" font-size="13" font-weight="700" fill="#ffffff">_add_judgement()  →  complete(system, user)</text>
+    <text x="14" y="54" font-size="12" fill="#334155">via <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a" font-weight="700">aure_adapter.complete()</tspan></text>
+    <text x="14" y="68" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">get_llm(temperature=0)</text>
+    <text x="14" y="82" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#44403c">.invoke([("system", system), ("human", user)])</text>
+    <text x="14" y="102" font-size="10" fill="#78716c">a failed call → AureUnavailableError → one "Not checked" line</text>
+    <text x="14" y="116" font-size="10" fill="#78716c">asked only with a chi-squared and fitted values to judge</text>
+  </g>
+  <line x1="1395" y1="272" x2="1395" y2="296" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <g transform="translate(1150, 296)">
+    <rect width="490" height="218" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="490" height="32" rx="10" fill="#334155"/>
+    <rect y="22" width="490" height="10" fill="#334155"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">JSON reply  →  read_verdict()</text>
+    <text x="14" y="52" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">{</text>
+    <text x="24" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"quality_assessment": "marginal",</text>
+    <text x="24" y="80" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#16a34a">"issues": ["CuOx rho is pinned: the oxide is not measured"],</text>
+    <text x="24" y="94" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0369a1">"physical_concerns": [ … ],  "suggestions": [ … ]</text>
+    <text x="14" y="108" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">}</text>
+    <text x="14" y="128" font-size="10" fill="#64748b">extract_json(): a ```json fence, the bare reply, or the outermost {…}</text>
+    <text x="14" y="142" font-size="10" fill="#64748b">kept: a quality from the four, and the three lists' text items, each one</text>
+    <text x="14" y="156" font-size="10" fill="#64748b">inert line: no newline, control character or comment marker, so nothing</text>
+    <text x="14" y="170" font-size="10" fill="#64748b">can close the note's generated fence or drive the terminal</text>
+    <text x="14" y="188" font-size="10" fill="#64748b">nothing left → no verdict, and in Not checked: "The language model</text>
+    <text x="14" y="202" font-size="10" fill="#64748b">answered, but not with a verdict that could be read …". Nothing stands in.</text>
+  </g>
+  <line x1="1395" y1="514" x2="1395" y2="538" stroke="#334155" stroke-width="2" marker-end="url(#arrow)" fill="none"/>
+  <g transform="translate(1150, 538)">
+    <rect width="490" height="232" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="490" height="32" rx="10" fill="#059669"/>
+    <rect y="22" width="490" height="10" fill="#059669"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#ffffff">written beside the arithmetic findings</text>
+    <text x="14" y="52" font-size="11" fill="#334155">printed:</text>
+    <text x="24" y="66" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">model     marginal</text>
+    <text x="24" y="80" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#0f172a">issue: CuOx rho is pinned: the oxide is not measured</text>
+    <text x="24" y="94" font-size="10" fill="#64748b">issue / physical_concern / suggestion lines</text>
+    <text x="14" y="114" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857">results/&lt;fit&gt;/NOTES.md</text>
+    <text x="24" y="128" font-size="10" fill="#64748b">appended: "### What a language model made of it" —</text>
+    <text x="24" y="142" font-size="10" fill="#64748b">quality, issues, physical concerns, suggestions, and</text>
+    <text x="24" y="156" font-size="10" fill="#64748b">in an HTML comment: "It has not seen the data. Treat it</text>
+    <text x="24" y="170" font-size="10" fill="#64748b">as a reviewer's first pass, not a result."</text>
+    <text x="14" y="184" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#047857">results/&lt;fit&gt;/assessment.json</text>
+    <text x="24" y="198" font-size="10" fill="#64748b">the whole verdict under "judgement", for nrw report</text>
+    <text x="14" y="216" font-size="10" fill="#64748b">--no-write prints only · --json prints the JSON</text>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- Band: when no model is asked                                     -->
+  <!-- ================================================================ -->
+  <rect x="40" y="954" width="1600" height="150" rx="12" fill="#faf5ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+  <text x="60" y="982" font-size="14" font-weight="700" letter-spacing="1" fill="#6d28d9">WHEN NO MODEL IS ASKED  ·  the arithmetic checks still run and are still written</text>
+  <rect x="60" y="998" width="472.5" height="92" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="72" y="1016" font-size="11" font-weight="700" fill="#6d28d9">NRW_AGENT=1  ·  a harness is driving</text>
+    <text x="72" y="1030" font-size="10" fill="#64748b">No call. The harness is the better model, and a second</text>
+    <text x="72" y="1044" font-size="10" fill="#64748b">verdict handed back would read as evidence. Instead:</text>
+    <text x="72" y="1058" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">"Judge these values yourself: are they</text>
+    <text x="72" y="1072" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569"> physically sensible for this sample …"</text>
+  <rect x="548.5" y="998" width="283.5" height="92" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="560.5" y="1016" font-size="11" font-weight="700" fill="#6d28d9">--no-llm</text>
+    <text x="560.5" y="1030" font-size="10" fill="#64748b">Only the arithmetic checks, by request.</text>
+  <rect x="848" y="998" width="378" height="92" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="860" y="1016" font-size="11" font-weight="700" fill="#6d28d9">no endpoint configured</text>
+    <text x="860" y="1030" font-size="10" fill="#64748b">"No language-model endpoint configured, so</text>
+    <text x="860" y="1044" font-size="10" fill="#64748b">nothing judged whether these values are</text>
+    <text x="860" y="1058" font-size="10" fill="#64748b">physically sensible."  — and how to set one up</text>
+  <rect x="1242" y="998" width="378" height="92" rx="6" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="1254" y="1016" font-size="11" font-weight="700" fill="#6d28d9">nothing to judge</text>
+    <text x="1254" y="1030" font-size="10" fill="#64748b">"No chi-squared recorded, so the fit could not</text>
+    <text x="1254" y="1044" font-size="10" fill="#64748b">be judged", or "No fitted values to judge, so</text>
+    <text x="1254" y="1058" font-size="10" fill="#64748b">no language model was asked."</text>
+  <text x="840" y="1128" font-size="12" text-anchor="middle" fill="#94a3b8">source: nr_workbench/fitting/judge.py (build_prompt · read_verdict) · commands/assess.py (_add_judgement) · aure_adapter.py (complete) · fitting/assess.py (check · as_markdown)</text>
+  <text x="840" y="1152" font-size="11" text-anchor="middle" fill="#cbd5e1">sizes from the Cu/THF reference sample with the bundled skills synced; the fit's numbers here are illustrative</text>
+</svg>

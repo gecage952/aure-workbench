@@ -4,8 +4,8 @@ from flask import current_app
 from ldap3 import Connection, Server, Tls
 from ldap3.utils.conv import escape_filter_chars
 
-#: Membership of this group counts as membership of every IPTS, for changing a
-#: project's settings (security.user_may_change_settings).
+#: The group for facility staff with access to every IPTS. Recorded on the
+#: user at login (``SessionUser.data_access``); nothing checks it yet.
 DATA_ACCESS_GROUP = "data_access"
 
 

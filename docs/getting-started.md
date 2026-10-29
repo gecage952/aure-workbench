@@ -81,7 +81,7 @@ nrw sample new Sample6 --title "Cu/Pt in d8-THF, 1 M LiBF4 (expt 11)"
 > for you. It watches the reduction's output folder, lets you assign each run to
 > a sample, and copies the data in only once a run has finished arriving. Its
 > **Settings** page sets the IPTS and the data folder if `nrw init` was run
-> without `--ipts`; the one-time link `nrw serve` prints opens it. See
+> without `--ipts`. See
 > [experiment.md](experiment.md). The manual route below is what it automates
 > — and it is still the route for a sliced time-resolved series like this
 > walkthrough's, which the page does not handle yet
@@ -474,7 +474,7 @@ materials:
   Ti:   {rho: -3.0}
   Si:   {rho: 2.07}
 
-stack:                                      # ambient -> substrate
+stack:                                      # measured through the Si, so it is last
   - {name: THF,  material: THF,  thickness: 0,   roughness: 25}
   - {name: CuOx, material: CuOx, thickness: 60,  roughness: 20}
   - {name: Cu,   material: Cu,   thickness: 500, roughness: 5}
@@ -700,12 +700,6 @@ nrw serve
   http://127.0.0.1:8765/experiment      the experiment's runs
   http://127.0.0.1:8765/settings        its IPTS, data folder, watcher and language model
   http://127.0.0.1:8765/api/overview    the same data as JSON
-  ...
-  To edit the experiment, curate fits or change the settings, open this link
-  in your browser:
-    http://127.0.0.1:8765/auth/<token>
-  It works once, for one browser, and is kept out of the request log.
-  Without it the pages are view-only.
 ```
 
 `/s/Sample6` is the sample landscape: every steady-state segment as R(Q), the
@@ -715,8 +709,8 @@ that slice's R(Q) overlays onto the top panel, so you can see what the sample
 looked like at the moment the change was happening.
 
 `/f/<fit_id>` is the fit: data and model per experiment with a residual strip,
-all 21 SLD profiles, the parameter table, and a provenance panel. Opened
-through the link, it also curates: **Star** a fit worth coming back to,
+all 21 SLD profiles, the parameter table, and a provenance panel. It also
+curates: **Star** a fit worth coming back to,
 **Finalize** it as the sample's answer, with the reason (what `nrw promote --as
 final` does in the next step), or **Discard** it and, later, delete its files.
 See [Curating fits](experiment.md#curating-fits).
@@ -806,8 +800,8 @@ parameter's range, the `.par` file for where it landed, and the DREAM
 `-err.json` for the posterior. A parameter on its bound is the bound you chose,
 not a measurement. A 95% interval spanning most of its prior means the fit
 handed your range back. With an LLM endpoint configured (`.env`), it also asks
-whether the values are physically sensible given `sample.md` and the installed
-skills — labelled as a model's opinion, because it has not seen the data.
+whether the values are physically sensible given `sample.md` and the skills its
+notes call for — labelled as a model's opinion, because it has not seen the data.
 
 Then add the sentence no check can write:
 
@@ -996,15 +990,14 @@ Publishing is never implied by exporting, and the push confirms first, naming
 what leaves the project: the data, the fitted model and the notes —
 `sample.md`, the fit's `NOTES.md`, the reason it was finalized, and any report
 that cites it. A record on a shared portal is not straightforwardly
-retractable, so each push is recorded with the fit before it runs, and what was
-sent is copied under the fit's `isaac/published/`. The fit's page in
+retractable, so each push is recorded with the fit: the files it sent, their
+digests, and the records the portal made. A push stopped part way is recorded
+as one that may have made records. The fit's page in
 `nrw serve` offers the same steps: **Export**, **Validate with the server** and
 **Push…**.
 
-The portal and the key are yours, not the project's: set `ISAAC_URL` and
-`ISAAC_KEY` in `~/.nrw` (or your shell, or `~/.aure`). The project's `.env` is
-never read for them: anyone who can write the project can write that file, and
-it would choose where your key and your records are sent.
+Set `ISAAC_URL` and `ISAAC_KEY` where nrw reads its other settings: the
+project's `.env`, `~/.nrw`, your shell, or `~/.aure`.
 
 nr-workbench does not map anything to the ISAAC schema itself — `data-assembler`
 and `nr-isaac-format` own that, and a second copy would drift from a schema

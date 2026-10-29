@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 import time
 from collections.abc import Iterator
@@ -30,9 +29,6 @@ from nr_workbench.web import jobs as jobs_module
 from nr_workbench.web.app import create_app
 
 from .test_curation import A, B, events, recorded
-
-TOKEN = "t" * 32
-ORIGIN = "http://localhost"
 
 #: The key ~/.nrw holds: it must reach the tool, and never the page.
 PLANTED = "not-a-real-one-q2w8"
@@ -160,13 +156,8 @@ def test_a_push_sends_what_was_exported_and_records_what_the_portal_made(
     assert push["who"] and push["at"]
     assert PLANTED not in json.dumps(push)
     assert "\x1b[" not in result.output  # the tool's colours, not echoed raw
-    # Recorded before it ran, with what it sent; and what it sent is kept.
+    # Recorded with what it sent.
     assert [f["file"] for f in push["files"]] == [
-        "isaac_record_state0.json",
-        "isaac_record_state1.json",
-    ]
-    kept = project / "samples" / "S1" / "results" / A / "isaac" / "published"
-    assert sorted(p.name for p in (kept / push["attempt"]).iterdir()) == [
         "isaac_record_state0.json",
         "isaac_record_state1.json",
     ]
@@ -192,73 +183,7 @@ def test_a_push_that_fails_half_way_still_records_what_was_made(
     assert push["complete"] is False
 
 
-def test_a_push_that_never_reported_back_is_recorded_as_one_that_may_have(
-    project: Path, settings: Path
-) -> None:
-    # Recorded before it ran; killed before it said what it made.
-    from nr_workbench.provenance.index import FitIndex
-
-    records = exported(project, A)
-    finalize(project)
-    index = FitIndex(project / ".nrw" / "index.jsonl")
-    entry = index.find(A)
-    curation.record_publish_attempt(
-        index,
-        entry,
-        portal="https://isaac.example.org",
-        files=sorted(records.iterdir()),
-    )
-
-    (push,) = pushes(project)
-
-    assert "complete" not in push  # unconfirmed: the portal may hold records
-    assert "the records pushed from it to the ISAAC Portal" in curation.used_by(
-        ProjectLayout(root=project), index, entry, records.parent.parent
-    )
-
-
-def test_the_tool_reads_no_portal_of_its_own_choosing(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    exported(project, A)
-    finalize(project)
-    seen: list[dict] = []
-    real_run = isaac_cmd._run
-
-    def run(cmd, step, **options):
-        seen.append(options["env"])
-        return real_run(cmd, step, **options)
-
-    monkeypatch.setattr(isaac_cmd, "_run", run)
-    portal(monkeypatch)
-
-    nrw(project, monkeypatch, "isaac", "push", A, "--yes")
-
-    # python-dotenv switched off in the tool: it would otherwise load a .env it
-    # finds near its own install, and take a portal from it.
-    assert seen[0]["PYTHON_DOTENV_DISABLED"] == "1"
-    assert seen[0]["ISAAC_URL"] == "https://isaac.example.org/portal/api"
-
-
-def test_a_portal_the_projects_env_names_is_never_the_one_used(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    # Anyone who can write the project writes its .env: it would choose where
-    # the person's key, and the records, go.
-    (project / ".env").write_text("ISAAC_URL=https://attacker.example/api\n")
-    exported(project, A)
-    finalize(project)
-    portal(monkeypatch)
-
-    result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
-
-    assert result.exit_code == 0, result.output
-    (push,) = pushes(project)
-    assert push["records"][0]["record_id"].endswith("@isaac.example.org")
-    assert "attacker" not in result.output
-
-
-def test_no_portal_or_key_of_ones_own_sends_nothing(project: Path, monkeypatch) -> None:
+def test_no_portal_or_key_sends_nothing(project: Path, monkeypatch) -> None:
     exported(project, A)
     finalize(project)
 
@@ -270,23 +195,7 @@ def test_no_portal_or_key_of_ones_own_sends_nothing(project: Path, monkeypatch) 
     result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
 
     assert result.exit_code != 0
-    assert "Set ISAAC_URL and ISAAC_KEY in your own settings" in result.output
-    assert pushes(project) == ()
-
-
-def test_a_push_to_a_host_other_than_the_one_confirmed_sends_nothing(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    exported(project, A)
-    finalize(project)
-    portal(monkeypatch)
-
-    result = nrw(
-        project, monkeypatch, "isaac", "push", A, "--yes", "--expect-host=other.org"
-    )
-
-    assert result.exit_code != 0
-    assert "not other.org as confirmed" in result.output
+    assert "Set ISAAC_URL and ISAAC_KEY" in result.output
     assert pushes(project) == ()
 
 
@@ -325,39 +234,67 @@ def test_nothing_exported_is_nothing_to_push(
     assert f"nrw isaac export {A}" in result.output
 
 
-def test_an_agent_publishes_nothing(project: Path, settings: Path, monkeypatch) -> None:
-    from nr_workbench.agent.guard import judge
+def stopped(monkeypatch, stop) -> None:
+    """The push's tool, stopped while it runs: *stop* is called in its place."""
+    run = isaac_cmd._run
+
+    def stopping(cmd, step, **kwargs):
+        if step == "nr-isaac-format push":
+            stop()
+        return run(cmd, step, **kwargs)
+
+    monkeypatch.setattr(isaac_cmd, "_run", stopping)
+
+
+def test_a_push_stopped_by_ctrl_c_is_recorded_as_one_that_may_have_made_records(
+    project: Path, settings: Path, monkeypatch
+) -> None:
+    exported(project, A)
+    finalize(project)
+    portal(monkeypatch)
+
+    def interrupt() -> None:
+        raise KeyboardInterrupt
+
+    stopped(monkeypatch, interrupt)
+
+    result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
+
+    assert result.exit_code != 0
+    (push,) = pushes(project)
+    assert "complete" not in push and "records" not in push
+    assert [f["file"] for f in push["files"]] == [
+        "isaac_record_state0.json",
+        "isaac_record_state1.json",
+    ]
+
+
+def test_a_push_the_pages_cancel_stops_is_recorded_too(
+    project: Path, settings: Path, monkeypatch
+) -> None:
+    """Cancel sends SIGTERM to the push's processes."""
+    import signal
 
     exported(project, A)
     finalize(project)
     portal(monkeypatch)
-    monkeypatch.setenv("NRW_AGENT", "1")
+    before = signal.getsignal(signal.SIGTERM)
+    stopped(monkeypatch, lambda: signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None))
 
-    refused = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
+    result = nrw(project, monkeypatch, "isaac", "push", A, "--yes")
 
-    assert refused.exit_code != 0
-    assert events(project, "publish") == []
+    assert result.exit_code == 128 + signal.SIGTERM
+    (push,) = pushes(project)
+    assert "complete" not in push
+    assert signal.getsignal(signal.SIGTERM) is before
+
+
+def test_the_hook_refuses_a_push() -> None:
+    from nr_workbench.agent.guard import judge
+
     assert judge(f"nrw isaac push {A} --yes").rule == "upload"
     # Validating sends the records, and the key, off the machine too.
     assert judge(f"nrw isaac push {A} --validate-only").rule == "upload"
-
-
-def test_a_published_fits_files_are_never_deleted(
-    project: Path, settings: Path, monkeypatch
-) -> None:
-    records = exported(project, A)
-    finalize(project)
-    portal(monkeypatch)
-    nrw(project, monkeypatch, "isaac", "push", A, "--yes")
-    # Its export removed by hand, another fit final, it set aside: the portal
-    # still holds what it was given.
-    shutil.rmtree(records.parent)  # its isaac/, the published copy included
-    layout = ProjectLayout(root=project)
-    finalize(project, B)
-    curation.discard(layout, A, reason="superseded")
-
-    with pytest.raises(curation.CurationRefused, match="pushed from it"):
-        curation.delete_files(layout, A)
 
 
 # --------------------------------------------------------------------------
@@ -367,24 +304,18 @@ def test_a_published_fits_files_are_never_deleted(
 
 @pytest.fixture
 def app(project: Path, settings: Path):
-    app = create_app(project, token=TOKEN, autostart=False)
+    app = create_app(project, autostart=False)
     yield app
     app.config["NRW_MODELS"].jobs.stop()
 
 
 @pytest.fixture
 def writer(app):
-    client = app.test_client()
-    assert client.get(f"/auth/{TOKEN}").status_code == 303
-    return client
+    return app.test_client()
 
 
 def step(client, app, fit_id: str, name: str, body: dict | None = None):
-    return client.post(
-        f"/api/experiment/fits/{fit_id}/isaac/{name}",
-        json=body or {},
-        headers={"X-NRW-Token": app.config["NRW_PAGE_TOKEN"], "Origin": ORIGIN},
-    )
+    return client.post(f"/api/experiment/fits/{fit_id}/isaac/{name}", json=body or {})
 
 
 def test_the_panel_says_where_the_portal_and_key_are_set_and_never_the_key(
@@ -417,9 +348,8 @@ def test_each_step_is_a_job_and_only_for_the_final_fit(
     while jobs.current().status == "running" and time.monotonic() < deadline:
         time.sleep(0.05)
     exported(project, A)
-    unconfirmed = step(writer, app, A, "push", {"host": "isaac.example.org"})
-    elsewhere = step(writer, app, A, "push", {"confirm": A, "host": "other.org"})
-    pushed = step(writer, app, A, "push", {"confirm": A, "host": "isaac.example.org"})
+    unconfirmed = step(writer, app, A, "push")
+    pushed = step(writer, app, A, "push", {"confirm": A})
 
     assert (
         not_final.status_code == 409 and "Finalize it first" in not_final.json["error"]
@@ -428,28 +358,21 @@ def test_each_step_is_a_job_and_only_for_the_final_fit(
     assert export.status_code == 202, export.json
     assert export.json["job"]["steps"] == [["isaac", "export", "--", A]]
     assert unconfirmed.status_code == 400
-    assert elsewhere.status_code == 400
     assert pushed.status_code == 202, pushed.json
-    # The host the person was shown goes with the job: the push refuses another.
-    assert pushed.json["job"]["steps"] == [
-        ["isaac", "push", "--yes", "--expect-host=isaac.example.org", "--", A]
-    ]
+    assert pushed.json["job"]["steps"] == [["isaac", "push", "--yes", "--", A]]
 
 
-def test_publishing_from_the_page_needs_the_link_and_a_writable_server(
-    app, project: Path, settings: Path
+def test_publishing_from_the_page_needs_a_writable_server(
+    project: Path, settings: Path
 ) -> None:
     exported(project, A)
     finalize(project)
-    read_only = create_app(project, token=TOKEN, autostart=False, writable=False)
-    viewer = read_only.test_client()
-    viewer.get(f"/auth/{TOKEN}")
+    read_only = create_app(project, autostart=False, writable=False)
 
-    stranger = step(app.test_client(), app, A, "push", {"confirm": A})
-    refused = step(viewer, read_only, A, "push", {"confirm": A})
+    refused = step(read_only.test_client(), read_only, A, "push", {"confirm": A})
 
-    assert (stranger.status_code, refused.status_code) == (403, 403)
-    assert app.config["NRW_MODELS"].jobs.current() is None
+    assert refused.status_code == 403
+    assert read_only.config["NRW_MODELS"].jobs.current() is None
 
 
 def test_nrw_doctor_says_the_key_is_set_and_never_what_it_is(

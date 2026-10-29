@@ -59,15 +59,14 @@ BUMPS_DEFAULTS: dict[str, dict[str, int]] = {
 #: How many CPUs a fit uses when nothing says: all of them.
 DEFAULT_PARALLEL = 0
 
-#: What may be asked for. Generous, so they never decide an analysis; finite,
-#: so a typo is not a week of CPU on a shared node.
-FIT_LIMITS: dict[str, tuple[int, int]] = {
-    "steps": (1, 1_000_000),
-    "samples": (1, 100_000_000),
-    "burn": (0, 1_000_000),
-    "pop": (1, 1_000),
-    "seed": (0, 2**32 - 1),
-    "parallel": (0, 4_096),
+#: The least each setting may be.
+FIT_MINIMUMS: dict[str, int] = {
+    "steps": 1,
+    "samples": 1,
+    "burn": 0,
+    "pop": 1,
+    "seed": 0,
+    "parallel": 0,
 }
 
 #: Every setting a fit records, besides its method.
@@ -340,14 +339,10 @@ def _settings(table: dict[str, Any], method: str) -> dict[str, int]:
 
 
 def _checked(key: str, value: Any, where: str) -> int:
-    low, high = FIT_LIMITS[key]
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or not low <= value <= high
-    ):
+    low = FIT_MINIMUMS[key]
+    if isinstance(value, bool) or not isinstance(value, int) or value < low:
         raise FitSettingsError(
-            f"{where} {key} must be a whole number from {low} to {high}, not {value!r}."
+            f"{where} {key} must be a whole number, at least {low}, not {value!r}."
         )
     return value
 

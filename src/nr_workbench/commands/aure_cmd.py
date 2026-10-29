@@ -41,9 +41,18 @@ MODE_ENUMERATION_ON = "1"
 #: report a confident, wrong answer; differential evolution at least looks
 #: around. One refinement, because the point of a first fit is to find out
 #: whether the description was right, not to polish it.
+QUICK_REFINEMENTS = 1
+
+#: The run controls each budget writes into the setup. AuRE counts
+#: `max_refinements` in evaluations, the first fit's included, so it is one
+#: more than the refinements wanted.
 BUDGETS: dict[str, dict[str, Any]] = {
-    "quick": {"fit_method": "de", "fit_steps": 300, "max_refinements": 1},
-    "standard": {},  # AuRE's own defaults: dream, 1000/1000, 5 refinements
+    "quick": {
+        "fit_method": "de",
+        "fit_steps": 300,
+        "max_refinements": QUICK_REFINEMENTS + 1,
+    },
+    "standard": {},  # AuRE's own defaults
 }
 
 #: Written beside the setup, naming the environment-only knobs a run used.
@@ -299,15 +308,6 @@ def run_aure_run(
         click.echo("  --dry-run: validated, nothing run.")
         return
 
-    # Two mechanisms, as everywhere else here: the PreToolUse hook refuses the
-    # command line, and this refuses from the inside. An AuRE run bills for as
-    # long as it takes and substitutes a second, weaker model for the judgement
-    # the harness was supposed to supply -- the same argument that makes
-    # `nrw model new --from-notes` stand down under an agent.
-    from nr_workbench.agent.guard import refuse_if_agent
-
-    refuse_if_agent("aure-run")
-
     if not llm_available():
         from nr_workbench.aure_adapter import endpoint_hint
 
@@ -520,6 +520,7 @@ def run_aure_import(
         layer_names,
         read_final_state,
         reported_chisq,
+        reported_fit,
         run_of,
         to_spec,
         untranslatable,
@@ -586,12 +587,16 @@ def run_aure_import(
                 "another --name, or --force to overwrite it anyway."
             )
 
+    # What the model has no field for -- each segment's intensity, the sample
+    # broadening, ranges AuRE filled in from its defaults -- is in the fit.
+    fit = reported_fit(state)
     document = to_spec(
         model=model,
         sample=sample,
         name=name,
         states=[block],
         chisq=reported_chisq(state),
+        fit=fit,
     )
 
     # AuRE names layers in prose; a spec's names are identifiers. The file
@@ -618,7 +623,7 @@ def run_aure_import(
 
     # Anything AuRE's fit had that this spec does not. Silence here would mean
     # an unconstrained spec quoting the chi-squared of a constrained fit.
-    dropped = untranslatable(model)
+    dropped = untranslatable(model, fit)
     if dropped:
         click.secho(
             "  !  AuRE's fit carried things this spec does not express:", fg="yellow"

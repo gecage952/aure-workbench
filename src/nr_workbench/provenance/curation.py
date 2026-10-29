@@ -13,32 +13,25 @@ it wrong for a project with more than one sample.
 
 **Discard, then delete.** Discarding hides a fit from the listings and keeps
 every file, with a reason. Deleting frees the disk: a second, explicit step,
-only for a fit already discarded, and only when nothing uses it -- see
-:func:`used_by`. The index keeps the record that it ran.
+only for a fit already discarded, and only when no other fit read its files
+-- see :func:`used_by`. The index keeps the record that it ran.
 
 **The answer is never discarded.** The fit that is ``final`` for its sample is
 not set aside; finalize another first. A discarded fit is not finalized or
 starred until it is restored.
 
-**A push is recorded before it runs.** Its attempt -- the files it sends, and
-their digests -- is appended first, and its outcome after: a push cancelled or
-killed half way has still made records a portal keeps, and the index says it
-may have.
+**A push is recorded once it has run:** the files it sent and their
+digests, the records the portal made, and whether it finished. One stopped
+before it said is recorded with the files alone.
 
-These are a person's decisions: each refuses under ``NRW_AGENT``, as the
-commands and the read-only web server do. Nothing here imports click; the
-commands and the page wrap it.
+Nothing here imports click; the commands and the page wrap it.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import secrets
 import shutil
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -59,9 +52,6 @@ EVENT_PUBLISH = "publish"
 
 #: The label a fit is finalized with: the answer, for its sample.
 FINAL = "final"
-
-#: The longest reason kept: it is read in a listing, beside the fit.
-MAX_REASON = 500
 
 
 class CurationRefused(ValueError):
@@ -89,9 +79,9 @@ class Curation:
         deleted: By whom and when its files were deleted; ``None`` if not.
         promotions: Each label it holds now, with the promotion that gave it.
         published: Each push of its records, oldest first: when, by whom,
-            where, the files sent, the records the portal made, and
-            ``complete`` -- absent for a push whose outcome was never
-            recorded, which may have made records all the same.
+            where, the files sent, the records the portal made, and whether
+            it finished (``complete``) -- the last two absent for a push
+            stopped before it said, which may have made records all the same.
     """
 
     starred: bool = False
@@ -172,8 +162,8 @@ def replay(entries: list[dict[str, Any]]) -> CurationState:
             key = (_sample_key(entry.get("sample")), str(entry.get("label")))
             holders[key] = entry
         elif event == EVENT_PUBLISH:
-            # An attempt, then its outcome; an event with no attempt id is a
-            # push recorded whole, as nrw first recorded them.
+            # A push is one event, or an attempt and its outcome sharing an
+            # attempt id.
             fit_attempts = attempts.setdefault(fit_id, {})
             key = str(entry.get("attempt") or f"#{len(fit_attempts)}")
             push = fit_attempts.setdefault(key, {"attempt": key})
@@ -222,9 +212,8 @@ def star(layout: ProjectLayout, fit_id: str, *, starred: bool = True) -> str:
         The fit's whole id; ``""`` when nothing changed.
 
     Raises:
-        CurationRefused: No such fit, it is discarded, or this runs unattended.
+        CurationRefused: No such fit, or it is discarded.
     """
-    _refuse_if_agent("curate")
     index, entry, state = _look_up(layout, fit_id)
     if starred and state.discarded:
         raise CurationRefused(
@@ -248,10 +237,9 @@ def discard(layout: ProjectLayout, fit_id: str, *, reason: str) -> str:
         The fit's whole id; ``""`` when nothing changed.
 
     Raises:
-        CurationRefused: No such fit, no reason, it is its sample's final fit,
-            or this runs unattended.
+        CurationRefused: No such fit, no reason, or it is its sample's final
+            fit.
     """
-    _refuse_if_agent("curate")
     reason = _reason(reason)
     index, entry, state = _look_up(layout, fit_id)
     if state.discarded:
@@ -272,10 +260,8 @@ def restore(layout: ProjectLayout, fit_id: str) -> str:
         The fit's whole id; ``""`` when nothing changed.
 
     Raises:
-        CurationRefused: No such fit, its files were deleted, or this runs
-            unattended.
+        CurationRefused: No such fit, or its files were deleted.
     """
-    _refuse_if_agent("curate")
     index, entry, state = _look_up(layout, fit_id)
     if not state.discarded:
         return ""
@@ -306,23 +292,22 @@ def delete_files(layout: ProjectLayout, fit_id: str) -> Path:
         CurationRefused: As :func:`deletable` says; or its files could not all
             be removed, which the message says, and where what is left is.
     """
-    _refuse_if_agent("curate")
     index, entry, state, parts = _deletable(layout, fit_id)
     hidden = f".deleting-{parts[-1]}-{secrets.token_hex(4)}"
     error: OSError | None = None
-    with _opened_parent(layout, parts) as parent:
-        parent.rename(parts[-1], hidden)
-        try:
-            parent.remove(hidden)
-        except OSError as exc:
-            error = exc
-        _append(
-            index,
-            entry,
-            EVENT_DELETE,
-            reason=(state.discarded or {}).get("reason"),
-            partial=True if error else None,
-        )
+    parent = layout.root.joinpath(*parts[:-1])
+    (parent / parts[-1]).rename(parent / hidden)
+    try:
+        shutil.rmtree(parent / hidden)
+    except OSError as exc:
+        error = exc
+    _append(
+        index,
+        entry,
+        EVENT_DELETE,
+        reason=(state.discarded or {}).get("reason"),
+        partial=True if error else None,
+    )
     relative = Path(*parts)
     if error is not None:
         raise CurationRefused(
@@ -344,9 +329,8 @@ def deletable(layout: ProjectLayout, fit_id: str) -> Path:
         The fit's result directory.
 
     Raises:
-        CurationRefused: No such fit; not discarded; already deleted; used by a
-            report, a figure, another fit or an ISAAC record; or its directory
-            is not where a fit's is -- a link on the way to it included.
+        CurationRefused: No such fit; not discarded; already deleted; or
+            another fit read its files.
     """
     return layout.root / Path(*_deletable(layout, fit_id)[3])
 
@@ -366,7 +350,7 @@ def _deletable(
     directory = find_fit_dir(layout, entry)
     if directory is None:
         raise CurationRefused(f"{resolved} has no files left to delete.")
-    users = used_by(layout, index, entry, directory, state=state)
+    users = used_by(layout, index, entry, directory)
     if users:
         raise CurationRefused(
             f"{resolved} is used by " + "; ".join(users) + ". Its files stay."
@@ -377,18 +361,6 @@ def _deletable(
         if sample
         else ("results", resolved)
     )
-    # Where it really is, every link on the way followed: exactly the fit's own
-    # directory of this project, or nothing is removed.
-    try:
-        within = (
-            directory.resolve(strict=True)
-            .relative_to(layout.root.resolve(strict=True))
-            .parts
-        )
-    except (OSError, ValueError):
-        within = ()
-    if within != parts:
-        raise CurationRefused(f"{directory} is not a fit directory this removes.")
     return index, entry, state, parts
 
 
@@ -397,71 +369,23 @@ def used_by(
     index: FitIndex,
     entry: dict[str, Any],
     directory: Path,
-    *,
-    state: Curation | None = None,
 ) -> list[str]:
-    """What would lose its footing if this fit's files were deleted.
-
-    Reports and figures in every sample count -- one sample's report can
-    compare against another's fit -- and so do other fits that read its files,
-    its ISAAC records, and every push of them. Evidence that cannot be read
-    counts as a use: a guard on a deletion does not fail open.
+    """The other fits that read this fit's files: what deleting them would break.
 
     Args:
         layout: The project.
         index: The fit index.
         entry: The fit's index entry.
         directory: Its result directory.
-        state: Its curation, when the caller has it.
 
     Returns:
-        One phrase per user, for a person to read; empty when nothing uses it.
+        One phrase per fit, for a person to read; empty when none reads them.
     """
-    from nr_workbench.commands.report import FIGURE_MANIFEST_SUFFIX
-    from nr_workbench.notes import fits_mentioned, notes_about, sample_notes
     from nr_workbench.provenance.record import FitDirectory
 
     fit_id = str(entry["fit_id"])
-    users: list[str] = []
-    # Every folder under samples/, not only those `list_samples` counts: a
-    # report is a report whether or not its sample.md is there.
-    samples = (
-        sorted(d.name for d in layout.samples_dir.iterdir() if d.is_dir())
-        if layout.samples_dir.is_dir()
-        else []
-    )
-    for sample in samples:
-        for note in notes_about(sample_notes(layout.root, sample), fit_id):
-            users.append(f"the report {note.path}")
-    # The project's own reports/ as well as each sample's: a figure script may
-    # live in either.
-    folders = [layout.root / "reports"] + [
-        layout.sample(sample) / "reports" for sample in samples
-    ]
-    for report in sorted((layout.root / "reports").glob("**/*.md")):
-        try:
-            cited = fit_id in fits_mentioned(report.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError):
-            cited = True  # cannot be read: counted as a use
-        if cited:
-            users.append(f"the report {report.relative_to(layout.root).as_posix()}")
-    for reports in folders:
-        for manifest in sorted(reports.glob(f"**/*{FIGURE_MANIFEST_SUFFIX}")):
-            shown = manifest.relative_to(layout.root).as_posix()
-            try:
-                read = json.loads(manifest.read_text(encoding="utf-8")).get("fits")
-            except (OSError, ValueError, AttributeError):
-                users.append(f"{shown}, which cannot be read")
-                continue
-            if isinstance(read, list) and fit_id in read:
-                users.append(f"the figures of {shown}")
-    if (directory / "isaac").is_dir():
-        # Exported, pushed or not: nrw before 2026-09-30 pushed without
-        # recording it, and these are what a push would have sent.
-        users.append("the ISAAC records made from it (isaac/)")
-    if (state if state is not None else replay(index.entries()).of(fit_id)).published:
-        users.append("the records pushed from it to the ISAAC Portal")
     own = directory.relative_to(layout.root).as_posix() + "/"
+    users: list[str] = []
     for other in index.fits():
         other_id = str(other.get("fit_id") or "")
         other_dir = find_fit_dir(layout, other) if other_id != fit_id else None
@@ -470,7 +394,6 @@ def used_by(
         try:
             inputs = FitDirectory(other_dir).read_inputs()
         except (OSError, ValueError):
-            users.append(f"fit {other_id}, whose inputs cannot be read")
             continue
         paths = [i.get("path") for i in inputs if isinstance(i, dict)]
         if any(isinstance(p, str) and p.startswith(own) for p in paths):
@@ -507,12 +430,11 @@ def promote(
 
     Raises:
         CurationRefused: No reason; no such fit; it did not succeed, is
-            discarded, or its files are gone; or this runs unattended.
+            discarded, or its files are gone.
         InputsChanged: Its inputs changed, and ``force`` was not given.
     """
     from nr_workbench.provenance.whence import Freshness, check_inputs
 
-    _refuse_if_agent("promote")
     reason = _reason(reason, what="A reason is required: it is the part worth keeping.")
     index, entry, state = _look_up(layout, fit_id)
     resolved = str(entry["fit_id"])
@@ -571,6 +493,66 @@ def promote(
     return promotion
 
 
+def label_holders(index: FitIndex) -> dict[tuple[str | None, str], str]:
+    """Each label's holder in *index*: ``(sample, label)`` to the fit's id."""
+    return {
+        key: str(promotion.get("fit_id"))
+        for key, promotion in replay(index.entries()).holders.items()
+    }
+
+
+def adopt(
+    index: FitIndex,
+    entry: dict[str, Any],
+    *,
+    starred_by: dict[str, Any] | None,
+    promotions: dict[str, dict[str, Any]],
+    holders: dict[tuple[str | None, str], str],
+    write: bool = True,
+) -> list[tuple[str, str]]:
+    """Take over what another copy of the project said about a fit.
+
+    Its star, and each label it holds there, are appended as they were said:
+    each promotion with its reason, who and when. A label another fit holds
+    here stays that fit's.
+
+    Args:
+        index: This project's index, which holds the fit's own line.
+        entry: The fit's index entry.
+        starred_by: Who starred it, and when (``who``, ``at``); ``None`` when
+            it is not starred.
+        promotions: Each label it holds, with its promotion's ``reason``,
+            ``who``, ``at`` and ``forced``.
+        holders: Each label's holder here (:func:`label_holders`), which
+            this keeps up to date, so that fits taken over together share
+            each label as the index will.
+        write: ``False`` says what would be taken over, and writes nothing.
+
+    Returns:
+        Each label it is not given, and the fit here that keeps it.
+    """
+    fit_id = str(entry["fit_id"])
+    sample = entry.get("sample")
+    events: list[tuple[dict[str, Any], str]] = []
+    if starred_by is not None:
+        events.append(({"fit_id": fit_id, "sample": sample, **starred_by}, EVENT_STAR))
+    kept: list[tuple[str, str]] = []
+    for label, promotion in sorted(promotions.items()):
+        key = (_sample_key(sample), label)
+        if holders.get(key, fit_id) != fit_id:
+            kept.append((label, holders[key]))
+            continue
+        holders[key] = fit_id
+        said = {name: promotion.get(name) for name in ("reason", "who", "at")}
+        event = {"fit_id": fit_id, "sample": sample, "model": entry.get("model")}
+        event.update(label=label, **said, forced=bool(promotion.get("forced")))
+        events.append(({**event, "supersedes": None}, EVENT_PROMOTE))
+    if write:
+        for event, kind in events:
+            index.append(event, event=kind)
+    return kept
+
+
 # --------------------------------------------------------------------------
 # Publishing
 # --------------------------------------------------------------------------
@@ -590,31 +572,34 @@ def publish_refusal(entry: dict[str, Any], state: Curation) -> str | None:
     )
 
 
-def record_publish_attempt(
+def record_publish(
     index: FitIndex,
     entry: dict[str, Any],
     *,
     portal: str,
     files: list[Path],
-) -> str:
-    """Record, before it runs, that a push of these files is starting.
+    records: list[dict[str, str]] | None = None,
+    complete: bool | None = None,
+) -> None:
+    """Record a push of these files, once it has run or been stopped.
 
     Args:
         index: The fit index.
         entry: The fit's index entry.
-        portal: Where they go: the portal's URL, as it may be shown.
+        portal: Where they went: the portal's URL, as it may be shown.
         files: The record files sent.
-
-    Returns:
-        The attempt's id, for :func:`record_publish_result`.
+        records: Each record the portal made, by the file it came from.
+        complete: Whether the push finished and made a record of every file;
+            ``None`` for a push stopped before it said, recorded without
+            either.
     """
-    # A directory name too: the published copy is kept under it.
-    attempt = f"{utc_now().strftime('%Y%m%dT%H%M%SZ')}-{secrets.token_hex(3)}"
+    outcome = (
+        {} if complete is None else {"records": records or [], "complete": complete}
+    )
     _append(
         index,
         entry,
         EVENT_PUBLISH,
-        attempt=attempt,
         portal=portal,
         files=[
             {
@@ -623,26 +608,7 @@ def record_publish_attempt(
             }
             for path in files
         ],
-    )
-    return attempt
-
-
-def record_publish_result(
-    index: FitIndex,
-    entry: dict[str, Any],
-    attempt: str,
-    *,
-    records: list[dict[str, str]],
-    complete: bool,
-) -> None:
-    """Record what a push made: each record's id, and whether it finished."""
-    _append(
-        index,
-        entry,
-        EVENT_PUBLISH,
-        attempt=attempt,
-        records=records,
-        complete=complete,
+        **outcome,
     )
 
 
@@ -692,15 +658,11 @@ def _append(index: FitIndex, entry: dict[str, Any], event: str, **more: Any) -> 
 
 
 def _reason(reason: str, *, what: str = "") -> str:
-    """A reason: said, one line, and short enough to read beside the fit."""
+    """A reason: said, on one line."""
     text = " ".join(str(reason or "").split())
     if not text:
         raise CurationRefused(
             what or "A reason is required: it is what makes the choice legible."
-        )
-    if len(text) > MAX_REASON:
-        raise CurationRefused(
-            f"The reason is {len(text)} characters; the limit is {MAX_REASON}."
         )
     return text
 
@@ -712,65 +674,3 @@ def _sample_key(sample: Any) -> str | None:
 def _sample_name(entry: dict[str, Any]) -> str:
     sample = entry.get("sample")
     return str(sample) if sample else "the project's fits with no sample"
-
-
-def _refuse_if_agent(action: str) -> None:
-    """The commands' refusal, here too: a library call is not a way around it."""
-    from nr_workbench.agent.guard import AGENT_ENV, reason_for
-
-    if os.environ.get(AGENT_ENV):
-        raise CurationRefused(
-            f"{AGENT_ENV} is set, so this is running unattended. {reason_for(action)}"
-        )
-
-
-class _Parent:
-    """A fit's parent directory, reached without following a link."""
-
-    def __init__(self, path: Path, descriptor: int | None) -> None:
-        self.path = path
-        self.descriptor = descriptor
-
-    def rename(self, name: str, new: str) -> None:
-        if self.descriptor is not None:
-            os.rename(name, new, src_dir_fd=self.descriptor, dst_dir_fd=self.descriptor)
-        else:  # pragma: no cover - no descriptor-relative calls (Windows)
-            os.rename(self.path / name, self.path / new)
-
-    def remove(self, name: str) -> None:
-        if self.descriptor is not None:
-            shutil.rmtree(name, dir_fd=self.descriptor)
-        else:  # pragma: no cover - Windows
-            shutil.rmtree(self.path / name)
-
-
-@contextmanager
-def _opened_parent(layout: ProjectLayout, parts: tuple[str, ...]) -> Iterator[_Parent]:
-    """The fit's ``results/``, opened one directory at a time from the project's
-    real root and none of them through a link: a link swapped in after the
-    checks is refused, not followed."""
-    root = layout.root.resolve(strict=True)
-    usable = (
-        os.open in os.supports_dir_fd
-        and os.rename in os.supports_dir_fd
-        and getattr(shutil.rmtree, "avoids_symlink_attacks", False)
-    )
-    if not usable:  # pragma: no cover - Windows
-        yield _Parent(root.joinpath(*parts[:-1]), None)
-        return
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(root, flags)
-    try:
-        for part in parts[:-1]:
-            try:
-                deeper = os.open(part, flags, dir_fd=descriptor)
-            except OSError as exc:
-                raise CurationRefused(
-                    f"{root.joinpath(*parts[:-1])} is not a directory this removes "
-                    f"from: {exc.strerror}."
-                ) from exc
-            os.close(descriptor)
-            descriptor = deeper
-        yield _Parent(root.joinpath(*parts[:-1]), descriptor)
-    finally:
-        os.close(descriptor)

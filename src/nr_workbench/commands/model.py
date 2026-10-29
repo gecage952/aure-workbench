@@ -1077,10 +1077,15 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
     ("description", ""),
     (
         "materials",
-        "# SLD in 1e-6/A2. `nrw data features <file>` reports the\n"
-        "# critical edge and the SLD it implies -- check the top layer.",
+        "# SLD in 1e-6/A2. `nrw data features <file>` reports the critical\n"
+        "# edge's implied SLD, a step from the medium the beam enters through:\n"
+        "# through the substrate, add the substrate's SLD before comparing.",
     ),
-    ("stack", "# ambient -> substrate"),
+    (
+        "stack",
+        "# The beam enters through the LAST entry: a cell measured through the\n"
+        "# wafer ends with the substrate, a film in air ends with the air.",
+    ),
     ("probe", ""),
     ("states", "# Each file's incident angle is read from its own header."),
     (
@@ -1306,12 +1311,23 @@ def _author_from_notes(
             err=True,
         )
 
+    from nr_workbench.experiment.quoted import quotable
+
+    experiment = quotable(layout.root)
+    if experiment.unreadable:
+        click.echo(
+            "  ! The experiment's catalog could not be read, so the request goes\n"
+            "    without the experiment's context. `nrw experiment status` says why.",
+            err=True,
+        )
+
     system, user = build_prompt(
         skeleton=document,
         notes=notes,
         skills=skills,
         facts=_measured_facts(layout, document, notes),
         measurements=describe_measurements(document, notes),
+        experiment=experiment.text(),
     )
 
     click.echo(
@@ -1359,16 +1375,14 @@ def _measured_facts(
 
     Two things the notes cannot supply and the data can:
 
-    * the critical edge, which constrains the topmost SLD independently of
-      anything anyone wrote down;
+    * the critical edge, which measures an SLD step independently of anything
+      anyone wrote down;
     * the tNR assessment's verdict, which already names the constraint form the
       trajectory calls for. `nrw tnr assess` decides that from a(t) and the
       change template -- a far better source than either the notes or a guess,
       and it was going unused.
     """
     from nr_workbench.aure_adapter import AureUnavailableError, extract_features
-
-    substrate = _back_reflection_substrate(document, notes)
 
     lines: list[str] = []
     for state in document.get("states", []):
@@ -1385,28 +1399,14 @@ def _measured_facts(
             except (AureUnavailableError, OSError, ValueError, IndexError):
                 continue
             for edge in features.critical_edges[:1]:
-                estimate = float(edge.get("estimated_SLD", 0.0))
                 lines.append(
                     f"  {state['name']}: critical edge Qc={edge.get('Qc', 0):.5f}, "
-                    f"implying an SLD of {estimate:.2f} against vacuum "
+                    f"an SLD step of {float(edge.get('estimated_SLD', 0.0)):.2f} "
                     f"(confidence {edge.get('confidence', '?')})"
-                    + (
-                        f" -- in back reflection the beam enters through the "
-                        f"substrate, so the medium above it is at "
-                        f"{estimate + substrate:.2f}"
-                        if substrate is not None
-                        else ""
-                    )
                 )
 
-    if lines and substrate is not None:
-        lines.append(
-            "  The back-reflection correction above is worth trusting: on this "
-            "sample it turns 4.28 into 6.35, which is d8-THF to two decimal "
-            "places -- and the notes said only 'THF'. Where the corrected edge "
-            "and the notes disagree about deuteration, the edge is the "
-            "measurement."
-        )
+    if lines:
+        lines.extend(_edge_reading(document, notes))
 
     lines.extend(_assessment_facts(layout, document))
     return "\n".join(lines)
@@ -1460,35 +1460,43 @@ def _assessment_facts(layout: ProjectLayout, document: dict[str, Any]) -> list[s
     return lines
 
 
-def _back_reflection_substrate(document: dict[str, Any], notes: str) -> float | None:
-    """Return the substrate SLD when the geometry is back reflection.
+def _edge_reading(document: dict[str, Any], notes: str) -> list[str]:
+    """How the critical edges are to be read, for the geometry the notes give.
 
-    AuRE reports a critical edge as the SLD it would imply for a beam arriving
-    from vacuum. In back reflection the beam arrives through the substrate
-    instead, so the contrast is ``rho_medium - rho_substrate`` and the medium
-    above it sits at ``estimate + rho_substrate``.
+    A critical edge sits at ``Qc = 4 sqrt(pi * step)``, where the step is the
+    SLD of the medium that reflects the beam totally less that of the medium
+    the beam enters through. AuRE's ``estimated_SLD`` is that step. It is the
+    reflecting medium's own SLD only when the beam enters from air; through
+    the substrate, the substrate's SLD has to be added. On the reference
+    sample the step is 4.28, which is no solvent; with silicon's 2.07 added it
+    is 6.35, d8-THF.
 
-    That is not a detail. On this sample the raw estimate is 4.28, which is not
-    any solvent; corrected against silicon it is 6.35, which is d8-THF exactly
-    -- and it caught a `sample.md` that said only "THF".
+    The addition is left to the model, which reads the notes and knows what a
+    substrate's SLD is. Made here, it took a table of substrate names, which is
+    never complete -- and before that the scaffold's placeholder stack, which
+    made every sample silicon.
 
-    The geometry is read from the notes rather than the spec because this runs
-    while building the prompt, before the model has proposed anything.
+    Args:
+        document: The scaffolded spec; only its probe's ``back_reflection`` is
+            read.
+        notes: The ``sample.md`` text, which is where the geometry is said.
+
+    Returns:
+        The lines that follow the critical edges in the prompt.
     """
     from nr_workbench.aure_setup import reads_as_back_reflection
 
+    lines = [
+        "  Each step is the SLD of the medium that reflects the beam totally, "
+        "less that of the medium the beam enters through: from air, it is the "
+        "reflecting medium's own SLD."
+    ]
     probe = document.get("probe") or {}
-    if not (probe.get("back_reflection") or reads_as_back_reflection(notes)):
-        return None
-
-    stack = document.get("stack") or []
-    if not stack:
-        return None
-    substrate = stack[-1]
-    material = (document.get("materials") or {}).get(substrate.get("material"))
-    if isinstance(material, dict) and material.get("rho") is not None:
-        return float(material["rho"])
-
-    from nr_workbench.aure_adapter import substrate_sld
-
-    return substrate_sld(str(substrate.get("material")))
+    if probe.get("back_reflection") or reads_as_back_reflection(notes):
+        lines.append(
+            "  These were measured through the substrate: add the SLD of the "
+            "substrate the notes name to each step for the SLD of the medium on "
+            "the far side of the film. Where that and the notes disagree about "
+            "the medium -- its deuteration, say -- the edge is the measurement."
+        )
+    return lines

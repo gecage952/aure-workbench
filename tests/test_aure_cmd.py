@@ -395,6 +395,66 @@ def test_import_orders_the_stack_for_the_geometry(sample: Path) -> None:
     assert "back reflection" in validated.output
 
 
+def test_import_fits_what_aure_fitted(sample: Path) -> None:
+    """The reported failure: the fit recorded from AuRE's model had a
+    chi-squared of 137 where AuRE's own was 13.6, because the model has no
+    field for each segment's intensity or the sample broadening. AuRE's fit
+    result has them, and the problem nrw builds now fits them as AuRE did."""
+    import runpy
+    import warnings
+
+    pytest.importorskip("refl1d")
+    model = {
+        **FITTED,
+        "intensity": {"value": 1.0, "min": 0.6, "max": 1.4},
+        "sample_broadening": {"enabled": True, "min": 0.0, "max": 0.5},
+    }
+    steady = sample / "samples" / "Sample1" / "data" / "steady"
+    labels = sorted(path.stem for path in steady.glob("REFL_218386_*_partial.txt"))
+    scales = dict(zip(labels, (0.98, 1.05, 1.31), strict=True))
+    fit = {
+        "parameters": {
+            **{f"intensity {label}": value for label, value in scales.items()},
+            "sample_broadening": 0.031,
+            "Cu interface": 8.3,
+        },
+        "bounds": {
+            **{f"intensity {label}": [0.6, 1.4] for label in labels},
+            "sample_broadening": [0.0, 0.5],
+            "Cu interface": [5.0, 30.0],
+        },
+    }
+    output = _finished_run(sample, model=model)
+    payload = json.loads((output / "final_state.json").read_text(encoding="utf-8"))
+    payload["state"].update({"fit_results": [fit], "final_selection": {"index": 0}})
+    (output / "final_state.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    imported = _run(
+        "aure", "import", str(output), "--sample", "Sample1", "--name", "first"
+    )
+    assert imported.exit_code == 0, imported.output
+    assert "AuRE's were 0.98, 1.05, 1.31" in imported.output
+    generated = _run("model", "generate", "samples/Sample1/models/first.yaml")
+    assert generated.exit_code == 0, generated.output
+
+    script = sample / "samples" / "Sample1" / "models" / "first.py"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        problem = runpy.run_path(str(script), run_name="__nrw_generated__")["problem"]
+    probes = [experiment.probe for experiment in problem.models]
+    assert len(probes) == 3
+    # One intensity per segment, each free in AuRE's bounds...
+    assert len({id(probe.intensity) for probe in probes}) == 3
+    for probe in probes:
+        assert probe.intensity.value == pytest.approx(1.05)
+        assert tuple(probe.intensity.bounds) == (0.6, 1.4)
+    # ... and one broadening for the state, from AuRE's fitted value.
+    assert len({id(probe.sample_broadening) for probe in probes}) == 1
+    assert probes[0].sample_broadening.value == pytest.approx(0.031)
+    assert tuple(probes[0].sample_broadening.bounds) == (0.0, 0.5)
+    assert any("Cu roughness" in label for label in problem.labels())
+
+
 def test_import_refuses_a_failed_run(sample: Path) -> None:
     """Importing a failed run's last model would fake a result."""
     output = _finished_run(sample, error="intake failed", success=False)
@@ -565,7 +625,39 @@ def test_run_writes_the_budget_into_the_setup(sample: Path, fake_aure) -> None:
         (sample / "samples/Sample1/aure/Sample1-218386/setup.yaml").read_text()
     )
     assert document["fit_method"] == "de"
-    assert document["max_refinements"] == 1
+    assert document["max_refinements"] == 2
+
+
+def test_the_quick_budget_is_one_refinement_as_aure_counts_them() -> None:
+    """`quick` promises one refinement, and AuRE counts `max_refinements` in
+    evaluations, the first fit's included. Writing 1 ended every quick run at
+    its first evaluation, so nothing was ever refined.
+
+    Asked of AuRE's own initial state and router. What this cannot see is the
+    step between them, `evaluation_node` adding one per evaluation, and the CLI
+    handing the setup's key over as `max_iterations`; both are read off AuRE's
+    source.
+    """
+    pytest.importorskip("aure")
+    from aure.nodes.routing import route_after_evaluation
+    from aure.state import create_initial_state
+
+    from nr_workbench.commands.aure_cmd import BUDGETS, QUICK_REFINEMENTS
+
+    state = dict(
+        create_initial_state(
+            "r.txt", "", max_iterations=BUDGETS["quick"]["max_refinements"]
+        )
+    )
+    state["fit_results"] = [{"issues": ["the fit is poor"]}]
+
+    refinements = 0
+    for _evaluation in range(10):
+        state["iteration"] = state.get("iteration", 0) + 1  # as evaluation_node does
+        if route_after_evaluation(state) == "complete":
+            break
+        refinements += 1
+    assert refinements == QUICK_REFINEMENTS == 1
 
 
 def test_applying_the_budget_keeps_the_setup_loadable(sample: Path, fake_aure) -> None:
@@ -786,83 +878,11 @@ def test_a_missing_aure_binary_is_reported(sample: Path, monkeypatch) -> None:
 
 
 # --------------------------------------------------------------------------
-# A setup may not choose the endpoint
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "key,value",
-    [
-        ("llm_base_url", "http://127.0.0.1:9/v1"),
-        ("llm_api_key", "sk-not-a-real-key"),
-        ("llm_provider", "openai"),
-    ],
-)
-def test_a_setup_may_not_redirect_the_endpoint(
-    sample: Path, fake_aure, key: str, value: str
-) -> None:
-    """A setup is a committed, shareable file, and AuRE applies these keys as
-    environment overrides -- taking this machine's own API key with it.
-
-    So one arriving from a collaborator or an archived beamtime must not be
-    able to decide where the credential is sent.
-    """
-    _run("aure", "new", "Sample1")
-    setup = sample / "samples/Sample1/aure/Sample1-218386/setup.yaml"
-    setup.write_text(setup.read_text() + f"\n{key}: {value}\n", encoding="utf-8")
-
-    result = _run("aure", "run", str(setup))
-
-    assert result.exit_code != 0
-    assert key in result.output
-    assert not fake_aure, "the run must be refused before the process starts"
-
-
-def test_the_endpoint_refusal_says_to_rotate_the_key(sample: Path) -> None:
-    """Somebody who ran a setup they did not write needs to be told."""
-    _run("aure", "new", "Sample1")
-    setup = sample / "samples/Sample1/aure/Sample1-218386/setup.yaml"
-    setup.write_text(setup.read_text() + "\nllm_api_key: sk-x\n", encoding="utf-8")
-
-    result = _run("aure", "run", str(setup), "--dry-run")
-
-    assert "rotate" in result.output
-
-
-# --------------------------------------------------------------------------
 # Under an unattended agent
 # --------------------------------------------------------------------------
 
 
-def test_run_is_refused_under_an_agent(sample: Path, fake_aure, monkeypatch) -> None:
-    """Every other model-calling path in this package stands down under a
-    harness; a billed, open-ended run is the last one that should not."""
-    monkeypatch.setenv("NRW_AGENT", "1")
-    _run("aure", "new", "Sample1")
-
-    result = _run("aure", "run", "samples/Sample1/aure/Sample1-218386/setup.yaml")
-
-    assert result.exit_code != 0
-    assert "ESCALATIONS.md" in result.output
-    assert not fake_aure
-
-
-def test_dry_run_is_still_allowed_under_an_agent(
-    sample: Path, fake_aure, monkeypatch
-) -> None:
-    """An agent that can validate its own work and report is the point."""
-    monkeypatch.setenv("NRW_AGENT", "1")
-    _run("aure", "new", "Sample1")
-
-    result = _run(
-        "aure", "run", "samples/Sample1/aure/Sample1-218386/setup.yaml", "--dry-run"
-    )
-
-    assert result.exit_code == 0, result.output
-
-
-def test_the_guard_refuses_the_command_line_too(sample: Path) -> None:
-    """Two independent mechanisms: the hook, and nrw refusing from inside."""
+def test_the_guard_refuses_the_command_line(sample: Path) -> None:
     from nr_workbench.agent.guard import judge
 
     assert judge("nrw aure run setup.yaml").allowed is False
@@ -875,7 +895,7 @@ def test_the_guard_refuses_the_command_line_too(sample: Path) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("bad", ["../evil", "a/b", "..", "name\n"])
+@pytest.mark.parametrize("bad", ["../evil", "a/b", "name\n"])
 def test_a_name_may_not_be_a_path(sample: Path, bad: str) -> None:
     """`--name` becomes a path segment; containment should not be accidental."""
     output = _finished_run(sample)

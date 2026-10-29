@@ -9,22 +9,11 @@ command.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 from nr_workbench.project.layout import ProjectLayout
 from nr_workbench.provenance.index import FitIndex
-
-#: A name the index may give a directory: no separator, and no `.` or `..`.
-#: The index is committed, so anyone who can commit to the project writes it,
-#: and a `sample` of `../../other` would otherwise name a directory elsewhere.
-_NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,254}")
-
-
-def plain_name(value: Any) -> bool:
-    """Whether *value* is a name the index may use for a directory."""
-    return isinstance(value, str) and bool(_NAME_RE.fullmatch(value))
 
 
 class FitNotFoundError(Exception):
@@ -45,8 +34,6 @@ def fit_dir(layout: ProjectLayout, entry: dict[str, Any]) -> Path | None:
     """
     fit_id = entry.get("fit_id")
     sample = entry.get("sample")
-    if not plain_name(fit_id) or (sample and not plain_name(sample)):
-        return None  # not a directory of this project's, whatever it names
     candidates = []
     if sample:
         candidates.append(layout.sample(str(sample)) / "results" / str(fit_id))

@@ -2,13 +2,12 @@
  *
  * On a fit's page it draws the action bar from what the server says about the
  * fit, and draws it again from each answer -- the rules (a final fit is not
- * discarded, files go only after a discard, nothing a report uses is deleted)
- * are the server's, and this page only offers what they allow. On the Fits
+ * discarded, files go only after a discard and never while another fit reads
+ * them) are the server's, and this page only offers what they allow. On the Fits
  * list it toggles stars and shows or hides the discarded fits.
  *
- * Only a browser that opened the link `nrw serve` printed has the page token;
- * without it everything here is shown, and nothing is offered. Every value is
- * set as text.
+ * On a view-only server everything here is shown, and nothing is offered.
+ * Every value is set as text.
  */
 "use strict";
 
@@ -16,8 +15,8 @@
   const N = window.NRWPage;
   const $ = N.$;
   const el = N.el;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
-  const api = N.client(TOKEN);
+  const WRITER = Boolean(window.NRW_WRITER);
+  const api = N.client();
 
   function fitPath(fitId, action) {
     return "/api/experiment/fits/" + encodeURIComponent(fitId) + "/" + action;
@@ -86,7 +85,7 @@
             (state.discarded.who ? " by " + state.discarded.who : "") +
             (state.discarded.at ? " on " + state.discarded.at : "") +
             ": " + reason + ".";
-      if (!TOKEN) return;  // shown, not offered
+      if (!WRITER) return;  // shown, not offered
       const final = state.labels.includes("final");
       const buttons = [];
       if (!state.discarded) {
@@ -169,7 +168,6 @@
         : "Why is it set aside? Its files are kept, and it can be restored.";
       $("curate-go").textContent = what === "finalize" ? "Finalize" : "Discard";
       $("curate-reason").value = "";
-      $("curate-reason").maxLength = said.max_reason;
       $("curate-reason").focus();
     }
 
@@ -215,7 +213,7 @@
         });
       });
     }
-    if (TOKEN) {
+    if (WRITER) {
       table.querySelectorAll("button.fit-star").forEach(function (b) {
         b.addEventListener("click", async function () {
           const starred = b.getAttribute("aria-pressed") !== "true";

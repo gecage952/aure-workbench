@@ -1,24 +1,20 @@
 """How each harness is started unattended, and how its output is read.
 
-One harness per backend, three things each: the command line that starts a
-headless session, whether this project has installed the limit that harness
-needs, and how to turn its event stream into a progress line.
+One harness per backend: the command line that starts a headless session, and
+how to turn its event stream into a progress line.
 
 The two backends differ in a way that matters and is not cosmetic:
 
 * **Claude Code** takes a turn cap (``--max-turns``) and, run with
   ``--permission-mode bypassPermissions``, keeps only its hooks --- the deny
-  list in ``settings.json`` stops applying. Two mechanisms: the hook, and
-  ``NRW_AGENT=1``.
+  list in ``settings.json`` stops applying, and the hook is what refuses.
 * **OpenCode** has *no turn cap at all*, so a bounded session there means a
   wall-clock timeout and nothing else. But ``--auto`` auto-approves only what
-  is not explicitly denied, so its deny list survives --- three mechanisms:
-  the plugin, the deny list, and ``NRW_AGENT=1``.
+  is not explicitly denied, so its deny list survives beside the plugin.
 
-Both facts were measured against opencode 1.18.18, not read off a docs page;
-see docs/ground_truths.md. OpenCode 2 (measured on 2.0.22) changed how a guard
-plugin is written and where a session runs; see :func:`opencode_argv` and
-:data:`OPENCODE_PLUGIN_2`.
+Both facts were measured against opencode 1.18.18, not read off a docs page.
+OpenCode 2 (measured on 2.0.22) changed how a guard plugin is written and
+where a session runs; see :func:`opencode_argv`.
 """
 
 from __future__ import annotations
@@ -31,28 +27,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-#: Where each harness's limit lives, relative to the project root.
-CLAUDE_SETTINGS = ".claude/settings.json"
-OPENCODE_CONFIG = "opencode.json"
-OPENCODE_PLUGIN = ".opencode/plugins/nrw-guard.js"
-#: The same guard for OpenCode 2, which refuses to load the file above: it takes
-#: only a default export that is a plain object, and OpenCode 1 calls every
-#: export as a function. Each version loads its own file and warns about the
-#: other one.
-OPENCODE_PLUGIN_2 = ".opencode/plugins/nrw-guard-opencode2.js"
-
 #: What a harness's pipes carry, both ways. Python opens a text pipe in the
 #: locale's encoding -- cp1252 on Windows, ASCII under a bare C locale -- while
 #: Claude Code and OpenCode read and write UTF-8 whatever the locale.
 HARNESS_ENCODING = "utf-8"
-
-#: OpenCode's config is JSONC --- its schema sets ``allowComments`` --- so it
-#: cannot be handed straight to ``json.loads``.
-_LINE_COMMENT = re.compile(r"^\s*//.*$")
-
-
-class GuardMissing(Exception):
-    """Raised when a project has not installed the limit a harness needs."""
 
 
 @dataclass(frozen=True)
@@ -69,30 +47,6 @@ class Invocation:
     argv: list[str]
     prompt_on_stdin: bool = False
     turn_cap: bool = True
-
-
-def _read_jsonc(path: Path) -> dict[str, Any]:
-    """Parse a JSON or JSONC file, returning ``{}`` if it cannot be read.
-
-    Args:
-        path: File to read.
-
-    Returns:
-        The parsed object, or an empty dict for anything unreadable or not an
-        object. Callers treat an empty result as "no limit configured".
-    """
-    if not path.is_file():
-        return {}
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return {}
-    stripped = "\n".join(_LINE_COMMENT.sub("", line) for line in text.splitlines())
-    try:
-        loaded = json.loads(stripped)
-    except json.JSONDecodeError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
 
 
 # --------------------------------------------------------------------------
@@ -113,8 +67,7 @@ def claude_argv(
     large prompt never reaches the model: Claude Code sends the bare reference
     in place of the file's text, and the session starts without its
     instructions. Measured with claude 2.1.232: a 20 KB file arrived, a 120 KB
-    one did not, and the same 120 KB on stdin arrived whole. See
-    docs/ground_truths.md, 2026-10-04.
+    one did not, and the same 120 KB on stdin arrived whole.
 
     Args:
         prompt_file: Unused; the prompt is streamed to stdin. The file is still
@@ -141,37 +94,15 @@ def claude_argv(
         # settings.local.json to get out.
         #
         # This turns off Claude Code's permission layer, including the `deny`
-        # list in .claude/settings.json. It does NOT turn off the two
-        # mechanisms this package relies on: a PreToolUse hook still fires
-        # (verified against `nrw promote` under this exact flag), and
-        # NRW_AGENT=1 still refuses from inside nrw.
+        # list in .claude/settings.json. It does NOT turn off the PreToolUse
+        # hook, which still fires (verified against `nrw promote` under this
+        # exact flag).
         "--permission-mode",
         "bypassPermissions",
     ]
     if model:
         argv += ["--model", model]
     return Invocation(argv=argv, prompt_on_stdin=True)
-
-
-def claude_guard(root: Path) -> None:
-    """Verify Claude Code's PreToolUse hook is installed.
-
-    Args:
-        root: Project root.
-
-    Raises:
-        GuardMissing: If no PreToolUse hook runs ``nrw agent guard``.
-    """
-    from nr_workbench.commands.doctor import guard_hook_event
-
-    settings = root / CLAUDE_SETTINGS
-    if guard_hook_event(_read_jsonc(settings)) != "PreToolUse":
-        raise GuardMissing(
-            f"No `nrw agent guard` PreToolUse hook in {settings}, so nothing "
-            "would stop this session promoting a fit or publishing it.\n"
-            "Run `nrw init` to restore it. If a previous session removed it, "
-            "that is worth knowing before you trust what it wrote."
-        )
 
 
 def claude_event(payload: dict[str, Any]) -> tuple[str, str] | None:
@@ -283,61 +214,6 @@ def _opencode_major(launcher: tuple[str, ...]) -> int | None:
         return None
     found = re.search(r"(\d+)\.\d+", f"{done.stdout} {done.stderr}")
     return int(found.group(1)) if found else None
-
-
-def opencode_guard(root: Path) -> None:
-    """Verify OpenCode's guard plugin and deny rules are installed.
-
-    Both are required. The plugin is the mechanism that actually holds --- it
-    calls ``nrw agent guard``, which reads the whole command line -- while the
-    deny rules only match the command as written and miss shapes like
-    ``A=1 nrw promote x``. A project with only the deny rules is not guarded.
-
-    Args:
-        root: Project root.
-
-    Raises:
-        GuardMissing: If either is absent.
-    """
-    plugin = root / OPENCODE_PLUGIN
-    if not plugin.is_file():
-        raise GuardMissing(
-            f"No guard plugin at {plugin}, so nothing would stop this session "
-            "promoting a fit, publishing it, or forcing past a check.\n"
-            "Run `nrw init` to restore it."
-        )
-    plugin = root / OPENCODE_PLUGIN_2
-    if not plugin.is_file():
-        raise GuardMissing(
-            f"No OpenCode 2 guard plugin at {plugin}. OpenCode 2 will not load "
-            f"{OPENCODE_PLUGIN}, so under it nothing would stop this session "
-            "promoting a fit, publishing it, or forcing past a check.\n"
-            "Run `nrw init` to add it."
-        )
-
-    config = _read_jsonc(root / OPENCODE_CONFIG)
-    if not _opencode_denies_promote(config):
-        raise GuardMissing(
-            f"No `nrw promote` deny rule in {root / OPENCODE_CONFIG}. The "
-            "plugin is the mechanism that holds, but this is the second one, "
-            "and a project should not be running unattended with one.\n"
-            "Run `nrw init` to restore it."
-        )
-
-
-def _opencode_denies_promote(config: dict[str, Any]) -> bool:
-    """Whether an OpenCode config denies `nrw promote`."""
-    permission = config.get("permission")
-    if not isinstance(permission, dict):
-        return False
-    bash = permission.get("bash")
-    if not isinstance(bash, dict):
-        return False
-    return any(
-        pattern.startswith(("nrw promote", "nr-workbench promote")) and action == "deny"
-        for pattern, action in bash.items()
-        if isinstance(pattern, str) and isinstance(action, str)
-    )
 
 
 @dataclass(frozen=True)

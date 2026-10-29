@@ -11,8 +11,7 @@
   const N = window.NRWPage;
   const $ = N.$;
   const el = N.el;
-  const TOKEN = window.NRW_WRITE_TOKEN || "";
-  const api = N.client(TOKEN);
+  const api = N.client();
   let shown = window.NRW_SETTINGS;
 
   function message(text, kind) {
@@ -20,7 +19,7 @@
   }
 
   function writable() {
-    return Boolean(shown.writable && TOKEN);
+    return Boolean(shown.writable);
   }
 
   function isSet(value) {
@@ -113,7 +112,7 @@
     $("s-label").value = values.label || "";
     renderOptions($("s-sources"), shown.options.source, "s-source", effective("source.kind"));
     renderOptions($("s-feeds"), shown.options.feed, "s-feed", effective("feed.kind"));
-    // Shown, not saved: only one kind exists yet, and the planned one is coming.
+    // Shown, not saved: the project's own files are where it is kept.
     renderOptions($("s-catalogs"), shown.options.catalog, "s-catalog",
       shown.effective.catalog_kind);
     const custom = isSet(values["source.location"]);
@@ -139,8 +138,7 @@
       banner.classList.remove("d-none");
       banner.textContent = shown.read_only_reason || (
         shown.editable
-          ? "View only. To change the settings, open the link `nrw serve` " +
-            "printed when it started, then reload this page."
+          ? "View only."
           : "nrw.toml cannot be edited from here; the notes below say why."
       );
     }

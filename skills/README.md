@@ -40,10 +40,11 @@ Three kinds of skill live here:
 ## How skills are consumed (thin dispatcher + fat skill)
 
 Neither tool auto-discovers this folder, but both natively discover their own
-agents directory. So each review standard has a matching **thin dispatcher
-agent** in `.claude/agents/` (Claude Code) and `.github/agents/` (Copilot). The
-dispatcher is a ~20-line stub — a role sentence, a numbered procedure, and an
-output contract — whose first step is:
+agents directory. So the design and security review standards each have a
+matching **thin dispatcher agent** in `.claude/agents/` (Claude Code) and
+`.github/agents/` (Copilot). `review-test` has none: the assistant applies it
+itself when it reviews tests. The dispatcher is a ~20-line stub — a role
+sentence, a numbered procedure, and an output contract — whose first step is:
 
 > Read `skills/review-<x>/SKILL.md` and follow it exactly.
 

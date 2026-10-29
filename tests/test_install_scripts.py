@@ -88,9 +88,6 @@ SKIPPED_DIRS = {
     "node_modules",
     "tests",
 }
-#: Deliberately records history, including the URL the project used to have.
-SKIPPED_FILES = {"docs/ground_truths.md"}
-
 
 # --------------------------------------------------------------- helpers ---
 
@@ -618,7 +615,7 @@ def _discover_addressed_files() -> list[str]:
         if not path.is_file() or path.suffix not in SEARCHED_SUFFIXES:
             continue
         relative = path.relative_to(REPO_ROOT)
-        if set(relative.parts) & SKIPPED_DIRS or relative.as_posix() in SKIPPED_FILES:
+        if set(relative.parts) & SKIPPED_DIRS:
             continue
         if "github" in path.read_text(errors="ignore"):
             found.append(relative.as_posix())

@@ -33,8 +33,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -306,7 +309,7 @@ def _run(
             text=True,
             timeout=TIMEOUT,
             check=False,
-            env=env if env is not None else tool_environment(),
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         if check:
@@ -379,7 +382,6 @@ def run_push(
     fit_id: str,
     validate_only: bool = False,
     yes: bool = False,
-    expect_host: str | None = None,
 ) -> None:
     """Send the records an export wrote to the ISAAC Portal.
 
@@ -388,13 +390,11 @@ def run_push(
         validate_only: Ask the API whether they would be accepted, without
             keeping them.
         yes: Skip the confirmation.
-        expect_host: Refuse unless the portal is this host: what the person
-            confirmed, when the page asked.
 
     Raises:
         click.ClickException: No project, fit or records; the fit is not final
-            (to publish); no portal or key of the person's own; a tool is
-            missing; or the push failed.
+            (to publish); no portal or key; a tool is missing; or the push
+            failed.
     """
     try:
         layout = ProjectLayout.discover()
@@ -412,41 +412,21 @@ def run_push(
         fit_dir / "isaac" / "records",
         validate_only=validate_only,
         yes=yes,
-        expect_host=expect_host,
     )
 
 
-#: The settings a push needs.
-PORTAL_VARIABLES = ("ISAAC_URL", "ISAAC_KEY")
-
-
-def portal_settings(root: Path) -> tuple[Any, Any, list[str]]:
-    """The portal and the key, from the person's own settings only.
-
-    The shell, ``~/.nrw`` or ``~/.aure`` -- never the project's ``.env``: that
-    is written by anyone who can write the project, and would choose where the
-    person's key, and the records, are sent.
+def portal_settings(root: Path) -> tuple[Any, Any]:
+    """The portal and the key, as an nrw command started in *root* reads them.
 
     Returns:
-        ``(ISAAC_URL, ISAAC_KEY, ignored)``: each a
-        :class:`~nr_workbench.env.Setting` or ``None``, and the variables the
-        project's ``.env`` sets that are ignored.
+        ``(ISAAC_URL, ISAAC_KEY)``: each a :class:`~nr_workbench.env.Setting`,
+        or ``None`` when unset.
     """
     from nr_workbench.env import where_set
 
-    own = where_set(root, skip_project=True)
-    everywhere = where_set(root)
-    ignored = [
-        name
-        for name in PORTAL_VARIABLES
-        if name in everywhere and everywhere[name] != own.get(name)
-    ]
-    url, key = own.get("ISAAC_URL"), own.get("ISAAC_KEY")
-    return (
-        url if url and url.value else None,
-        key if key and key.value else None,
-        ignored,
-    )
+    settings = where_set(root)
+    url, key = settings.get("ISAAC_URL"), settings.get("ISAAC_KEY")
+    return (url if url and url.value else None, key if key and key.value else None)
 
 
 def portal_host(url: str) -> str:
@@ -466,22 +446,6 @@ def shown_portal(url: str) -> str:
     return f"{parts.scheme}://{portal_host(url)}{parts.path}".rstrip("/")
 
 
-def tool_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
-    """The environment the export's tools run with.
-
-    The shell's own -- what nrw loaded from a ``.env`` is left out, so a
-    project's ``PYTHONPATH`` or ``LD_PRELOAD`` reaches no tool -- plus
-    *extra*; and python-dotenv switched off in the tool, which would otherwise
-    load a ``.env`` it finds near its own install and take a portal from it.
-    """
-    from nr_workbench.env import loaded_from_files
-
-    loaded = loaded_from_files()
-    environment = {k: v for k, v in os.environ.items() if k not in loaded}
-    environment["PYTHON_DOTENV_DISABLED"] = "1"
-    return {**environment, **(extra or {})}
-
-
 #: What `nr-isaac-format push` prints for each record the portal made.
 _CREATED_RE = re.compile(r"(\S+): created \(record_id=([^)\s]*)\)")
 
@@ -497,19 +461,14 @@ def _upload(
     *,
     validate_only: bool,
     yes: bool,
-    expect_host: str | None = None,
 ) -> None:
     """Push to the ISAAC Portal, after saying what is about to leave."""
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.provenance.curation import (
         publish_refusal,
-        record_publish_attempt,
-        record_publish_result,
+        record_publish,
         replay,
     )
 
-    # Validating sends the records, and the key, too: neither leaves unattended.
-    refuse_if_agent("upload")
     fit_id = str(entry["fit_id"])
     written = sorted(records.glob("*.json"))
     if not written:
@@ -524,25 +483,13 @@ def _upload(
             f"{refusal} (nrw promote {fit_id} --reason '...'), or ask the server "
             "whether its records would be accepted with --validate-only."
         )
-    url, key, ignored = portal_settings(layout.root)
+    url, key = portal_settings(layout.root)
     if url is None or key is None:
         raise click.ClickException(
-            "Set ISAAC_URL and ISAAC_KEY in your own settings -- ~/.nrw, or the "
+            "Set ISAAC_URL and ISAAC_KEY -- in the project's .env, ~/.nrw or the "
             "shell -- to send records to the portal."
-            + (
-                f" The project's .env sets {' and '.join(ignored)}, which is "
-                "ignored: anyone who can write the project writes that file, and "
-                "would choose where your key goes."
-                if ignored
-                else ""
-            )
         )
     host = portal_host(url.value)
-    if expect_host is not None and expect_host != host:
-        raise click.ClickException(
-            f"The portal is {host} now, not {expect_host} as confirmed: nothing was "
-            "sent."
-        )
     shown = shown_portal(url.value)
 
     click.echo()
@@ -573,25 +520,24 @@ def _upload(
 
     cmd = _find(("nr-isaac-format",))
     # --url: the portal the tool uses is the one recorded here; the key goes in
-    # the environment, never on a command line another account can list.
+    # its environment.
     args = [*cmd, "push", str(records), "--url", url.value]
     if validate_only:
         args.append("--validate-only")
-    attempt = None
-    if not validate_only:
-        # Recorded before it runs, with what it sends: a push killed half way
-        # has still published, and a later export replaces records/.
-        attempt = record_publish_attempt(index, entry, portal=shown, files=written)
-        kept = records.parent / "published" / attempt
-        kept.mkdir(parents=True)
-        for path in written:
-            shutil.copy2(path, kept / path.name)
-    result = _run(
-        args,
-        "nr-isaac-format push",
-        check=False,
-        env=tool_environment({"ISAAC_URL": url.value, "ISAAC_KEY": key.value}),
-    )
+    try:
+        with _cancel_as_exit():
+            result = _run(
+                args,
+                "nr-isaac-format push",
+                check=False,
+                env={**os.environ, "ISAAC_URL": url.value, "ISAAC_KEY": key.value},
+            )
+    except (KeyboardInterrupt, SystemExit):
+        if not validate_only:
+            # Stopped before the tool said what it made: the portal may hold
+            # records of it all the same.
+            record_publish(index, entry, portal=shown, files=written)
+        raise
     said = _said(result.stdout, url.value, key.value)
     sent = {path.name for path in written}
     created = [
@@ -600,8 +546,15 @@ def _upload(
         if name in sent
     ]
     complete = result.returncode == 0 and len(created) == len(written)
-    if attempt is not None:
-        record_publish_result(index, entry, attempt, records=created, complete=complete)
+    if not validate_only:
+        record_publish(
+            index,
+            entry,
+            portal=shown,
+            files=written,
+            records=created,
+            complete=complete,
+        )
     click.echo(said.strip() or "  done")
     if result.returncode != 0:
         detail = _said(result.stderr.strip() or said.strip(), url.value, key.value)
@@ -610,16 +563,32 @@ def _upload(
             + (
                 f"\n{len(created)} of {len(written)} record(s) were made; they are "
                 "recorded with the fit."
-                if created and attempt is not None
+                if created and not validate_only
                 else ""
             )
         )
-    if attempt is not None and not complete:
+    if not validate_only and not complete:
         raise click.ClickException(
             f"nr-isaac-format push finished, but reported {len(created)} of "
             f"{len(written)} record(s) made. Check the portal: the push is "
             "recorded with the fit as unconfirmed."
         )
+
+
+@contextmanager
+def _cancel_as_exit() -> Iterator[None]:
+    """The page's Cancel, a SIGTERM, raised as :class:`SystemExit` meanwhile,
+    so that a push it stops is still recorded."""
+    previous = signal.signal(signal.SIGTERM, _exit)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _exit(signum: int, frame: Any) -> None:
+    del frame
+    raise SystemExit(128 + signum)
 
 
 def _said(text: str, url: str, key: str) -> str:

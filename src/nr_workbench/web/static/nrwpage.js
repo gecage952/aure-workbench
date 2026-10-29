@@ -29,17 +29,16 @@ window.NRWPage = (function () {
     return node;
   }
 
-  /* A JSON client for the page's API. Writes carry the page's token; an
-   * error keeps the server's JSON on `error.payload`, so a page can show the
-   * TOML to add by hand, or ask for the confirmation it needs. */
-  function client(token) {
+  /* A JSON client for the page's API. An error keeps the server's JSON on
+   * `error.payload`, so a page can show the TOML to add by hand, or ask for
+   * the confirmation it needs. */
+  function client() {
     return async function api(method, path, body) {
-      const init = { method: method, credentials: "same-origin", headers: {} };
+      const init = { method: method, headers: {} };
       if (body !== undefined) {
         init.headers["Content-Type"] = "application/json";
         init.body = JSON.stringify(body);
       }
-      if (method !== "GET") init.headers["X-NRW-Token"] = token;
       const response = await fetch(path, init);
       let payload = null;
       try {

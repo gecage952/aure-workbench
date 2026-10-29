@@ -15,18 +15,23 @@ skipped where there is no Chrome.
 
 from __future__ import annotations
 
-import secrets
 import sys
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from nr_workbench.cli import main
-from nr_workbench.experiment.model import RunChange, RunKey, SampleChange
+from nr_workbench.experiment.model import (
+    ExperimentChange,
+    RunChange,
+    RunKey,
+    SampleChange,
+)
 from nr_workbench.experiment.store import ParquetCatalogStore
 
 from .experiment_fixtures import write_autoreduced
@@ -68,26 +73,31 @@ def empty_home(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(home))
 
 
-@pytest.fixture
-def served(project: Path) -> Iterator[tuple[Site, object]]:
-    """The project served, and the app serving it."""
+@contextmanager
+def serving(app) -> Iterator[Site]:
+    """*app* served on a free port, for as long as the block runs."""
     from werkzeug.serving import make_server
 
-    from nr_workbench.web.app import create_app
-
-    token = secrets.token_urlsafe(24)
-    app = create_app(project, token=token, autostart=False)
-    app.config["NRW_EXPERIMENT"].live.scan_once()
     server = make_server("127.0.0.1", 0, app, threaded=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    url = f"http://127.0.0.1:{server.server_port}"
     try:
-        yield Site(url=url, link=f"{url}/auth/{token}"), app
+        yield Site(url=f"http://127.0.0.1:{server.server_port}")
     finally:
         server.shutdown()
         # A test that failed mid-fit leaves nothing running to slow the next.
         app.config["NRW_MODELS"].jobs.stop()
         app.config["NRW_EXPERIMENT"].reload()
+
+
+@pytest.fixture
+def served(project: Path) -> Iterator[tuple[Site, object]]:
+    """The project served, and the app serving it."""
+    from nr_workbench.web.app import create_app
+
+    app = create_app(project, autostart=False)
+    app.config["NRW_EXPERIMENT"].live.scan_once()
+    with serving(app) as site:
+        yield site, app
 
 
 @pytest.fixture
@@ -102,7 +112,6 @@ def field(page: Page, element_id: str) -> str:
 def test_what_you_typed_survives_a_save_of_the_same_sample_made_elsewhere(
     page: Page, site: Site, project: Path
 ) -> None:
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     page.wait_for(
         "Array.from(document.querySelectorAll('#expt-samples button'))"
@@ -140,8 +149,91 @@ def test_what_you_typed_survives_a_save_of_the_same_sample_made_elsewhere(
     assert (saved.title, saved.description) == ("Their title", "typed by me")
 
 
+def test_what_you_typed_about_the_experiment_survives_a_save_made_elsewhere(
+    page: Page, site: Site, project: Path
+) -> None:
+    page.goto(f"{site.url}/experiment")
+    # Nothing is written yet, so the panel is open, to be filled in.
+    page.wait_for(
+        "document.getElementById('expt-context').open"
+        " && !document.getElementById('c-summary').disabled",
+        what="the experiment's panel, open",
+    )
+    assert page.text("expt-context-state") == "not written yet"
+    page.type("c-summary", "typed by me")
+
+    # The experiment is saved elsewhere -- another field -- in the meantime.
+    ParquetCatalogStore.for_project(project).update(
+        experiment=ExperimentChange(0, {"notes": "Their notes"})
+    )
+
+    page.click("expt-context-save")  # meets the conflict, and the page reloads
+
+    page.wait_for(
+        "document.getElementById('c-notes').value === 'Their notes'",
+        what="the reload with their notes",
+    )
+    assert field(page, "c-summary") == "typed by me"
+    assert "saved somewhere else" in page.text("expt-context-status")
+
+    page.click("expt-context-save")
+
+    page.wait_for(
+        "document.getElementById('expt-context-status').textContent === 'Saved.'",
+        what="the save",
+    )
+    saved = ParquetCatalogStore.for_project(project).load().experiment
+    assert (saved.summary, saved.notes, saved.rev) == ("typed by me", "Their notes", 2)
+    assert page.text("expt-context-state") == "typed by me"
+
+
+def test_an_experiment_saved_empty_reads_as_not_written(
+    page: Page, site: Site, project: Path
+) -> None:
+    """Written means something is in it, as the command line and the docs say,
+    not that it was ever saved."""
+    store = ParquetCatalogStore.for_project(project)
+    store.update(experiment=ExperimentChange(0, {"summary": "A first try."}))
+    store.update(experiment=ExperimentChange(1, {"summary": ""}))
+
+    page.goto(f"{site.url}/experiment")
+
+    page.wait_for(
+        "document.getElementById('expt-context').open", what="the panel, open"
+    )
+    assert page.text("expt-context-state") == "not written yet"
+
+
+def test_a_save_here_does_not_hide_what_was_saved_elsewhere(
+    page: Page, site: Site, project: Path
+) -> None:
+    """A save's answer covers everything saved before it, from anywhere: were
+    the page to take its version from that answer, the poll would see nothing
+    new, and a sample saved in another tab would never show."""
+    page.goto(f"{site.url}/experiment")
+    page.wait_for(
+        "!document.getElementById('c-summary').disabled", what="the experiment's panel"
+    )
+    store = ParquetCatalogStore.for_project(project)
+    rev = store.load().samples["S1"].rev
+    store.update(samples=[SampleChange("S1", rev, {"title": "Their title"})])
+
+    page.type("c-summary", "typed by me")
+    page.click("expt-context-save")
+    page.wait_for(
+        "document.getElementById('expt-context-status').textContent === 'Saved.'",
+        what="the save",
+    )
+
+    # The next poll, at most ten seconds on, brings it in.
+    page.wait_for(
+        "document.getElementById('expt-samples').textContent.includes('Their title')",
+        what="the sample saved elsewhere, shown",
+        timeout=20,
+    )
+
+
 def open_s1(page: Page, site: Site) -> None:
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     page.wait_for(
         "Array.from(document.querySelectorAll('#expt-samples button'))"
@@ -236,7 +328,6 @@ def test_the_bulk_bar_leaves_each_runs_type_unless_one_is_chosen(
     store = ParquetCatalogStore.for_project(project)
     entry = store.load().runs[RunKey(234277)]
     store.update(runs=[RunChange(entry.key, entry.rev, {"measurement": "tNR"})])
-    page.goto(site.link)
     page.goto(f"{site.url}/experiment")
     page.wait_for(
         "document.querySelector('#expt-runs tbody input[type=checkbox]') !== null",
@@ -319,6 +410,7 @@ def test_a_model_is_written_from_the_samples_data_once_it_has_some(
     assert page.text("expt-fit-run") == "Fit the placeholder anyway"
 
 
+@pytest.mark.fit
 def test_a_fit_started_on_the_page_is_followed_to_its_record(
     page: Page, site: Site, project: Path, monkeypatch
 ) -> None:
@@ -506,41 +598,50 @@ def test_a_page_opened_onto_a_running_fit_follows_it_and_can_cancel_it(
 
 
 def test_a_view_only_page_offers_no_writes_and_no_cancel(
-    page: Page, served, project: Path, monkeypatch
+    page: Page, project: Path, monkeypatch
 ) -> None:
-    site, app = served
+    from nr_workbench.web.app import create_app
+
     long_step(monkeypatch)
     spec = project / "samples" / "S1" / "models" / "oxide.yaml"
     spec.parent.mkdir(parents=True)
     spec.write_text("{}\n")
     write_partials(project / "samples" / "S1" / "data" / "steady", 234277)
+    app = create_app(
+        project, autostart=False, writable=False, read_only_reason="view only"
+    )
+    app.config["NRW_EXPERIMENT"].live.scan_once()
     app.config["NRW_MODELS"].jobs.start(
         label="dream fit of oxide", sample="S1", model="oxide", steps=[["x"]]
     )
 
-    # No link opened: the page is view-only.
-    page.goto(f"{site.url}/experiment")
-    page.wait_for(
-        "Array.from(document.querySelectorAll('#expt-samples button'))"
-        ".some(b => b.textContent.includes('S1'))",
-        what="the sample list",
-    )
-    page.js(
-        "Array.from(document.querySelectorAll('#expt-samples button'))"
-        ".find(b => b.textContent.includes('S1')).click()"
-    )
-    page.wait_for(
-        "document.querySelector('#expt-models-list .expt-model-fit') !== null",
-        what="the spec listed",
-    )
-    page.wait_for(
-        "document.getElementById('expt-job-state').textContent === 'step 1 of 1'",
-        what="the running fit, shown",
-    )
+    with serving(app) as site:
+        page.goto(f"{site.url}/experiment")
+        page.wait_for(
+            "Array.from(document.querySelectorAll('#expt-samples button'))"
+            ".some(b => b.textContent.includes('S1'))",
+            what="the sample list",
+        )
+        page.js(
+            "Array.from(document.querySelectorAll('#expt-samples button'))"
+            ".find(b => b.textContent.includes('S1')).click()"
+        )
+        page.wait_for(
+            "document.querySelector('#expt-models-list .expt-model-fit') !== null",
+            what="the spec listed",
+        )
+        page.wait_for(
+            "document.getElementById('expt-job-state').textContent === 'step 1 of 1'",
+            what="the running fit, shown",
+        )
 
-    assert "view-only" in page.text("expt-models-list")
-    for button in ("expt-model-create", "expt-model-quick"):
-        assert page.js(f"document.getElementById('{button}').disabled") is True
+        assert "view-only" in page.text("expt-models-list")
+        for button in ("expt-model-create", "expt-model-quick"):
+            assert page.js(f"document.getElementById('{button}').disabled") is True
+        # Nothing written, but nothing to write it with: left folded away.
+        assert page.js("document.getElementById('expt-context').open") is False
+        for box in ("c-summary", "c-hypotheses", "c-notes", "expt-context-save"):
+            assert page.js(f"document.getElementById('{box}').disabled") is True
     assert page.js(
         "document.querySelector('#expt-models-list .expt-model-fit').disabled"
     )
@@ -576,64 +677,6 @@ def test_a_model_aure_proposed_offers_a_quick_fit_again(
         what="the quick fit ended",
     )
     assert page.text("expt-job-title") == "Quick fit of auto with AuRE again (S1)"
-
-
-def test_a_fit_refused_as_identical_links_that_fit_and_runs_again_anyway(
-    page: Page, site: Site, project: Path, monkeypatch
-) -> None:
-    import json
-
-    from nr_workbench.web import jobs as jobs_module
-
-    earlier = "20260929-120000Z-aaaaaaaa"
-    index = project / ".nrw" / "index.jsonl"
-    index.parent.mkdir(exist_ok=True)
-    with index.open("a", encoding="utf-8") as handle:
-        entry = {"event": "fit", "fit_id": earlier, "sample": "S1", "model": "oxide"}
-        handle.write(json.dumps(entry) + "\n")
-
-    def command(*args: str) -> list[str]:
-        # The fit is refused as the identical run -- until it is forced.
-        if args[:2] == ("fit", "run") and "--force" not in args:
-            code = f"import sys; print('Error: An identical run already exists: {earlier}'); sys.exit(1)"
-            return [sys.executable, "-c", code]
-        return [sys.executable, "-c", "pass"]
-
-    monkeypatch.setattr(jobs_module, "nrw_command", command)
-    spec = project / "samples" / "S1" / "models" / "oxide.yaml"
-    spec.parent.mkdir(parents=True)
-    spec.write_text("{}\n")
-    (project / "samples" / "S1" / "data" / "steady").mkdir(parents=True)
-    open_s1(page, site)
-    page.wait_for(
-        "document.querySelector('#expt-models-list .expt-model-fit') !== null",
-        what="the spec listed",
-    )
-    page.js("document.querySelector('#expt-models-list .expt-model-fit').click()")
-    page.js(
-        "{ const m = document.getElementById('expt-fit-method'); m.value = 'amoeba';"
-        " m.dispatchEvent(new Event('change')); }"
-    )
-    page.click("expt-fit-run")
-    page.wait_for(
-        "document.getElementById('expt-job-result').textContent.includes('Nothing has changed')",
-        what="the refusal, said as such",
-    )
-    assert (
-        page.js("document.querySelector('#expt-job-result a').getAttribute('href')")
-        == f"/f/{earlier}"
-    )
-
-    page.js(
-        "Array.from(document.querySelectorAll('#expt-job-result button'))"
-        ".find(b => b.textContent === 'Run again anyway').click()"
-    )
-
-    page.wait_for(
-        "document.getElementById('expt-job-state').textContent === 'ok'",
-        what="the fit run again",
-    )
-    assert "--force" in page.text("expt-job-log")
 
 
 def test_a_finished_job_is_not_shown_again_and_close_puts_one_away(

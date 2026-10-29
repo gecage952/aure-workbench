@@ -29,6 +29,7 @@ from typing import Any
 from nr_workbench import __version__
 from nr_workbench.provenance.env import Environment
 from nr_workbench.provenance.hashing import (
+    MODEL_ROLES,
     FileDigest,
     canonical_json,
     inputs_digest,
@@ -195,7 +196,7 @@ class FitRecord:
         Returns:
             A digest that changes only when the data does.
         """
-        return inputs_digest(d for d in self.inputs if d.role != "script")
+        return inputs_digest(d for d in self.inputs if d.role not in MODEL_ROLES)
 
     def provenance_block(self) -> dict[str, Any]:
         """Return the ``nrw-provenance/1`` block nested inside the manifest."""

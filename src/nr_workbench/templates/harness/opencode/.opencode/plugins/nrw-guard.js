@@ -17,10 +17,7 @@
 // same question, and the one here would be the stale one.
 //
 // The deny list in opencode.json is the second, weaker mechanism: it matches
-// the command as written, so `A=1 nrw promote x` slips past it. `nrw` itself
-// refuses the same actions from the inside when NRW_AGENT=1, which is the
-// third. A hook can be misconfigured and an environment variable can be unset;
-// all three failing silently at once is a different order of accident.
+// the command as written, so `A=1 nrw promote x` slips past it.
 //
 // Note `opencode --pure` skips external plugins, and therefore this file.
 

@@ -5,9 +5,6 @@ arrived, which sample each run belongs to, and what applying would write.
 ``apply`` and ``adopt`` only show what they would do until given ``--write``,
 the same convention as ``nrw import``: they write into directories people are
 working in.
-
-Assigning, applying, adopting and releasing are refused to an unattended
-agent (``NRW_AGENT``); ``status`` and the previews are not.
 """
 
 from __future__ import annotations
@@ -67,8 +64,9 @@ def _echo_problems(problems: Any) -> None:
 
 def run_status(*, root: str | None = None, as_json: bool = False) -> None:
     """Report what the source holds, what the catalog says, and what is pending."""
+    from nr_workbench.experiment.model import EXPERIMENT_FIELDS
     from nr_workbench.experiment.store import CatalogError
-    from nr_workbench.experiment.views import run_row, sample_card
+    from nr_workbench.experiment.views import experiment_card, run_row, sample_card
 
     workspace = _workspace(root)
     snapshot, _, _ = _observed(workspace)
@@ -77,14 +75,17 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
         *snapshot.inventory.problems,
         *snapshot.feed.problems,
     ]
+    readable = True
     try:
-        catalog, recovered = workspace.store.load_report()
-        problems.extend(recovered)
+        catalog = workspace.store.load()
     except CatalogError as exc:
         from nr_workbench.experiment.model import Catalog
         from nr_workbench.problems import Problem
 
+        # Empty for the report, and said to be unreadable: an assistant
+        # reading --json must not take an unreadable catalog for an unwritten one.
         catalog = Catalog()
+        readable = False
         problems.append(Problem("catalog", str(exc)))
 
     runs = [
@@ -98,15 +99,18 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
         "source": workspace.source.describe(),
         "reachable": snapshot.inventory.reachable,
         "feed": workspace.feed.describe(),
-        "catalog": workspace.store.describe(),
+        "catalog": {**workspace.store.describe(), "readable": readable},
         "runs": runs,
         "samples": [
             sample_card(workspace.root, catalog, sample_id)
             for sample_id in catalog.sample_ids()
         ],
+        "experiment": experiment_card(catalog.experiment),
         "problems": [p.as_dict() for p in problems],
     }
     if as_json:
+        # ASCII only, the default: an assistant reads this, and every invisible
+        # character in a committed record then arrives as a visible escape.
         click.echo(json.dumps(payload, indent=2))
         return
 
@@ -126,6 +130,14 @@ def run_status(*, root: str | None = None, as_json: bool = False) -> None:
             else "none yet"
         )
     )
+    written = [name for name in EXPERIMENT_FIELDS if payload["experiment"][name]]
+    if not readable:
+        context = "cannot be read; see below"
+    elif written:
+        context = f'{", ".join(written)}; --json shows them under "experiment"'
+    else:
+        context = "none yet; it is written on the Experiment page"
+    click.echo(f"  context  {context}")
 
     counts: dict[str, int] = {}
     for row in runs:
@@ -174,7 +186,6 @@ def run_assign(
     root: str | None = None,
 ) -> None:
     """Record which sample runs belong to, and how they were measured."""
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.experiment.model import (
         CatalogValidationError,
         RecordConflict,
@@ -183,7 +194,6 @@ def run_assign(
     )
     from nr_workbench.experiment.store import CatalogError
 
-    refuse_if_agent("experiment")
     if sample and unassign:
         raise click.ClickException("--sample and --unassign contradict each other.")
     if exclude and include:
@@ -255,14 +265,11 @@ def run_apply(
     as_json: bool = False,
 ) -> None:
     """Show, and with --write carry out, what applying the catalog would do."""
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.experiment.apply import ApplyError, apply, plan_apply
     from nr_workbench.experiment.model import CatalogValidationError, RunKey
     from nr_workbench.experiment.render import SampleRenderError
     from nr_workbench.project.scaffold import LockProblemError
 
-    if write:
-        refuse_if_agent("experiment")
     try:
         confirmed = {RunKey.parse(text) for text in confirm}
     except CatalogValidationError as exc:
@@ -384,15 +391,12 @@ def run_adopt(
     as_json: bool = False,
 ) -> None:
     """Bring hand-written samples into the catalog, or pull hand edits back."""
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.experiment.adopt import AdoptRefused, adopt, plan_adopt
     from nr_workbench.experiment.model import RecordConflict
     from nr_workbench.experiment.render import SampleRenderError
     from nr_workbench.experiment.store import CatalogError
     from nr_workbench.project.scaffold import LockProblemError
 
-    if write:
-        refuse_if_agent("experiment")
     if rewrite and not write:
         raise click.ClickException("--rewrite changes sample.md, so it needs --write.")
 
@@ -488,11 +492,9 @@ def _echo_adopt(plan: Any, *, show_diff: bool) -> None:
 
 def run_release(*, sample: str, root: str | None = None) -> None:
     """Hand a catalog-rendered sample.md back to its people."""
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.experiment.render import sample_md_relpath
     from nr_workbench.project.scaffold import LockProblemError, forget
 
-    refuse_if_agent("experiment")
     project = _root(root)
     try:
         dropped = forget(project, sample_md_relpath(sample))
@@ -535,14 +537,11 @@ def run_settings(
     serve``: only nrw's own lines of nrw.toml change, and a file nrw cannot
     edit safely is refused with the lines to add by hand.
     """
-    from nr_workbench.agent.guard import refuse_if_agent
     from nr_workbench.experiment.views import settings_view
     from nr_workbench.project import settings as project_settings
     from nr_workbench.project.settings import CONFIRM_IPTS_CHANGE
     from nr_workbench.project.tomlfile import TomlEditError
 
-    if write:
-        refuse_if_agent("experiment")
     if location is not None and default_location:
         raise click.ClickException(
             "--location and --default-location contradict each other; give one."

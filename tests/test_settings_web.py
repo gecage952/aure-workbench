@@ -1,8 +1,6 @@
-"""The Settings page's API: read openly, save and check only with the link.
+"""The Settings page's API: reading, saving nrw.toml, and checking a folder.
 
-Saving writes nrw.toml, and checking a folder lists whatever path it is
-given, so both sit behind the same gate as every other write. Reading does
-not, and must never start the poller: the page exists to change a folder that
+Reading must never start the poller: the page exists to change a folder that
 may not answer.
 """
 
@@ -23,18 +21,15 @@ from nr_workbench.project.config import load_config
 
 from .experiment_fixtures import write_autoreduced
 from .test_experiment_web import (  # noqa: F401 - fixtures
-    ORIGIN,
-    TOKEN,
     app,
     expt,
     make_app,
-    write_headers,
     writer,
 )
 
 
 def put(client, app, **body):
-    return client.put("/api/experiment/settings", json=body, headers=write_headers(app))
+    return client.put("/api/experiment/settings", json=body)
 
 
 def revision(root: Path) -> str:
@@ -57,25 +52,22 @@ def test_the_settings_say_what_is_set_what_is_default_and_what_is_coming(
     assert payload["values"]["feed.poll_seconds"] is None
     assert payload["defaults"]["feed.poll_seconds"] == 30
     kinds = {o["kind"]: o["available"] for o in payload["options"]["feed"]}
-    assert kinds == {"directory": True, "monitor": False, "tiled": False}
+    assert kinds == {"directory": True, "monitor": False}
     assert payload["effective"]["needs_setup"] is False
 
 
-def test_a_metadata_service_is_listed_as_coming_where_the_catalog_is_kept(
+def test_the_catalog_is_kept_in_the_project_and_nothing_else_is_offered(
     app,
 ) -> None:
+    """A store everyone writes was withdrawn: none is promised as coming."""
     payload = app.test_client().get("/api/experiment/settings").get_json()
 
-    catalogs = {o["kind"]: o for o in payload["options"]["catalog"]}
-    assert {k: o["available"] for k, o in catalogs.items()} == {
-        "parquet": True,
-        "api": False,
-    }
-    assert catalogs["api"]["label"] == "A metadata service"
+    catalogs = {o["kind"]: o["available"] for o in payload["options"]["catalog"]}
+    assert catalogs == {"parquet": True}
     assert payload["effective"]["catalog_kind"] == "parquet"
 
 
-def test_the_planned_service_is_refused_by_name_never_replaced_by_files(
+def test_an_unknown_catalog_is_refused_never_replaced_by_files(
     expt: Path,
 ) -> None:
     """Edits meant for everyone must not land in the project, where nobody looks."""
@@ -83,7 +75,6 @@ def test_the_planned_service_is_refused_by_name_never_replaced_by_files(
         handle.write('\n[experiment.catalog]\nkind = "api"\n')
     app = make_app(expt)
     client = app.test_client()
-    client.get(f"/auth/{TOKEN}")
 
     overview = client.get("/api/experiment").get_json()
     saved = client.put(
@@ -91,12 +82,10 @@ def test_the_planned_service_is_refused_by_name_never_replaced_by_files(
         json={
             "changes": [{"run": 234277, "base_rev": 0, "fields": {"sample_id": "S1"}}]
         },
-        headers=write_headers(app),
     )
 
     said = [p["message"] for p in overview["problems"] if p["scope"] == "catalog"]
-    assert any("planned but not implemented" in m for m in said)
-    assert any("docs/experiment-sources.md" in m for m in said)
+    assert any("kind = 'api' is not known" in m for m in said)
     assert overview["writable"] is False
     assert saved.status_code == 503
     assert not (expt / "experiment" / "runs.parquet").exists()
@@ -123,7 +112,7 @@ def make_polling_app(root: Path):
     """An app whose poller starts on the first request that asks, as in `nrw serve`."""
     from nr_workbench.web.app import create_app
 
-    return create_app(root, token=TOKEN, autostart=True)
+    return create_app(root, autostart=True)
 
 
 def test_an_ipts_in_the_projects_path_is_offered(tmp_path: Path, monkeypatch) -> None:
@@ -149,18 +138,7 @@ def test_an_ipts_in_the_projects_path_is_offered(tmp_path: Path, monkeypatch) ->
 # --------------------------------------------------------------------------
 
 
-def test_saving_without_the_link_is_refused(app, expt: Path) -> None:
-    before = (expt / "nrw.toml").read_bytes()
-
-    response = put(
-        app.test_client(), app, revision=revision(expt), changes={"ipts": "IPTS-5"}
-    )
-
-    assert response.status_code == 403
-    assert (expt / "nrw.toml").read_bytes() == before
-
-
-def test_a_link_holder_saves_and_the_server_follows(
+def test_a_save_is_written_and_the_server_follows(
     app, writer, expt: Path, tmp_path: Path
 ) -> None:
     folder = tmp_path / "elsewhere"
@@ -230,9 +208,7 @@ def test_a_malformed_save_is_a_400_and_writes_nothing(
 
 
 def test_a_check_whose_body_is_not_an_object_is_a_400(app, writer) -> None:
-    response = writer.post(
-        "/api/experiment/settings/check", json=["/data"], headers=write_headers(app)
-    )
+    response = writer.post("/api/experiment/settings/check", json=["/data"])
 
     assert response.status_code == 400
 
@@ -317,7 +293,6 @@ def test_an_apply_reviewed_before_the_data_folder_changed_is_refused(
     response = writer.post(
         "/api/experiment/apply",
         json={"plan_id": plan["plan_id"]},
-        headers=write_headers(app),
     )
 
     assert response.status_code == 409
@@ -386,9 +361,7 @@ def test_changing_the_ipts_of_a_catalogued_experiment_asks_first(
 
 
 def check(client, app, **body):
-    return client.post(
-        "/api/experiment/settings/check", json=body, headers=write_headers(app)
-    )
+    return client.post("/api/experiment/settings/check", json=body)
 
 
 def test_checking_a_folder_says_what_it_holds(app, writer, tmp_path: Path) -> None:
@@ -455,12 +428,6 @@ def test_checking_a_missing_folder_says_so(app, writer, tmp_path: Path) -> None:
     assert "does not exist" in body["problems"][0]["message"]
 
 
-def test_checking_is_refused_without_the_link(app, tmp_path: Path) -> None:
-    response = check(app.test_client(), app, location=str(tmp_path))
-
-    assert response.status_code == 403
-
-
 def test_a_check_reads_the_kind_of_source_the_save_would_set(
     app, writer, tmp_path: Path
 ) -> None:
@@ -468,7 +435,7 @@ def test_a_check_reads_the_kind_of_source_the_save_would_set(
     response = check(writer, app, location=str(tmp_path), kind="tiled")
 
     assert response.status_code == 400
-    assert "not available yet" in response.get_json()["error"]
+    assert "'tiled' is not known" in response.get_json()["error"]
 
 
 def test_checking_a_folder_inside_the_project_is_a_400(app, writer, expt: Path) -> None:
@@ -564,67 +531,6 @@ def test_the_settings_page_renders_and_its_payload_parses(app) -> None:
     assert payload["schema"] == "nrw-settings/1"
 
 
-def test_the_settings_page_loads_no_plotly_and_signs_its_scripts(app) -> None:
-    import re
-
-    response = app.test_client().get("/settings")
-    html = response.get_data(as_text=True)
-    policy = response.headers["Content-Security-Policy"]
-
-    nonce = re.search(r"'nonce-([^']+)'", policy).group(1)
-    assert f'nonce="{nonce}"' in html
-    assert "cdn.plot.ly" not in policy and "unsafe-eval" not in policy
-    # Neither the library nor the check that would announce it missing.
-    assert "cdn.plot.ly" not in html and "typeof Plotly" not in html
-    assert "frame-ancestors 'none'" in policy
-
-
-def test_the_write_token_is_only_in_a_settings_page_for_a_link_holder(
-    app, writer
-) -> None:
-    from .test_experiment_web import _embedded
-
-    anonymous = app.test_client().get("/settings").get_data(as_text=True)
-    holder = writer.get("/settings").get_data(as_text=True)
-
-    assert _embedded(anonymous, "NRW_WRITE_TOKEN") == ""
-    assert _embedded(holder, "NRW_WRITE_TOKEN") == app.config["NRW_PAGE_TOKEN"]
-
-
-def test_a_hostile_label_cannot_break_out_of_the_settings_page(app, expt: Path) -> None:
-    from nr_workbench.project.settings import save
-
-    from .test_experiment_web import _embedded
-
-    hostile = "x</script><script>alert(1)</script><!--<script>"
-    save(expt, {"label": hostile})
-
-    html = app.test_client().get("/settings").get_data(as_text=True)
-
-    assert "<script>alert(1)" not in html
-    assert _embedded(html, "NRW_SETTINGS")["values"]["label"] == hostile
-
-
-def test_the_link_opens_settings_for_an_experiment_not_set_up(expt: Path) -> None:
-    from nr_workbench.project.settings import save
-
-    save(expt, {"ipts": "", "source.location": None})
-    app = make_app(expt)
-    try:
-        response = app.test_client().get(f"/auth/{TOKEN}")
-    finally:
-        app.config["NRW_EXPERIMENT"].reload()
-
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/settings")
-
-
-def test_the_link_opens_the_experiment_once_it_is_set_up(app) -> None:
-    response = app.test_client().get(f"/auth/{TOKEN}")
-
-    assert response.headers["Location"].endswith("/experiment")
-
-
 def test_the_experiment_page_says_when_it_needs_setting_up(app, expt: Path) -> None:
     from nr_workbench.project.settings import save
 
@@ -647,7 +553,7 @@ def test_serve_names_the_settings_page_and_says_when_setup_is_needed(
     unready = _serve(expt, monkeypatch=monkeypatch)
 
     assert "/settings" in ready.output and "not set up yet" not in ready.output
-    assert "not set up yet" in unready.output and "It opens Settings" in unready.output
+    assert "not set up yet" in unready.output
 
 
 def test_serve_says_which_folder_it_watches_and_why_it_is_the_default(
@@ -686,262 +592,3 @@ def test_init_suggests_serve_to_set_the_experiment_up(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "nrw serve" in result.output
-
-
-def test_a_malformed_nrw_toml_does_not_cost_the_one_time_link(expt: Path) -> None:
-    """Valid TOML of the wrong shape once made /auth fail after spending the link."""
-    from nr_workbench.web import security
-
-    app = make_app(expt)
-    try:
-        (expt / "nrw.toml").write_text('beamtime = "oops"\n', encoding="utf-8")
-        response = app.test_client().get(f"/auth/{TOKEN}")
-    finally:
-        app.config["NRW_EXPERIMENT"].reload()
-
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/settings")
-    assert security.COOKIE in response.headers["Set-Cookie"]
-
-
-def test_the_landing_page_is_chosen_before_the_link_is_spent(
-    expt: Path, monkeypatch
-) -> None:
-    from nr_workbench.web.settings import SettingsData
-
-    def broken(self):
-        raise RuntimeError("anything at all")
-
-    monkeypatch.setattr(SettingsData, "needs_setup", broken)
-    app = make_app(expt)
-    try:
-        response = app.test_client().get(f"/auth/{TOKEN}")
-    finally:
-        app.config["NRW_EXPERIMENT"].reload()
-
-    assert response.status_code == 303
-    assert response.headers["Location"].endswith("/settings")
-
-
-@pytest.mark.parametrize("name", ["x.html", "x.svg"])
-def test_a_served_project_file_runs_nothing_as_this_server(
-    app, expt: Path, name: str
-) -> None:
-    """A script in it would read a page's write token and pass the write gate."""
-    folder = expt / "samples" / "Sample1" / "assessments" / "lbl"
-    folder.mkdir(parents=True)
-    (folder / name).write_text("<script>fetch('/settings')</script>", encoding="utf-8")
-
-    response = app.test_client().get(f"/figures/Sample1/lbl/{name}")
-
-    assert response.status_code == 200
-    assert "sandbox" in response.headers["Content-Security-Policy"]
-
-
-def test_checking_a_folder_reads_a_few_files_of_a_crowded_run(
-    app, writer, tmp_path: Path, monkeypatch
-) -> None:
-    from nr_workbench.experiment.sources.local import PROBE_FILES_PER_RUN
-    from nr_workbench.instrument import header as header_module
-
-    folder = tmp_path / "crowded"
-    write_autoreduced(folder, 234000, range(1, 31), planned=3, mtime=time.time() - 3600)
-    reads: list[str] = []
-    real = header_module.read_header_bytes
-    monkeypatch.setattr(
-        header_module,
-        "read_header_bytes",
-        lambda d, p: reads.append(p.name) or real(d, p),
-    )
-
-    body = check(writer, app, location=str(folder)).get_json()
-
-    assert len(reads) == PROBE_FILES_PER_RUN
-    assert any("30 files" in p["message"] for p in body["problems"])
-
-
-# --------------------------------------------------------------------------
-# USER_ALLOW_SETTINGS: a logged-in user in place of the link
-# --------------------------------------------------------------------------
-
-
-def log_in_as(app, *ipts_projects: str, data_access: bool = False):
-    """A client logged in as a user in *ipts_projects*, without the link."""
-    from nr_workbench.web.user_session import FlaskSessionStore
-
-    client = app.test_client()
-    with client.session_transaction() as session:
-        session[FlaskSessionStore.KEY] = {
-            "user_id": "gzi",
-            "ipts_projects": list(ipts_projects),
-            "data_access": data_access,
-        }
-    return client
-
-
-@pytest.fixture
-def logged_in(app):
-    """A member of the project's IPTS, which never opened the one-time link."""
-    return log_in_as(app, "IPTS-99999", "IPTS-00001")
-
-
-def test_a_logged_in_user_saves_settings_when_user_allow_settings_is_set(
-    app, logged_in, expt: Path
-) -> None:
-    app.config["USER_ALLOW_SETTINGS"] = True
-
-    response = put(
-        logged_in, app, revision=revision(expt), changes={"feed.poll_seconds": 40}
-    )
-
-    assert response.status_code == 200
-    assert load_config(expt).raw["experiment"]["feed"]["poll_seconds"] == 40
-
-
-def test_a_logged_in_user_without_user_allow_settings_still_needs_the_link(
-    app, logged_in, expt: Path
-) -> None:
-    """Off is the behavior before the setting existed."""
-    before = revision(expt)
-
-    response = put(logged_in, app, revision=before, changes={"feed.poll_seconds": 40})
-
-    assert response.status_code == 403
-    assert revision(expt) == before
-
-
-def test_user_allow_settings_without_a_login_still_needs_the_link(
-    app, expt: Path
-) -> None:
-    app.config["USER_ALLOW_SETTINGS"] = True
-    before = revision(expt)
-
-    response = put(
-        app.test_client(), app, revision=before, changes={"feed.poll_seconds": 40}
-    )
-
-    assert response.status_code == 403
-    assert revision(expt) == before
-
-
-def test_user_allow_settings_opens_only_the_settings_to_a_logged_in_user(
-    app, logged_in
-) -> None:
-    """Every write other than the Settings page's still needs the link."""
-    app.config["USER_ALLOW_SETTINGS"] = True
-
-    response = logged_in.put(
-        "/api/experiment/runs", json={"runs": []}, headers=write_headers(app)
-    )
-
-    assert response.status_code == 403
-
-
-def test_the_settings_page_gives_an_allowed_logged_in_user_the_write_token(
-    app, logged_in
-) -> None:
-    app.config["USER_ALLOW_SETTINGS"] = True
-
-    html = logged_in.get("/settings").get_data(as_text=True)
-
-    assert app.config["NRW_PAGE_TOKEN"] in html
-
-
-def test_the_settings_page_withholds_the_write_token_when_not_allowed(
-    app, logged_in
-) -> None:
-    html = logged_in.get("/settings").get_data(as_text=True)
-
-    assert app.config["NRW_PAGE_TOKEN"] not in html
-
-
-def test_user_allow_settings_refuses_a_user_outside_the_projects_ipts(
-    app, expt: Path
-) -> None:
-    app.config["USER_ALLOW_SETTINGS"] = True
-    outsider = log_in_as(app, "IPTS-99999")
-    before = revision(expt)
-
-    response = put(outsider, app, revision=before, changes={"feed.poll_seconds": 40})
-
-    assert response.status_code == 403
-    assert revision(expt) == before
-    assert app.config["NRW_PAGE_TOKEN"] not in outsider.get("/settings").get_data(
-        as_text=True
-    )
-
-
-def test_user_allow_settings_refuses_everyone_when_the_project_has_no_ipts(
-    app, logged_in, expt: Path
-) -> None:
-    """No IPTS, no members: setting the project up still takes the link."""
-    app.config["USER_ALLOW_SETTINGS"] = True
-    toml = expt / "nrw.toml"
-    toml.write_text(
-        toml.read_text(encoding="utf-8").replace('ipts = "IPTS-00001"\n', ""),
-        encoding="utf-8",
-    )
-    before = revision(expt)
-
-    response = put(logged_in, app, revision=before, changes={"feed.poll_seconds": 40})
-
-    assert response.status_code == 403
-    assert revision(expt) == before
-
-
-def test_user_allow_settings_judges_against_the_ipts_as_saved(
-    app, logged_in, expt: Path
-) -> None:
-    """Moving the project to another IPTS ends access for those outside it."""
-    app.config["USER_ALLOW_SETTINGS"] = True
-
-    moved = put(logged_in, app, revision=revision(expt), changes={"ipts": "IPTS-5"})
-    again = put(
-        logged_in, app, revision=revision(expt), changes={"feed.poll_seconds": 40}
-    )
-
-    assert (moved.status_code, again.status_code) == (200, 403)
-
-
-def test_user_allow_settings_lets_data_access_stand_in_for_the_ipts(
-    app, expt: Path
-) -> None:
-    """The data_access group counts as membership of every IPTS."""
-    app.config["USER_ALLOW_SETTINGS"] = True
-    staff = log_in_as(app, "IPTS-99999", data_access=True)
-
-    response = put(
-        staff, app, revision=revision(expt), changes={"feed.poll_seconds": 40}
-    )
-
-    assert response.status_code == 200
-    assert app.config["NRW_PAGE_TOKEN"] in staff.get("/settings").get_data(as_text=True)
-
-
-def test_data_access_without_user_allow_settings_still_needs_the_link(
-    app, expt: Path
-) -> None:
-    staff = log_in_as(app, data_access=True)
-    before = revision(expt)
-
-    response = put(staff, app, revision=before, changes={"feed.poll_seconds": 40})
-
-    assert response.status_code == 403
-    assert revision(expt) == before
-
-
-def test_data_access_does_not_open_a_project_with_no_ipts(app, expt: Path) -> None:
-    """Membership of every IPTS is still membership of none, without one."""
-    app.config["USER_ALLOW_SETTINGS"] = True
-    staff = log_in_as(app, data_access=True)
-    toml = expt / "nrw.toml"
-    toml.write_text(
-        toml.read_text(encoding="utf-8").replace('ipts = "IPTS-00001"\n', ""),
-        encoding="utf-8",
-    )
-    before = revision(expt)
-
-    response = put(staff, app, revision=before, changes={"feed.poll_seconds": 40})
-
-    assert response.status_code == 403
-    assert revision(expt) == before
